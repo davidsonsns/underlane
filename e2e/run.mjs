@@ -160,10 +160,13 @@ try {
       return { status: 0, body: String(e.stderr ?? e) };
     }
   };
+  let attempt = 0;
   const resp = await waitFor(
     "a 200 from the public URL",
     async () => {
       const r = await send();
+      attempt++;
+      if (r.status !== 200) log(`curl attempt ${attempt}: HTTP ${r.status} ${r.body.replace(/\s+/g, " ").slice(0, 140)}`);
       if (r.status === 429) await sleep(5000);
       return r.status === 200 && r.body.includes(marker) ? r : null;
     },
