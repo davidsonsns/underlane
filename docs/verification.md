@@ -167,6 +167,40 @@ used instead, as follows:
    | --- | --- |
    | ![](screenshots/16-login-launch-menu-bar.png) | ![](screenshots/17-login-launch-popover.png) |
 
+## 6b. Release-build pass (`node scripts/release-check.mjs`)
+
+To make sure the screenshots don't only come from the debug build, the **installed release build**
+(`~/Applications/Burrow.app`, which has no control server) was driven with real clicks:
+
+```
+[release-check] seeded tunnel: autostart-demo|quick|1|1
+[release-check] login item before: {"status":"not_registered","enabled":false,"message":null}
+[release-check] login item enable: {"status":"enabled","enabled":true,"message":null}
+[release-check] app pid 74864, parent: /sbin/launchd, tty: ??
+74864     1 ??  …/Applications/Burrow.app/Contents/MacOS/Burrow
+74944 74864 ??  …/Burrow --cloudflared-shim /opt/homebrew/bin/cloudflared tunnel --config …
+74945 74944 ??  /opt/homebrew/bin/cloudflared tunnel --config …/com.davidsonsns.burrow/neutral.yml …
+[release-check] auto-started tunnel public URL: https://synthetic-quick-4.trycloudflare.com
+[release-check] curl https://synthetic-quick-4.trycloudflare.com/release-check -> 404   (the origin's own 404)
+[release-check] captured in SQLite by the release app: GET|/release-check?token=[redacted]|404
+[release-check] theme after clicking Light: light
+[release-check] theme after clicking Dark: dark
+[release-check] theme restored: system
+[release-check] after quit, Burrow/cloudflared processes left: 0
+[release-check] login item disable: {"status":"not_registered","enabled":false,"message":null}
+```
+
+The 404 is Python `http.server` (the origin) answering for a file it doesn't have. It shows the
+request went through the public URL, cloudflared, Burrow's proxy and the origin, and back.
+
+| Menu bar after login launch | Popover (auto-started tunnel) | Dashboard |
+| --- | --- | --- |
+| ![](screenshots/18-release-menu-bar.png) | ![](screenshots/19-release-popover.png) | ![](screenshots/20-release-dashboard.png) |
+
+| Settings: Light clicked | Dashboard, light | Settings: Dark clicked |
+| --- | --- | --- |
+| ![](screenshots/21-release-settings-light.png) | ![](screenshots/22-release-dashboard-light.png) | ![](screenshots/23-release-settings-dark.png) |
+
 ## 7. Crash safety and quitting
 
 - **App SIGKILLed:** `kill -9` on the app made the watchdog shim stop cloudflared within 1 s
