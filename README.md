@@ -1,0 +1,152 @@
+# Burrow
+
+A macOS menu bar app that runs your `cloudflared` tunnels for you. Set them up once, then stop
+thinking about them: no terminal windows, no juggling `config.yml` files.
+
+![Popover with three tunnels running](docs/screenshots/04-popover-three-tunnels.png)
+
+- **Import what you already have.** Burrow scans `~/.cloudflared` for config files, and you can
+  add files or project folders. It also supports token (dashboard-managed) tunnels and
+  `trycloudflare.com` quick tunnels.
+- **One click per tunnel**, or all at once, with live status: starting, connected, degraded,
+  stopped or crashed. Crashed tunnels restart with backoff.
+- **A count in the menu bar** shows how many tunnels are up. The popover can copy a tunnel's public
+  URL or open it in the browser.
+- **The dashboard** has a log viewer with level filters and search. For tunnels with inspection
+  on, it also has a request inspector with headers, pretty-printed JSON, a hex view and
+  "copy as curl".
+- **Launch at login** (native `SMAppService`) and per-tunnel **start automatically**.
+- **Your config files are never modified.** Request inspection uses a derived copy in Burrow's data
+  folder.
+
+Burrow drives the `cloudflared` binary; it does not reimplement the tunnel protocol. It isn't
+affiliated with Cloudflare.
+
+## Setup
+
+Requirements: macOS 13 or later (built and tested on macOS 27, Apple Silicon), plus:
+
+```sh
+brew install cloudflared   # Burrow finds it on PATH or in Homebrew's folders
+```
+
+To build from source you also need Xcode command-line tools, Node 20+ and Rust (via
+[rustup](https://rustup.rs)).
+
+```sh
+make build      # npm ci + tauri build -> target/release/bundle/macos/Burrow.app
+make install    # same, then copies it to ~/Applications (needed for launch at login)
+```
+
+Open `Burrow.app`. On first run it opens the dashboard. Choose **Add tunnel** to import config
+files, paste a tunnel token, or share a local port as a quick tunnel.
+
+If you use a menu bar manager (Hidden Bar, Ice, Bartender), new items may land in its hidden
+section. Drag Burrow's arch icon into the visible part.
+
+## Dev loop
+
+```sh
+make dev        # Vite + cargo with hot reload (frontend) and rebuild-on-change (Rust)
+make test       # cargo test --workspace, vitest, svelte-check
+make e2e        # end-to-end check against a real quick tunnel (no Cloudflare account needed)
+```
+
+Useful environment variables:
+
+| Variable | Effect |
+| --- | --- |
+| `BURROW_DATA_DIR` | Use another data folder (tests, experiments). It also disables the single-instance lock. |
+| `BURROW_LOG` | Log filter for the app's own stdout logs, e.g. `debug` or `burrow_core=debug`. |
+| `BURROW_E2E_PORT` | Start the loopback control server. Only in builds with `--features e2e`; release builds don't contain it. |
+
+`Burrow --login-item enable|disable|status`, run from the app bundle, manages launch at login from
+a script.
+
+### Tests
+
+- `crates/burrow-core/tests/` holds the integration tests:
+  - config parsing and folder scanning
+  - derived configs (only inspected services change, paths become absolute, the original stays
+    untouched)
+  - the proxy's capture, redaction (headers and query parameters), truncation of
+    streaming/chunked bodies, gzip, SSE, WebSocket, and upstream errors
+  - TTL and size-cap expiry
+  - log parsing and validation hints
+  - the supervisor against a fake `cloudflared`: connect, crash with backoff, a derived config run
+    from the config directory, the watchdog shim, and orphan reaping
+- `src/lib/format.test.ts` covers the UI's pure helpers (copy as curl, hex dump, JSON detection).
+- `e2e/run.mjs` launches the real app with an isolated data folder and a local echo server. It
+  exposes the echo server as a quick tunnel with inspection on, POSTs JSON to the
+  `trycloudflare.com` URL, and asserts:
+  - the request and response bodies are in SQLite and visible in the dashboard's request viewer
+  - the menu bar count, read from the real `NSStatusItem`, goes 0 → 1 → 0
+
+  Evidence lands in `e2e/out/`.
+- `cargo test --release -p burrow-core --test proxy_capture -- --ignored --nocapture` measures the
+  latency the proxy adds (about 0.03 ms at p50 on loopback).
+
+## Architecture
+
+```
+┌──────────────────────────── Burrow.app (one process) ─────────────────────────────┐
+│  WKWebView: popover.html + index.html (Svelte 5)        tray icon (NSStatusItem)   │
+│        │  invoke / events                                    ▲ count              │
+│  src-tauri  (commands, tray & windows, SMAppService, App Nap, e2e control server)  │
+│        │                                                                          │
+│  burrow-core (plain Rust, no Tauri)                                               │
+│   ├─ supervisor ── spawns ──▶ Burrow --cloudflared-shim ──▶ cloudflared tunnel …  │
+│   │      │  stderr JSON logs, /ready /quicktunnel /config polling, backoff        │
+│   ├─ proxy (hyper) ◀── cloudflared (derived config: service → 127.0.0.1:port)     │
+│   │      └──▶ real origin (http/https, originRequest TLS options)                 │
+│   ├─ config / derived / import    (read-only on your YAML)                        │
+│   └─ db (SQLite: settings, projects, tunnels, logs, requests; TTL + size cap)     │
+└───────────────────────────────────────────────────────────────────────────────────┘
+```
+
+- **`crates/burrow-core`** contains everything platform-independent:
+  - `config.rs` parses cloudflared YAML.
+  - `derived.rs` decides which rules can be inspected and writes the derived copy.
+  - `proxy/` is the inspecting reverse proxy. It streams frames through untouched while copying up
+    to the cap, redacts before storage, and passes WebSocket and SSE through.
+  - `supervisor.rs` handles process lifecycle, health, restarts, orphan reaping and detecting the
+    same tunnel running outside Burrow.
+  - `db.rs` is the SQLite layer.
+  - `shim.rs` is the watchdog that kills cloudflared if the app dies.
+  - `decode.rs` handles display-time gzip/br/deflate decoding.
+- **`src-tauri`** is the app shell:
+  - `state.rs` wires the supervisor to SQLite (a bounded, batched writer) and to the UI (events).
+  - `tray.rs` builds the menu bar item, the popover (vibrancy, positioned under the icon) and the
+    dashboard window.
+  - `platform.rs` covers `SMAppService`, App Nap and state restoration.
+  - `commands.rs` holds the UI commands.
+  - `e2e.rs` is the test-only control server.
+- **`src/`** is the Svelte UI. `popover/` is the menu bar panel. `dashboard/` has the Tunnels,
+  Requests, Logs and Settings views. `lib/` holds the API, store and formatting helpers.
+
+Where state lives: `~/Library/Application Support/com.davidsonsns.burrow/`.
+
+| Path | Contents |
+| --- | --- |
+| `burrow.db` | SQLite: settings, tunnels, logs, captured requests |
+| `derived/` | Generated configs |
+| `run/` | pidfiles |
+| `neutral.yml` | Keeps quick and token tunnels from loading a default config |
+
+Tokens for token tunnels live in the macOS Keychain.
+
+Why it's built this way (stack, process model, capture design, trade-offs):
+[`docs/research.md`](docs/research.md) and [`docs/decisions.md`](docs/decisions.md). The manual
+verification log with screenshots is in [`docs/verification.md`](docs/verification.md).
+
+## Limitations (v1)
+
+- Tunnels run as children of the app, so quitting Burrow stops them. Use launch at login plus
+  "start automatically", or `cloudflared service install` for tunnels that must survive without
+  the app.
+- Inspection isn't available for token tunnels, for rules with `http2Origin`/`matchSNItoHost`, or
+  for `unix:` sockets. Those rules route directly, and the UI says why.
+- Quick tunnels get a new hostname on every start and don't support server-sent events
+  (Cloudflare's limits).
+- Creating or deleting tunnels and DNS routes, multi-user features, auto-update and
+  Windows/Linux builds are out of scope for v1. The core is portable; see decisions.md §2.
