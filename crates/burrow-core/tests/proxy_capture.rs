@@ -286,3 +286,34 @@ async fn redacts_query_strings_inside_url_headers() {
     let x = h.wait_for("/echo").await;
     assert_eq!(header(&x.req_headers, "referer"), Some("https://app.example.com/callback?code=[redacted]&state=ok"));
 }
+
+#[tokio::test]
+async fn tls_timeout_is_a_separate_handshake_deadline() {
+    // An "HTTPS origin" that accepts TCP immediately but never speaks TLS.
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        let mut held = Vec::new();
+        loop {
+            let (s, _) = listener.accept().await.unwrap();
+            held.push(s);
+        }
+    });
+    let mut up = burrow_core::derived::Upstream::from_service(0, None, &format!("https://{addr}")).unwrap();
+    up.connect_timeout = Duration::from_secs(30);
+    up.tls_timeout = Duration::from_millis(300);
+    let captured = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let c2 = captured.clone();
+    let ctx = burrow_core::proxy::ProxyContext {
+        tunnel_id: "t".into(),
+        options: std::sync::Arc::new(std::sync::RwLock::new(CaptureOptions::default())),
+        sink: std::sync::Arc::new(move |x| c2.lock().unwrap().push(x)),
+    };
+    let p = burrow_core::proxy::start(0, up, ctx).await.unwrap();
+    let t = Instant::now();
+    let (head, body) = raw_request(p.port(), "GET / HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n").await;
+    let elapsed = t.elapsed();
+    assert!(head.starts_with("HTTP/1.1 502"), "{head}");
+    assert!(String::from_utf8_lossy(&body).contains("TLS handshake"), "{}", String::from_utf8_lossy(&body));
+    assert!(elapsed < Duration::from_secs(3), "gave up after the TLS deadline, not connectTimeout + tlsTimeout: {elapsed:?}");
+}

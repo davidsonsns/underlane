@@ -274,7 +274,4 @@ The finished code was reviewed by opus-5.5 and gpt-6-astra (Codex). Accepted fin
 | No bulk restart | Codex | "Restart all" in the dashboard and the tray menu. |
 | Log view duplicates, all levels off showing everything, missed events on load, settings overwriting typing, stale request detail, label-wrapped toggles, listbox roles without keyboard support | opus/Codex | All fixed in the Svelte views. |
 
-Not changed: `tlsTimeout` is enforced as part of one combined connect deadline
-(`connectTimeout + tlsTimeout`), not as a separate handshake deadline that starts after TCP
-connects. A stalled handshake therefore fails at the combined deadline. This is recorded as a known
-difference in research.md §3.5.
+| `tlsTimeout` was folded into one combined connect deadline | Codex | Burrow's own origin connector applies `connectTimeout` to TCP connect and then a separate `tlsTimeout` to the TLS handshake. Test `tls_timeout_is_a_separate_handshake_deadline`: an origin that accepts TCP but never handshakes fails after the 300 ms TLS deadline, even with a 30 s `connectTimeout`. |

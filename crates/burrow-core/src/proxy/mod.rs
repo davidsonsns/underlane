@@ -28,38 +28,51 @@ use crate::derived::Upstream;
 use capture::{BodyCapture, CapturedExchange, ExchangeKind, Pending, SharedOptions, Side, Sink, TeeBody};
 
 type ProxyBody = BoxBody<Bytes, hyper::Error>;
-type UpstreamClient = Client<TimeoutConnector<hyper_rustls::HttpsConnector<HttpConnector>>, ProxyBody>;
-
-/// Bounds TCP connect plus TLS handshake (`connectTimeout` + `tlsTimeout`).
-#[derive(Clone)]
-struct TimeoutConnector<C> {
-    inner: C,
-    timeout: Duration,
-}
-
+type UpstreamClient = Client<OriginConnector, ProxyBody>;
 type BoxError = Box<dyn std::error::Error + Send + Sync>;
 
-impl<C> tower_service::Service<Uri> for TimeoutConnector<C>
-where
-    C: tower_service::Service<Uri> + Send,
-    C::Future: Send + 'static,
-    C::Error: Into<BoxError>,
-{
-    type Response = C::Response;
+/// Connects to the origin with cloudflared's two separate deadlines: `connectTimeout` for the
+/// TCP connection, then `tlsTimeout` for the TLS handshake (HTTPS origins only).
+#[derive(Clone)]
+struct OriginConnector {
+    http: HttpConnector,
+    tls: Arc<rustls::ClientConfig>,
+    https: bool,
+    server_name: Option<rustls::pki_types::ServerName<'static>>,
+    connect_timeout: Duration,
+    tls_timeout: Duration,
+}
+
+impl tower_service::Service<Uri> for OriginConnector {
+    type Response = hyper_rustls::MaybeHttpsStream<TokioIo<tokio::net::TcpStream>>;
     type Error = BoxError;
-    type Future = Pin<Box<dyn Future<Output = Result<C::Response, BoxError>> + Send>>;
+    type Future = Pin<Box<dyn Future<Output = Result<Self::Response, BoxError>> + Send>>;
 
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
-        self.inner.poll_ready(cx).map_err(Into::into)
+        tower_service::Service::<Uri>::poll_ready(&mut self.http, cx).map_err(Into::into)
     }
 
     fn call(&mut self, uri: Uri) -> Self::Future {
-        let fut = self.inner.call(uri);
-        let timeout = self.timeout;
+        let mut http = self.http.clone();
+        let this = self.clone();
         Box::pin(async move {
-            match tokio::time::timeout(timeout, fut).await {
-                Ok(r) => r.map_err(Into::into),
-                Err(_) => Err(format!("timed out after {}s connecting to the origin", timeout.as_secs()).into()),
+            let host = uri.host().unwrap_or("").trim_start_matches('[').trim_end_matches(']').to_string();
+            let tcp = match tokio::time::timeout(this.connect_timeout, http.call(uri)).await {
+                Ok(r) => r?,
+                Err(_) => return Err(format!("timed out after {}s connecting to the origin", this.connect_timeout.as_secs()).into()),
+            };
+            if !this.https {
+                return Ok(hyper_rustls::MaybeHttpsStream::Http(tcp));
+            }
+            let name = match this.server_name {
+                Some(n) => n,
+                None => rustls::pki_types::ServerName::try_from(host)?,
+            };
+            let handshake = tokio_rustls::TlsConnector::from(this.tls).connect(name, TokioIo::new(tcp));
+            match tokio::time::timeout(this.tls_timeout, handshake).await {
+                Ok(Ok(tls)) => Ok(hyper_rustls::MaybeHttpsStream::Https(TokioIo::new(tls))),
+                Ok(Err(e)) => Err(format!("TLS handshake with the origin failed: {e}").into()),
+                Err(_) => Err(format!("TLS handshake with the origin didn't finish within {}s", this.tls_timeout.as_secs_f32()).into()),
             }
         })
     }
@@ -137,24 +150,23 @@ pub async fn start(port: u16, upstream: Upstream, ctx: ProxyContext) -> anyhow::
 fn build_client(up: &Upstream) -> anyhow::Result<UpstreamClient> {
     let mut http = HttpConnector::new();
     http.enforce_http(false);
-    http.set_connect_timeout(Some(up.connect_timeout));
     http.set_nodelay(true);
-    let builder = hyper_rustls::HttpsConnectorBuilder::new().with_tls_config(tls::client_config(up)?);
-    let builder = if up.scheme == "https" { builder.https_only() } else { builder.https_or_http() };
-    let builder = match &up.origin_server_name {
-        Some(name) => builder.with_server_name_resolver(hyper_rustls::FixedServerNameResolver::new(
-            rustls::pki_types::ServerName::try_from(name.clone())?,
-        )),
-        None => builder,
-    };
+    let mut tls = tls::client_config(up)?;
     // Always HTTP/1.1 upstream, like cloudflared without http2Origin (rules with it aren't inspected).
-    let connector = TimeoutConnector {
-        inner: builder.enable_http1().wrap_connector(http),
-        timeout: up.connect_timeout + up.tls_timeout,
+    tls.alpn_protocols = vec![b"http/1.1".to_vec()];
+    let server_name = match &up.origin_server_name {
+        Some(name) => Some(rustls::pki_types::ServerName::try_from(name.clone())?),
+        None => None,
     };
-    Ok(Client::builder(TokioExecutor::new())
-        .pool_idle_timeout(Duration::from_secs(90))
-        .build(connector))
+    let connector = OriginConnector {
+        http,
+        tls: Arc::new(tls),
+        https: up.scheme == "https",
+        server_name,
+        connect_timeout: up.connect_timeout,
+        tls_timeout: up.tls_timeout,
+    };
+    Ok(Client::builder(TokioExecutor::new()).pool_idle_timeout(Duration::from_secs(90)).build(connector))
 }
 
 struct Shared {
