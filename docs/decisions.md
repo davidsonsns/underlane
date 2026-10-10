@@ -275,3 +275,28 @@ The finished code was reviewed by opus-5.5 and gpt-6-astra (Codex). Accepted fin
 | Log view duplicates, all levels off showing everything, missed events on load, settings overwriting typing, stale request detail, label-wrapped toggles, listbox roles without keyboard support | opus/Codex | All fixed in the Svelte views. |
 
 | `tlsTimeout` was folded into one combined connect deadline | Codex | Burrow's own origin connector applies `connectTimeout` to TCP connect and then a separate `tlsTimeout` to the TLS handshake. Test `tls_timeout_is_a_separate_handshake_deadline`: an origin that accepts TCP but never handshakes fails after the 300 ms TLS deadline, even with a 30 s `connectTimeout`. |
+
+## 16. Verifying launch at login: simulation instead of a log-out/log-in
+
+goal.md item 5 accepts either path: "log out and back in, **or simulate it**". A real log-out
+wasn't possible here. The work ran unattended in this user's GUI session, and logging out
+terminates every process in it, including the agent doing the verification. That made the
+simulation the closest workable path, and it is the one the goal names.
+
+How the simulation was made faithful, rather than just "the app was opened":
+
+1. The installed release build registered itself through `SMAppService.mainApp`, the same call
+   the Settings toggle makes. macOS reported `enabled`, and the app appeared in System Settings →
+   Login Items → Open at Login (screenshot 15).
+2. It was launched the way the system opens login items: through LaunchServices, with no arguments
+   and no terminal.
+3. Evidence that this is the same mechanism (verification.md §6c): apps started by this Mac's real
+   login (Raycast, Warp) run as LaunchServices jobs `application.<bundle-id>.<n>`, parented by
+   `/sbin/launchd`. Burrow's simulated launch produced the identical job type
+   (`application.com.davidsonsns.burrow.198522606.198522611`, parent `/sbin/launchd`, no TTY).
+4. Tunnels marked **Start automatically** came up with no start command (screenshots 18–19). They
+   logged `Registered tunnel connection` and served a public `curl`.
+
+Item 5's launch-at-login requirement is therefore met through the permitted simulation, and no
+further step is required. A user who wants extra assurance can turn the setting on and log out
+and back in. That is optional confirmation, not missing verification.
