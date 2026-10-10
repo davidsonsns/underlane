@@ -1,0 +1,163 @@
+# Verification log
+
+Checks were done on this Mac on 2026-10-10: macOS 27.0.1, Apple Silicon, a 2560×1080 display,
+cloudflared 2026.9.1. Two builds were used:
+
+- `make e2e`: the debug build with the loopback control server. Used for the automated
+  end-to-end check and to drive the screenshot session (`scripts/screenshots.mjs`).
+- `make build`: the release build, installed to `~/Applications/Burrow.app`. Used for launch at
+  login, auto-start and crash checks.
+
+Screenshots are window-only captures (`scripts/capture-window.swift`) or menu bar strips around
+Burrow's status item. The menu bar on this Mac is managed by Hidden Bar, which collapses new items.
+The scripts expand it for the capture and collapse it again afterwards.
+
+## 1. End-to-end check (no Cloudflare account)
+
+`make e2e` (`e2e/run.mjs`) launches the real app on a throwaway data folder, starts a local echo
+server and exposes it as a quick tunnel with inspection on. Output of the run:
+
+```
+[  0.0s] echo server on 127.0.0.1:61155
+[  0.9s] app running (pid 10072), data dir /var/folders/…/burrow-e2e-kiBxpJ
+[  0.9s] ok: menu bar count is 0 before starting (title hidden)
+[  0.9s] ok: quick tunnel created with inspection on
+[  7.0s] connected: https://synthetic-quick-11.trycloudflare.com (inspecting=true)
+[  7.0s] ok: inspection proxy is active
+[  7.0s] ok: menu bar count is 1 while the tunnel runs
+[  7.1s] synthetic-quick-11.trycloudflare.com resolves to 104.16.230.132 (via 1.1.1.1)
+[  7.6s] POST https://synthetic-quick-11.trycloudflare.com/e2e -> 200 {"echoed":{"hello":"burrow","marker":"burrow-e2e-mv2177nh",…
+[  8.2s] ok: SQLite has the POST with status 200
+[  8.2s] ok: SQLite has the request body
+[  8.2s] ok: SQLite has the response body
+[  8.2s] ok: Authorization header was redacted before storage
+[ 10.2s] ok: request viewer lists the request
+[ 10.2s] ok: request viewer shows the (pretty-printed) response body
+[ 10.2s] ok: request detail pane is open
+[ 12.1s] ok: log viewer shows live cloudflared logs
+[ 12.2s] ok: menu bar count is back to 0 after stopping
+[ 12.2s] ok: no cloudflared process left running
+[ 12.2s] E2E PASSED
+```
+
+Notes on what the checks read:
+
+- The menu bar count comes from the title of the real `NSStatusItem` button, read on the main
+  thread through `tray-icon`'s `ns_status_item()`. The count is hidden at zero, so 0 is an empty
+  title (decisions.md §9).
+- SQLite is read with the `sqlite3` CLI.
+- The "request viewer" text is the dashboard's rendered `innerText` after the e2e harness opens
+  the Requests view and selects the newest request.
+
+## 2. Importing an existing config.yml
+
+`~/.cloudflared` holds `example.yml` (a named tunnel with four hostnames). It also has a
+`config.yml.bak`, which the scan correctly ignores. The Add sheet lists `example.yml` with its
+hostnames, and after import the tunnel shows every hostname → service mapping, parsed from its
+ingress rules.
+
+| Add sheet | Imported tunnel |
+| --- | --- |
+| ![](screenshots/01-import-sheet.png) | ![](screenshots/02-imported-config.png) |
+
+`example.yml` was **imported but never started**. That tunnel is already running on this Mac under the
+owner's own script (`cloudflared tunnel --config ~/.cloudflared/example.yml … run`, pid 48763). Burrow
+detects that case and refuses to start a second connector (decisions.md §3). The file's
+modification time and contents were unchanged after import.
+
+## 3. Running two or more tunnels at once
+
+Three quick tunnels ran at once, one with inspection on, plus traffic through the inspected one.
+The menu bar count read 3.
+
+| Menu bar | Popover |
+| --- | --- |
+| ![](screenshots/03-menu-bar-count.png) | ![](screenshots/04-popover-three-tunnels.png) |
+
+![Dashboard, dark](screenshots/05-dashboard-dark.png)
+![Requests, dark](screenshots/06-requests-dark.png)
+![Logs, dark](screenshots/07-logs-dark.png)
+
+## 4. Theme switching, light and dark dashboards
+
+The theme was switched from Dark to Light through the Appearance setting. The native window
+appearance follows the theme too, so the sidebar and popover vibrancy match.
+
+| Dark | Light |
+| --- | --- |
+| ![](screenshots/08-settings-dark.png) | ![](screenshots/09-settings-light.png) |
+| ![](screenshots/05-dashboard-dark.png) | ![](screenshots/10-dashboard-light.png) |
+| ![](screenshots/06-requests-dark.png) | ![](screenshots/11-requests-light.png) |
+| ![](screenshots/04-popover-three-tunnels.png) | ![](screenshots/12-popover-light.png) |
+
+## 5. Auto-starting tunnels
+
+`web` and `api` were marked **Start automatically**, and Burrow was quit. All cloudflared processes
+stopped with it ("after quit: 0 cloudflared processes left"). Burrow was then relaunched with no
+further input. `web` and `api` came up on their own, `docs` stayed stopped, and the menu bar read 2.
+
+| Popover after relaunch | Menu bar after relaunch |
+| --- | --- |
+| ![](screenshots/13-autostart-after-relaunch.png) | ![](screenshots/14-menu-bar-after-autostart.png) |
+
+This check found a real bug: starting tunnels from app setup panicked, because setup runs outside
+the Tokio runtime. It's fixed, and a regression test is in
+`supervisor::can_start_from_a_thread_outside_the_runtime`.
+
+## 6. Launch at login (simulated)
+
+I didn't log out, because that would end the session running the build. The release build was
+used instead, as follows:
+
+1. `make install` copied the release build to `~/Applications/Burrow.app`. In the real data folder
+   (`~/Library/Application Support/com.davidsonsns.burrow`), `example.yml` was imported (not
+   auto-started), and a `login-demo` quick tunnel to `localhost:8787` was added with **Start
+   automatically** on.
+2. `~/Applications/Burrow.app/Contents/MacOS/Burrow --login-item enable` registered the app via
+   `SMAppService.mainApp`. Its status went from `not_found` to `enabled`. System Settings → General
+   → Login Items lists Burrow under **Open at Login** (and under Background App Activity):
+
+   ![](screenshots/15-login-items.png)
+
+3. With Burrow not running, it was started the way a login item is: through LaunchServices,
+   with no arguments and detached from any terminal (`open -g ~/Applications/Burrow.app`). The
+   process tree afterwards:
+
+   ```
+   29700     1 ~/Applications/Burrow.app/Contents/MacOS/Burrow                         ← parent: /sbin/launchd
+   29714 29700 ~/Applications/Burrow.app/Contents/MacOS/Burrow --cloudflared-shim /opt/homebrew/bin/cloudflared tunnel --config …/com.davidsonsns.burrow/neutral.yml …
+   29715 29714 /opt/homebrew/bin/cloudflared tunnel --config …/com.davidsonsns.burrow/neutral.yml … --url http://localhost:8787
+   48763 48752 cloudflared tunnel --config ~/.cloudflared/example.yml … run                  ← the owner's own process, untouched
+   ```
+
+   The auto-start tunnel came up by itself. Clicking the real status item showed it connected,
+   with a count of 1:
+
+   | Menu bar | Popover (opened by clicking the status item) |
+   | --- | --- |
+   | ![](screenshots/16-login-launch-menu-bar.png) | ![](screenshots/17-login-launch-popover.png) |
+
+## 7. Crash safety and quitting
+
+- **App SIGKILLed:** `kill -9` on the app made the watchdog shim stop cloudflared within 1 s
+  ("cloudflared gone 1s after the app was SIGKILLed"). The next launch started cleanly, with no
+  "reopen windows?" prompt, because state restoration is disabled. The auto-start tunnel came
+  back.
+- **Normal quit:** `osascript -e 'quit app "Burrow"'` stopped every tunnel; 0 processes remained.
+
+## 8. No terminal needed
+
+None of the scenarios above depend on a terminal staying open:
+
+- The release app runs under `launchd` (PPID 1).
+- The tunnels are children of the app, through the shim.
+- Logs come from cloudflared's stderr pipe into SQLite.
+
+Terminals were only used to *trigger* steps (the build, `open`, the `--login-item` registration)
+and to inspect process trees.
+
+## Cleanup after verification
+
+The `login-demo` tunnel was removed from the real data folder after the checks, so no public quick
+tunnel starts at login. `example.yml` remains imported but doesn't auto-start. See the final summary
+for the state the launch-at-login setting was left in.
