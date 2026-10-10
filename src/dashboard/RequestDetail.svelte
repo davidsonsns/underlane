@@ -165,7 +165,7 @@
     font-weight: 500;
     color: var(--text-2);
     font-size: inherit;
-    word-break: break-all;
+    overflow-wrap: anywhere;
   }
   .headers td {
     padding: 3px 0;

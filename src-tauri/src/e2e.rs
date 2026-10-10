@@ -116,6 +116,7 @@ mod server {
                     Ok(mut t) => {
                         t.inspect = q.get("inspect").map(|v| v == "1").unwrap_or(false);
                         let _ = core.db.upsert_tunnel(&t);
+                        core.notify_changed();
                         reply(200, json!({"id": t.id}))
                     }
                     Err(e) => reply(500, json!({"error": e.to_string()})),
@@ -200,6 +201,7 @@ mod server {
                 let level = core.settings.read().unwrap().default_loglevel.clone();
                 let path = q.get("path").cloned().unwrap_or_default();
                 let r = burrow_core::import::import_configs(&core.db, &[std::path::PathBuf::from(path)], &level);
+                core.notify_changed();
                 reply(200, json!(r))
             }
             ("POST", "/settings") => {
@@ -212,6 +214,27 @@ mod server {
                     Err(e) => reply(500, json!({"error": e.to_string()})),
                 }
             }
+            ("POST", "/tunnel") => {
+                // Toggle flags: /tunnel?id=..&autostart=1&inspect=0
+                match core.db.tunnel(&id) {
+                    Ok(Some(mut t)) => {
+                        if let Some(v) = q.get("autostart") {
+                            t.autostart = v == "1";
+                        }
+                        if let Some(v) = q.get("inspect") {
+                            t.inspect = v == "1";
+                        }
+                        let _ = core.db.upsert_tunnel(&t);
+                        core.notify_changed();
+                        reply(200, json!(t))
+                    }
+                    _ => reply(404, json!({"error": "no such tunnel"})),
+                }
+            }
+            ("GET", "/overview") => match core.overview() {
+                Ok(o) => reply(200, serde_json::to_value(o).unwrap()),
+                Err(e) => reply(500, json!({"error": e.to_string()})),
+            },
             ("POST", "/navigate") => {
                 tray::open_dashboard(&app, q.get("view").cloned());
                 reply(200, json!({"ok": true}))

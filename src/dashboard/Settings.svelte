@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount } from "svelte";
+  import { onMount, untrack } from "svelte";
   import { slide } from "svelte/transition";
   import { revealItemInDir } from "@tauri-apps/plugin-opener";
   import { writeText } from "@tauri-apps/plugin-clipboard-manager";
@@ -20,11 +20,15 @@
   let redactText = $state("");
   let savedTimer: ReturnType<typeof setTimeout>;
 
+  // Follow changes made elsewhere (another window, the tray) as well as the initial load.
   $effect(() => {
-    if (!draft && store.overview) {
-      draft = structuredClone($state.snapshot(store.overview.settings));
-      redactText = draft.redact_headers.join(", ");
-    }
+    const s = store.overview?.settings;
+    if (!s) return;
+    const snap = structuredClone($state.snapshot(s));
+    untrack(() => {
+      draft = snap;
+      redactText = snap.redact_headers.join(", ");
+    });
   });
 
   onMount(async () => {

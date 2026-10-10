@@ -31,14 +31,25 @@ class AppStore {
     }
   }
 
+  private refreshTimer: ReturnType<typeof setTimeout> | undefined;
+  /** Coalesce bursts of change events into one refresh. */
+  scheduleRefresh() {
+    clearTimeout(this.refreshTimer);
+    this.refreshTimer = setTimeout(() => this.refresh(), 60);
+  }
+
   applyState(s: TunnelState) {
     const t = this.overview?.tunnels.find((t) => t.id === s.id);
-    if (t) t.state = s;
+    if (!t) return this.scheduleRefresh();
+    // A stopped config tunnel keeps showing the routes parsed from its file.
+    if (s.mappings.length === 0 && t.state.mappings.length && t.kind === "config") s = { ...s, mappings: t.state.mappings };
+    t.state = s;
   }
 
   async init() {
     await this.refresh();
     await listen<TunnelState>("tunnel-state", (e) => this.applyState(e.payload));
+    await listen("tunnels-changed", () => this.scheduleRefresh());
     await listen("settings-changed", (e) => {
       if (this.overview) this.overview.settings = e.payload as Overview["settings"];
       applyTheme(this.overview!.settings.theme);

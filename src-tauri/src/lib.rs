@@ -22,11 +22,27 @@ fn data_dir(app: &tauri::AppHandle) -> PathBuf {
     app.path().app_data_dir().unwrap_or_else(|_| burrow_core::config::home_dir().join(".burrow"))
 }
 
+/// CLI entry for `--login-item`. Prints the resulting status as JSON.
+pub fn login_item_cli(action: &str) -> i32 {
+    let item = match action {
+        "enable" | "on" => platform::set_login_item(true),
+        "disable" | "off" => platform::set_login_item(false),
+        _ => platform::login_item(),
+    };
+    println!("{}", serde_json::to_string(&item).unwrap_or_default());
+    if item.message.as_deref().map(|m| m.starts_with("macOS refused")).unwrap_or(false) {
+        1
+    } else {
+        0
+    }
+}
+
 pub fn run() {
     tracing_subscriber::fmt()
         .with_env_filter(tracing_subscriber::EnvFilter::try_from_env("BURROW_LOG").unwrap_or_else(|_| "info".into()))
         .init();
 
+    platform::disable_state_restoration();
     let isolated = std::env::var_os("BURROW_DATA_DIR").is_some();
     let mut builder = tauri::Builder::default();
     if !isolated {

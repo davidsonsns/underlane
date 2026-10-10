@@ -11,6 +11,7 @@ let owner = args[1], out = args[2]
 let minW = args.count > 3 ? Double(args[3]) ?? 0 : 0
 let maxW = args.count > 4 ? Double(args[4]) ?? 1e9 : 1e9
 let list = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as! [[String: Any]]
+
 let candidates = list.filter { w in
     guard (w[kCGWindowOwnerName as String] as? String) == owner,
           let b = w[kCGWindowBounds as String] as? [String: Double],

@@ -99,6 +99,27 @@ pub fn status_item_title<R: Runtime>(app: &AppHandle<R>) -> Option<String> {
     }
 }
 
+fn theme_of(theme: &str) -> Option<tauri::Theme> {
+    match theme {
+        "light" => Some(tauri::Theme::Light),
+        "dark" => Some(tauri::Theme::Dark),
+        _ => None,
+    }
+}
+
+/// Native window appearance follows the app theme, so vibrancy materials match the CSS.
+pub fn apply_window_theme<R: Runtime>(app: &AppHandle<R>, theme: &str) {
+    for w in app.webview_windows().values() {
+        let _ = w.set_theme(theme_of(theme));
+    }
+}
+
+fn current_theme<R: Runtime>(app: &AppHandle<R>) -> Option<tauri::Theme> {
+    let core = app.try_state::<std::sync::Arc<crate::state::Core>>()?;
+    let t = core.settings.read().unwrap().theme.clone();
+    theme_of(&t)
+}
+
 fn popover<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<WebviewWindow<R>> {
     if let Some(w) = app.get_webview_window(POPOVER) {
         return Ok(w);
@@ -114,6 +135,7 @@ fn popover<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<WebviewWindow<R>> {
         .visible(false)
         .shadow(true)
         .visible_on_all_workspaces(true)
+        .theme(current_theme(app))
         .effects(WindowEffectsConfig { effects: vec![Effect::Popover], state: Some(EffectState::Active), radius: Some(12.0), color: None, ..Default::default() })
         .build()?;
     let w2 = w.clone();
@@ -166,6 +188,7 @@ pub fn open_dashboard<R: Runtime>(app: &AppHandle<R>, view: Option<String>) {
         .inner_size(1080.0, 700.0)
         .min_inner_size(820.0, 520.0)
         .center()
+        .theme(current_theme(app))
         .transparent(true)
         .effects(WindowEffectsConfig { effects: vec![Effect::Sidebar], state: Some(EffectState::FollowsWindowActiveState), radius: None, color: None, ..Default::default() });
     #[cfg(target_os = "macos")]

@@ -291,3 +291,21 @@ fn reaps_orphans_marked_with_the_data_dir() {
     unrelated.kill().unwrap();
     assert!(std::fs::read_dir(f.data.join("run")).unwrap().next().is_none(), "pidfiles cleaned");
 }
+
+#[test]
+fn can_start_from_a_thread_outside_the_runtime() {
+    // App setup and tray menu callbacks run on the main thread, outside Tokio.
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    let f = fake("ok");
+    let (sup, states, _) = rt.block_on(async { supervisor(&f, |_| {}) });
+    std::thread::spawn({
+        let sup = sup.clone();
+        move || sup.start(RunSpec { tunnel: tunnel(TunnelKind::Quick), token: None })
+    })
+    .join()
+    .unwrap();
+    rt.block_on(async {
+        wait_status(&states, Status::Connected).await;
+        sup.stop("tun-1").await;
+    });
+}

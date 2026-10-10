@@ -15,8 +15,20 @@ mod imp {
     use super::LoginItem;
     use objc2::rc::Retained;
     use objc2::runtime::ProtocolObject;
-    use objc2_foundation::{NSActivityOptions, NSObjectProtocol, NSProcessInfo, NSString};
+    use objc2_foundation::{NSActivityOptions, NSObjectProtocol, NSProcessInfo, NSString, NSUserDefaults};
     use objc2_service_management::{SMAppService, SMAppServiceStatus};
+
+    /// A menu bar app has nothing to restore. Without this, a crash or force quit makes macOS
+    /// show a modal "reopen windows?" prompt at the next launch, which blocks startup.
+    pub fn disable_state_restoration() {
+        let defaults = NSUserDefaults::standardUserDefaults();
+        defaults.setBool_forKey(true, &NSString::from_str("ApplePersistenceIgnoreState"));
+        defaults.setBool_forKey(false, &NSString::from_str("NSQuitAlwaysKeepsWindows"));
+        if let Some(home) = std::env::var_os("HOME") {
+            let saved = std::path::Path::new(&home).join("Library/Saved Application State/com.davidsonsns.burrow.savedState");
+            let _ = std::fs::remove_dir_all(saved);
+        }
+    }
 
     fn describe(status: SMAppServiceStatus) -> (&'static str, bool) {
         match status {
@@ -82,6 +94,8 @@ mod imp {
 mod imp {
     use super::LoginItem;
 
+    pub fn disable_state_restoration() {}
+
     pub fn login_item() -> LoginItem {
         LoginItem { status: "unsupported".into(), enabled: false, message: Some("Launch at login uses the autostart plugin on this platform.".into()) }
     }
@@ -98,4 +112,4 @@ mod imp {
     }
 }
 
-pub use imp::{login_item, set_login_item, Activity};
+pub use imp::{disable_state_restoration, login_item, set_login_item, Activity};

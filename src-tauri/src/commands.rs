@@ -63,7 +63,9 @@ pub fn scan_default(core: CoreState<'_>) -> Res<Vec<Candidate>> {
 pub fn import_paths(core: CoreState<'_>, paths: Vec<String>) -> Res<ImportReport> {
     let level = core.settings.read().unwrap().default_loglevel.clone();
     let paths: Vec<PathBuf> = paths.into_iter().map(PathBuf::from).collect();
-    Ok(import::import_configs(&core.db, &paths, &level))
+    let report = import::import_configs(&core.db, &paths, &level);
+    core.notify_changed();
+    Ok(report)
 }
 
 #[tauri::command]
@@ -79,6 +81,7 @@ pub fn add_quick_tunnel(core: CoreState<'_>, name: String, origin: String, proje
         t.inspect = true;
         core.db.upsert_tunnel(&t).map_err(err)?;
     }
+    core.notify_changed();
     Ok(t.id)
 }
 
@@ -93,6 +96,7 @@ pub fn add_token_tunnel(core: CoreState<'_>, name: String, token: String, projec
     let t = import::add_simple(&core.db, TunnelKind::Token, &name, &project, None, &level).map_err(err)?;
     tokens::set(&t.id, &token).map_err(|e| format!("Couldn't save the token in the keychain: {e}"))?;
     core.db.kv_set(&format!("token:{}", t.id), "1").map_err(err)?;
+    core.notify_changed();
     Ok(t.id)
 }
 
@@ -147,6 +151,7 @@ pub fn update_tunnel(core: CoreState<'_>, id: String, patch: TunnelPatch) -> Res
     if needs_restart {
         core.restart_if_running(&id).map_err(err)?;
     }
+    core.notify_changed();
     Ok(())
 }
 
@@ -159,6 +164,7 @@ pub async fn delete_tunnel(core: CoreState<'_>, id: String) -> Res<()> {
     core.db.delete_tunnel(&id).map_err(err)?;
     core.states.lock().unwrap().remove(&id);
     let _ = std::fs::remove_file(core.data_dir.join("derived").join(format!("{id}.yml")));
+    core.notify_changed();
     Ok(())
 }
 
@@ -167,7 +173,9 @@ pub fn rename_project(core: CoreState<'_>, id: String, name: String) -> Res<()> 
     if name.trim().is_empty() {
         return Err("A project needs a name.".into());
     }
-    core.db.rename_project(&id, name.trim()).map_err(err)
+    core.db.rename_project(&id, name.trim()).map_err(err)?;
+    core.notify_changed();
+    Ok(())
 }
 
 #[tauri::command]

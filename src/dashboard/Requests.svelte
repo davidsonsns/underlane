@@ -182,7 +182,7 @@
   .split {
     flex: 1;
     display: grid;
-    grid-template-columns: minmax(380px, 1fr) minmax(360px, 1.1fr);
+    grid-template-columns: minmax(420px, 1.25fr) minmax(340px, 1fr);
     min-height: 0;
   }
   .table-wrap {
@@ -194,10 +194,10 @@
   .thead,
   .tr {
     display: grid;
-    grid-template-columns: 56px 1fr 52px 64px 64px 64px;
-    gap: 8px;
+    grid-template-columns: 46px minmax(90px, 1fr) 44px 56px 56px 54px;
+    gap: 6px;
     align-items: center;
-    padding: 0 14px;
+    padding: 0 12px;
   }
   .thead {
     height: 28px;

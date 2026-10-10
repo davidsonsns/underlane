@@ -206,7 +206,6 @@
         <span class="mono path-text selectable" title={tunnel.config_path}>{tunnel.config_path}</span>
         <button class="icon-btn" title="Show in Finder" aria-label="Show in Finder" onclick={() => revealItemInDir(tunnel.config_path!)}><Icon name="folder" /></button>
       </div>
-      <p class="muted small">Burrow reads this file and never changes it. Edits are picked up the next time the tunnel starts.</p>
     {/if}
     {#if tunnel.kind === "quick"}
       <div class="row">
@@ -214,7 +213,6 @@
         <input class="field mono" placeholder={tunnel.origin_url ?? ""} bind:value={originDraft}
           onkeydown={(e) => { if (e.key === "Enter" && originDraft.trim()) { patch({ originUrl: originDraft }); originDraft = ""; } }} />
       </div>
-      <p class="muted small">Quick tunnels get a new random hostname every time they start, and don't support server-sent events.</p>
     {/if}
     {#if tunnel.kind === "token"}
       <div class="row">
@@ -226,6 +224,12 @@
     {/if}
   </div>
 </section>
+
+{#if tunnel.kind === "config"}
+  <p class="muted small">Burrow reads this file and never changes it. Edits are picked up the next time the tunnel starts.</p>
+{:else if tunnel.kind === "quick"}
+  <p class="muted small">Quick tunnels get a new random hostname every time they start, and don't support server-sent events.</p>
+{/if}
 
 <section class="links">
   {#if tunnel.inspect}<button class="btn ghost" onclick={() => api.openDashboard(`requests:${tunnel.id}`)}><Icon name="list" size={13} /> View requests</button>{/if}

@@ -176,11 +176,15 @@ pub struct Supervisor {
     cfg: SupervisorConfig,
     sink: EventSink,
     runs: Mutex<HashMap<String, RunHandle>>,
+    /// Captured at construction so tunnels can be started from any thread (UI callbacks,
+    /// app setup), not just from inside the runtime.
+    rt: tokio::runtime::Handle,
 }
 
 impl Supervisor {
+    /// Must be called from within a Tokio runtime.
     pub fn new(cfg: SupervisorConfig, sink: EventSink) -> Arc<Self> {
-        Arc::new(Supervisor { cfg, sink, runs: Mutex::new(HashMap::new()) })
+        Arc::new(Supervisor { cfg, sink, runs: Mutex::new(HashMap::new()), rt: tokio::runtime::Handle::current() })
     }
 
     pub fn config(&self) -> &SupervisorConfig {
@@ -209,7 +213,7 @@ impl Supervisor {
         }
         let (tx, rx) = mpsc::unbounded_channel();
         let id = spec.tunnel.id.clone();
-        let task = tokio::spawn(run(spec, self.cfg.clone(), self.sink.clone(), rx));
+        let task = self.rt.spawn(run(spec, self.cfg.clone(), self.sink.clone(), rx));
         runs.insert(id, RunHandle { tx, task });
     }
 

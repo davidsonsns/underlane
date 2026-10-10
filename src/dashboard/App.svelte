@@ -25,6 +25,7 @@
       adding = true;
       return;
     }
+    adding = false;
     if (["tunnels", "requests", "logs", "settings"].includes(v)) view = v as View;
     focusId = id || null;
   }

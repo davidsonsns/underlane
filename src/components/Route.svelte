@@ -19,7 +19,7 @@
       {#if pulse > 0}<span class="pulse"></span>{/if}
     {/key}
   </span>
-  <span class="svc mono">{shortService(service)}</span>
+  <span class="svc mono">{shortService(service, compact)}</span>
 </span>
 
 <style>
@@ -82,6 +82,10 @@
   }
   .compact {
     font-size: 11px;
+  }
+  .compact .conduit {
+    flex-basis: 14px;
+    max-width: 26px;
   }
   @media (prefers-reduced-motion: reduce) {
     .pulse { display: none; }

@@ -28,6 +28,8 @@ describe("format", () => {
     ] } } as never;
     expect(publicUrl(base)).toBe("https://app.example.com");
     expect(shortService("http://localhost:4000/")).toBe("localhost:4000");
+    expect(shortService("http://127.0.0.1:51112", true)).toBe(":51112");
+    expect(shortService("https://api.internal:8443", true)).toBe("api.internal:8443");
   });
   it("builds curl commands with quoting and without edge headers", () => {
     const cmd = toCurl({

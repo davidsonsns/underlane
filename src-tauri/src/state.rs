@@ -127,6 +127,33 @@ impl Core {
         self.states.lock().unwrap().get(id).cloned().unwrap_or_else(|| TunnelState::stopped(id))
     }
 
+    /// State plus the routes parsed from the config file when the tunnel isn't running, so a
+    /// stopped tunnel still shows where it would send traffic.
+    fn state_with_routes(&self, t: &Tunnel) -> TunnelState {
+        let mut s = self.state_of(&t.id);
+        if s.mappings.is_empty() && t.kind == TunnelKind::Config {
+            if let Some(c) = t.config_path.as_deref().and_then(|p| burrow_core::config::TunnelConfig::load(std::path::Path::new(p)).ok()) {
+                s.mappings = c
+                    .ingress
+                    .iter()
+                    .map(|r| burrow_core::supervisor::RouteMapping {
+                        hostname: r.hostname.clone(),
+                        path: r.path.clone(),
+                        service: r.service.clone(),
+                        inspected: false,
+                        note: None,
+                    })
+                    .collect();
+            }
+        }
+        s
+    }
+
+    /// Tell every window that the tunnel list or a tunnel's definition changed.
+    pub fn notify_changed(&self) {
+        let _ = self.handle.emit("tunnels-changed", ());
+    }
+
     pub fn active_count(&self) -> usize {
         self.states.lock().unwrap().values().filter(|s| s.status.is_active()).count()
     }
@@ -140,7 +167,7 @@ impl Core {
             .into_iter()
             .map(|t| TunnelView {
                 project_name: names.get(&t.project_id).cloned().unwrap_or_default(),
-                state: self.state_of(&t.id),
+                state: self.state_with_routes(&t),
                 has_token: t.kind == TunnelKind::Token && self.db.kv_get(&format!("token:{}", t.id)).ok().flatten().is_some(),
                 tunnel: t,
             })
@@ -205,6 +232,7 @@ impl Core {
         self.db.save_settings(&s)?;
         *self.capture.write().unwrap() = capture_options(&s);
         *self.settings.write().unwrap() = s.clone();
+        crate::tray::apply_window_theme(&self.handle, &s.theme);
         let _ = self.handle.emit("settings-changed", &s);
         Ok(())
     }

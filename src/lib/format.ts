@@ -38,8 +38,14 @@ export function formatUptime(startedAt: number | null, now = Date.now()): string
 }
 
 /** `http://localhost:4000` -> `localhost:4000`; keeps other schemes visible. */
-export function shortService(service: string): string {
-  return service.replace(/^https?:\/\//, "").replace(/\/$/, "");
+export function shortService(service: string, compact = false): string {
+  const s = service.replace(/^https?:\/\//, "").replace(/\/$/, "");
+  // In tight spaces a local origin is just its port.
+  if (compact) {
+    const m = s.match(/^(?:localhost|127\.0\.0\.1|\[::1\]):(\d+)$/);
+    if (m) return `:${m[1]}`;
+  }
+  return s;
 }
 
 /** Public URL a user most likely wants: the quick-tunnel URL or the first concrete hostname. */
