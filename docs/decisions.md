@@ -10,7 +10,9 @@ icon is an abstract arch/burrow mark, not the Cloudflare cloud. Bundle id: `com.
 
 ## 2. Stack: Tauri 2 (Rust core + Svelte 5 / TypeScript UI)
 
-- Tauri scored highest (31/35) in research.md §1. Swift scored 30, Electron 28, Wails v3 27.
+- Tauri and Swift tie at 30/35 in research.md §1 after review corrected Tauri's memory score.
+  Electron scores 28 and Wails v3 27. **The tie is broken by weighting, not the sum:**
+  cross-platform reach outweighs the last bit of macOS polish for this owner.
 - **The owner plans a Windows/Linux release later** (said during research). That rules out native
   Swift, which would mean a rewrite, and moves cross-platform reach from "nice to have" to a real
   weight in the score.
@@ -34,10 +36,25 @@ no Go toolchain here; fewer reference tray apps).
   serve 502s for inspected traffic. Also, live stderr capture, status, and backoff restarts are
   much simpler and more accurate in-process, nothing gets installed in
   `~/Library/LaunchAgents`, and the same model works on Windows/Linux.
-- Crash safety: each child's pid goes to `<data>/run/<tunnel-id>.pid`. On launch, leftover pids
-  whose command line contains Burrow's data directory are killed before anything starts, so a crash
-  never leaves orphaned cloudflared processes. Children are also spawned in their own process group,
-  which lets the app kill the whole group.
+- Crash safety (revised after review):
+  - Each cloudflared is launched through a **watchdog shim**, `Burrow --cloudflared-shim`. The shim
+    kills cloudflared when the app's pipe closes, so a crashed or force-quit app takes its tunnels
+    down within seconds.
+  - Pids are also written to `<data>/run/<tunnel-id>.pid`, and leftovers are reaped on the next
+    launch.
+  - Every launch mode runs from a file in `<data>/` (a derived copy, even with inspection off). The
+    command line therefore always contains Burrow's data directory, and that marker is how
+    ownership is checked before killing anything.
+  - Each child runs in its own process group.
+- **Tunnels already running outside Burrow:** before starting a config tunnel, Burrow scans for
+  cloudflared processes that reference the same config path or tunnel UUID and aren't its own. If
+  it finds one, it refuses to start and shows "already running outside Burrow (pid N)". A second
+  connector would split traffic, so captures would miss requests and Stop wouldn't really stop the
+  tunnel. (The owner's `example.yml` is running like this through a script right now.)
+- Shutdown: Burrow passes `--grace-period 4s`, and on quit it SIGTERMs every tunnel and waits for
+  them synchronously before exiting.
+- App Nap: while any tunnel runs, Burrow holds an `NSProcessInfo` activity (user-initiated, idle
+  sleep allowed), so timers and the proxy aren't throttled.
 - Trade-off accepted: tunnels are down while the app isn't running. A user who needs
   24/7 tunnels independent of a GUI should use `cloudflared service install`, and the README says so.
 
@@ -50,22 +67,39 @@ no Go toolchain here; fewer reference tray apps).
   require the Cloudflare API (out of scope for v1). The mapping is still shown from the metrics
   `/config` endpoint while the tunnel runs. Infeasible as written, so this is the closest
   workable alternative.
-- WebSocket and SSE are passed through with metadata only.
+- WebSocket and SSE are passed through with metadata only. They're recorded when they open and
+  updated when they close.
+- The upstream leg is always HTTP/1.1. Rules with `http2Origin: true` or `matchSNItoHost: true`, and
+  `unix:` services, are **not inspected**. They keep their original service, and the UI says why.
+  `ws://`/`wss://` services are inspected.
+- cloudflared runs with its working directory set to the original config's directory, because
+  relative paths resolve against the CWD. Derived configs get absolute paths resolved the same way.
 - If a proxy listener can't be (re)bound, the tunnel is restarted **fail-open** with its original
   config and a warning, putting traffic before capture.
 - Body capture is off by default. When on, each body is capped at 1 MB (configurable) and marked
-  truncated past the cap. `Authorization`, `Cookie`, `Set-Cookie`, and `Proxy-Authorization`, plus
-  user-configured headers, are redacted **before** storage. Redaction happens in the proxy, so
-  secrets never reach SQLite.
+  truncated past the cap.
+- Redaction happens before storage:
+  - Headers: `Authorization`, `Proxy-Authorization`, `Cookie`, `Set-Cookie`,
+    `Cf-Access-Jwt-Assertion`, `Cf-Access-Client-Secret`, `X-Api-Key` and `X-Auth-Token`, plus
+    user-configured names.
+  - Query parameters: `token`, `access_token`, `api_key`, `apikey`, `key`, `code`, `sig`,
+    `signature`, `password` and `secret`, plus user-configured names. This applies to captured
+    paths and to cloudflared log messages, since debug lines contain full URLs.
+- **What isn't guaranteed:** bodies are stored as sent, so an origin that echoes a credential into
+  its response body, or a form that posts a password, ends up in SQLite. The Settings screen says so
+  next to the capture toggle. "Copy as curl" uses the redacted values.
+- Captures go through a bounded channel to a batched writer and are dropped, with a counter, rather
+  than slowing traffic. A 64 MB global in-flight body budget bounds memory.
 
 ## 5. Health and status
 
-- `--metrics 127.0.0.1:<port>`: the app picks a free port per tunnel run.
+- `--metrics 127.0.0.1:0`: cloudflared picks a free port and Burrow reads it from the
+  `Starting metrics server on 127.0.0.1:N/metrics` log line. This avoids a pick-then-bind race.
 - `/ready` is polled every 2 s. Status meanings:
   - **starting**: the process is alive and `/ready` hasn't returned 200 yet.
   - **connected**: `/ready` returns 200.
-  - **degraded**: the tunnel was connected, but `/ready` now returns non-200 or the process stopped
-    answering.
+  - **degraded**: the tunnel was connected, but `/ready` has now failed on **two consecutive**
+    polls. The debounce keeps a brief reconnect from flapping the status.
   - **crashed**: the process exited when the user didn't ask it to.
   - **stopped**: the user stopped it.
 - Quick tunnels get their public URL from `/quicktunnel`. The log banner is a fallback.
@@ -88,7 +122,9 @@ no Go toolchain here; fewer reference tray apps).
 - Tables: `settings`, `projects`, `tunnels`, `logs`, `requests`.
 - A background sweep every 10 minutes (and once at startup) deletes `logs` and `requests` older
   than the TTL (default 7 days). It then enforces the size cap (default 256 MB) by deleting the
-  oldest rows in batches and running `PRAGMA incremental_vacuum`.
+  oldest rows in batches. It then runs `PRAGMA incremental_vacuum` (the database is created with
+  `auto_vacuum = INCREMENTAL` before any table exists) and `PRAGMA wal_checkpoint(TRUNCATE)`, so the
+  file really shrinks.
 
 ## 8. Validation messages
 
@@ -100,6 +136,12 @@ tunnel, and also on import. Known messages map to plain language, for example:
 
 Unknown messages are shown verbatim.
 
+## 8a. Single-origin configs
+
+Single-origin configs (a top-level `url:`, no `ingress:`) fail `ingress validate` even though
+cloudflared can run them. For these files Burrow skips the validate step and shows the single
+mapping.
+
 ## 9. Menu bar
 
 - A monochrome **template** icon, so macOS tints it for light, dark, and highlighted states.
@@ -109,8 +151,10 @@ Unknown messages are shown verbatim.
 - Left click toggles a **popover** (a borderless, always-on-top webview positioned under the icon
   with `tauri-plugin-positioner` `TrayCenter`; it hides on blur). Right click shows a native menu
   with Open Dashboard, Start All, Stop All, and Quit, so there's always a non-webview path.
-- Burrow runs as an accessory app with no Dock icon. The dashboard window is a normal window, and
-  closing it hides it.
+- Burrow runs as an accessory app with no Dock icon. The dashboard window is a normal window that is
+  **destroyed on close**, which frees its WebContent process. The popover is built on first use.
+- "Copy public URL" uses the quick tunnel URL, or the first non-wildcard hostname, as `https://`.
+  The dashboard lists every hostname with its own copy and open buttons.
 
 ## 10. Launch at login
 
@@ -118,10 +162,28 @@ Unknown messages are shown verbatim.
   the native mechanism Apple recommends on macOS 13+. Its status, including "requires approval",
   is shown in Settings.
 - Other platforms (future): `tauri-plugin-autostart`.
+- Ad-hoc signing risk: Background Task Management identifies login items by code signature, and an
+  ad-hoc signature changes on every rebuild. Register only the copy installed at
+  `~/Applications/Burrow.app` (`make install`), never a bundle inside `target/`. If registration
+  keeps failing for an ad-hoc build, fall back to a LaunchAgent plist (what `tauri-plugin-autostart`
+  does) and record that here.
 - Verification without logging out: register, confirm with `sfltool dumpbtm`/System Settings, quit
   the app, then launch it the way the login session does (`open -g`, no arguments) and check that
   auto-start tunnels come up. The steps are recorded in docs/screenshots. Logging out would end the
   session running the build agent.
+
+## 10a. Tokens
+
+Tokens for token tunnels are stored in the macOS Keychain (the `keyring` crate, which also covers
+Windows Credential Manager and the Secret Service later). They're passed to cloudflared through
+the `TUNNEL_TOKEN` environment variable, never on the command line. Trade-off: an ad-hoc-signed
+rebuild may make the Keychain ask once for access again.
+
+## 10b. Projects
+
+On import, a tunnel is grouped by its config's folder. A file at `<dir>/.cloudflared/x.yml` or
+`<dir>/x.yml` goes to the project named `<dir>`'s folder name, and files directly in
+`~/.cloudflared` go to **Personal**. Projects can be renamed, and tunnels can be moved between them.
 
 ## 11. cloudflared discovery
 
@@ -132,7 +194,8 @@ Discovery checks, in order:
    get a minimal `PATH`.
 3. `/opt/homebrew/bin`, `/usr/local/bin`, `~/.local/bin`, `/usr/bin`.
 
-The version comes from `cloudflared --version`. If none is found, the UI shows
+The login-shell lookup has a 3 s timeout, so a slow shell profile can't hang discovery. The version
+comes from `cloudflared --version`. If none is found, the UI shows
 `brew install cloudflared` with a copy button and a link to Cloudflare's downloads page.
 
 ## 12. Build and test
@@ -157,3 +220,32 @@ starts a loopback-only control server. The endpoints are:
 
 The control server is compiled in only with the `e2e` cargo feature, so release builds made with
 `make build` don't contain it.
+
+## 14. Review outcomes (research phase)
+
+The research phase was reviewed by opus-5.5 and gpt-6-astra (Codex). Accepted findings and where
+they landed:
+
+| Finding | Source | Resolution |
+| --- | --- | --- |
+| Children survive an app crash; docs contradicted themselves | both | Watchdog shim plus pidfile reap, and the docs were corrected (§3, research §3.7) |
+| Uninspected named tunnels weren't identifiable as Burrow's | both | Always run from a file in the data dir (§3) |
+| The same tunnel already running outside Burrow | opus | Detect it and refuse, with an explanation (§3) |
+| Compressed bodies unreadable | opus | Raw storage, truncation-tolerant decode at display (research §3.3.1) |
+| E2E DNS/NXDOMAIN flakiness, 429s | opus | e2e polls 1.1.1.1, then uses `curl --resolve`, retries with a budget and a marker (README) |
+| h2 upstream breaks WebSocket/Host; `http2Origin`, `matchSNItoHost`, `tlsTimeout` | both | HTTP/1.1 upstream; those rules aren't inspected; `tlsTimeout` is applied (§4) |
+| Relative paths resolve against the CWD | both | Spawn with CWD = config dir, absolutize the same way, credentials preflight (§4) |
+| `unix:`/`ws:` services | opus | ws/wss inspected; unix not inspected in v1 (§4) |
+| Query strings and other secrets in URLs/logs | both | Query-param redaction, a wider header list, honest guarantee wording (§4) |
+| Memory/back-pressure | opus | Bounded channel, drop counter, 64 MB in-flight budget (§4) |
+| `panic = abort` would void containment | opus | Release profile keeps unwind (research §3.7) |
+| Webview memory claim wrong | opus | Score corrected, dashboard destroyed on close (§2, §9) |
+| App Nap; 30 s grace vs. 5 s kill | opus | NSProcessInfo activity; `--grace-period 4s` (§3) |
+| SMAppService with ad-hoc signing | opus | Register the `~/Applications` copy; LaunchAgent fallback (§10) |
+| Metrics port race; degraded flapping | opus | `--metrics 127.0.0.1:0` + log parse; two-strike debounce (§5) |
+| `auto_vacuum` / WAL size | both | `auto_vacuum=INCREMENTAL` at creation + `wal_checkpoint(TRUNCATE)` (§7) |
+| E2E reads internal state, not the menu bar | opus | e2e reads the real `NSStatusItem` button title through the control server (§13) |
+
+Not adopted: a Unix-socket proxy listener instead of loopback TCP (opus L3). Ports are held for the
+life of a run and reused across cloudflared restarts, which closes the rebind window. A socket
+listener can come later.

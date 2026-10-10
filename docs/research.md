@@ -31,14 +31,15 @@ Takeaway: macOS-only menu bar utilities are almost always Swift. Cross-platform 
 | Run and supervise child processes, capture stdout/stderr | **5.** `tokio::process` gives async pipes, kill-on-drop, exit status, process groups. The inspecting proxy (hyper) can live in the same Rust core. | **4.** `Process` + `Pipe` work. A streaming HTTP proxy needs SwiftNIO (heavier, but solid). | **4.** Node `child_process` is easy, and Node's `http` can proxy, but everything competes with the UI event loop. | **5.** Go `os/exec` and `net/http/httputil.ReverseProxy` are excellent here. |
 | Login item / auto-start | **4.** `tauri-plugin-autostart` uses a LaunchAgent plist or AppleScript on macOS ([plugin docs](https://v2.tauri.app/plugin/autostart)) and the registry or XDG on Windows/Linux. The modern `SMAppService.mainApp` is reachable through [`objc2-service-management`](https://docs.rs/crate/objc2-service-management/latest) (0.3.x) or [`smappservice-rs`](https://docs.rs/smappservice-rs). | **5.** `SMAppService.mainApp.register()`, [macOS 13+](https://developer.apple.com/documentation/servicemanagement/smappservice/mainapp.md). | **5.** `app.setLoginItemSettings` defaults to `type: 'mainAppService'` on macOS ([docs](https://www.electronjs.org/docs/latest/api/app)). | **3.** No first-party API, so ServiceManagement needs cgo bindings. |
 | Animation and theming | **5.** CSS transitions, Svelte `animate:flip`/`transition:`, `prefers-color-scheme`, `prefers-reduced-motion`. | **5.** SwiftUI animations, `accessibilityReduceMotion`. | **5.** Same as Tauri (Chromium). | **5.** Same as Tauri (webview). |
-| Idle memory | **4.** Reported ~30–50 MB for small apps ([comparison](https://devtoolpicks.com/blog/tauri-vs-electron-indie-hackers-2026)). The webview process is shared with the system WebKit. [Measurement caveats](https://github.com/tauri-apps/tauri/issues/5889) apply. | **5.** Typically 15–40 MB. Lightest. | **2.** 150–300 MB reported, because it bundles Chromium + Node (same sources; numbers depend on whether shared memory is counted). | **4.** Similar to Tauri (system webview). |
+| Idle memory | **3.** Reported ~30–50 MB for small apps ([comparison](https://devtoolpicks.com/blog/tauri-vs-electron-indie-hackers-2026)), but every WKWebView window gets its own WebContent, Networking and GPU helper processes, so a live popover plus a dashboard costs more. [Measurement caveats](https://github.com/tauri-apps/tauri/issues/5889) apply. Mitigation: destroy the dashboard window on close and build the popover lazily. | **5.** Typically 15–40 MB. Lightest. | **2.** 150–300 MB reported, because it bundles Chromium + Node (same sources; numbers depend on whether shared memory is counted). | **4.** Similar to Tauri (system webview). |
 | Signing / notarization effort | **4.** `tauri build` signs and notarizes given `APPLE_SIGNING_IDENTITY` and notary credentials. One binary, no helpers. | **5.** Xcode does it end to end. | **3.** Works via electron-builder, but the Electron helper apps and entitlements make it fiddlier. | **3.** Manual `codesign`/`notarytool` scripting. |
 | Cross-platform reach | **5.** macOS, Windows, Linux from one codebase. | **1.** macOS only. A Windows/Linux port is a rewrite. | **5.** All three. | **4.** All three (beta). |
-| **Total (of 35)** | **31** | **30** | **28** | **27** |
+| **Total (of 35)** | **30** | **30** | **28** | **27** |
 
 ### Recommendation
 
-**Tauri 2.** The deciding factors:
+**Tauri 2.** Tauri and Swift tie on the raw sum (30–30), so the sum doesn't decide it. The weighting
+does. The deciding factors:
 
 1. The owner plans to ship Windows and Linux later. A Swift app would have to be rewritten. With
    Tauri the core (supervision, config parsing, inspecting proxy, SQLite) is a plain Rust crate
@@ -50,7 +51,11 @@ Takeaway: macOS-only menu bar utilities are almost always Swift. Cross-platform 
    `set_title`, a popover anchored to the icon, `SMAppService` through objc2 bindings, and no Dock
    icon (`ActivationPolicy::Accessory`).
 
-Swift came within a point, and on macOS polish alone it would win. Electron loses on idle memory
+On macOS polish alone, Swift would win. A hybrid (a SwiftUI shell over a shared Rust core via
+UniFFI) was also considered and rejected for v1: it means two UI codebases as soon as Windows/Linux
+ship. Future platforms need two adjustments. Windows has no tray title, and Linux gets no tray
+click events (menu only), so the count will be drawn into the icon there, and the native tray menu
+is kept complete. Electron loses on idle memory
 for an always-on utility. Wails v3 is still in beta.
 
 ---
@@ -190,6 +195,22 @@ edge ─▶ cloudflared ──(derived config: service = http://127.0.0.1:P_i)�
 - The record is written when the response body finishes. If either side aborts, the record is
   written with an `error` note and whatever was captured.
 
+### 3.3.1 Compressed bodies
+
+The edge adds `Accept-Encoding: gzip` to origin requests even when the client didn't send it
+(observed). Real origins therefore often answer with gzip or br. The proxy stores the **raw** bytes
+plus `Content-Encoding`. The UI decodes gzip, deflate and br at display time with a streaming
+decoder that tolerates truncation: a 1 MB-truncated gzip stream still shows its decodable prefix.
+The UI shows a "decoded" or "truncated" badge, and a test covers a gzip origin.
+
+### 3.3.2 Memory and back-pressure
+
+Captured records go to a **bounded** channel feeding one batched SQLite writer. When the writer
+falls behind, records are dropped (traffic never waits on storage) and the drop count is shown in
+the UI. A global in-flight budget (64 MB of body bytes across all open exchanges) stops storing
+bytes past the budget, and those records are marked truncated. This bounds memory even at the
+quick-tunnel limit of 200 concurrent requests.
+
 ### 3.4 WebSockets and SSE
 
 - **WebSocket:** an `Upgrade: websocket` request is forwarded with its upgrade headers. On `101`
@@ -213,9 +234,29 @@ proxy:
 | `httpHostHeader` | cloudflared still sets it on the request to the proxy. The proxy forwards Host unchanged. |
 | `connectTimeout` | proxy (upstream connect timeout); also kept for cloudflared → proxy |
 | `disableChunkedEncoding`, `keepAlive*`, `tcpKeepAlive`, `noHappyEyeballs`, `proxyType`, `access` | stay in the derived config for cloudflared → proxy |
-| `http2Origin` | removed from the derived rule (the proxy speaks HTTP/1.1 to cloudflared). The proxy negotiates h2 upstream through ALPN when the origin offers it. |
+| `tlsTimeout` | proxy (TLS handshake timeout on the upstream leg) |
+| `http2Origin: true` | **rule is not inspected**: it keeps its original service, and the UI says why. gRPC and h2-only origins need h2 and trailers end to end. Translating them isn't worth the risk in v1. |
+| `matchSNItoHost: true` | **rule is not inspected**: per-request SNI from Host can't be expressed with a pooled upstream connector without changing behavior. |
 
-Non-inspected rules keep their `originRequest` exactly as written.
+The proxy always speaks **HTTP/1.1 upstream**, exactly like cloudflared does when `http2Origin` is
+false, so the WebSocket `Upgrade`/`101` path and Host-based routing behave the same. Top-level
+`originRequest` values are merged with rule-level ones (the rule wins) before being applied.
+`keepAlive*`, `tcpKeepAlive` and `noHappyEyeballs` now only govern the loopback hop. The proxy's
+upstream client uses its own defaults: a 90 s idle pool and happy-eyeballs fallback. This is
+documented as a known difference.
+
+Services: `http://`, `https://`, `ws://` and `wss://` are inspectable (`ws`/`wss` map to
+`http`/`https`). `unix:` / `unix+tls:` sockets are not inspected in v1 and keep their original
+service. Non-inspected rules keep their `originRequest` exactly as written.
+
+**Relative paths.** cloudflared resolves a relative `credentials-file` (and other paths) against
+the **process working directory**, not the YAML file's directory (verified by the reviewers against
+cloudflared source and behavior). Burrow always spawns cloudflared, for validation and every run,
+with its working directory set to the **original config's directory**. It also writes absolute
+paths, resolved against that same directory, into the derived file. The original and derived
+configs therefore resolve to identical files. A preflight check shows a clear error if the
+credentials file doesn't exist, or if its `TunnelID` doesn't match a UUID in `tunnel:`.
+`ingress validate` checks neither.
 
 ### 3.6 Added latency
 
@@ -229,14 +270,20 @@ nothing.
 
 The proxy runs inside the app process as tokio tasks:
 
-- **A panic while handling one request** stays in that connection's task. That request gets a 502
-  and the listener keeps serving.
+- **A panic while handling one request** stays in that connection's task, because the release
+  profile keeps `panic = "unwind"` (never `abort`). The connection drops, cloudflared answers that
+  one request with its own 502, and the listener keeps serving.
 - **A listener that dies** (e.g. accept error) is restarted by the tunnel supervisor on the same
   port. cloudflared retries the origin, so clients see 502s for the gap.
-- **If the app process dies**, the proxy is gone and inspected tunnels would serve
-  `502 Bad Gateway` through cloudflared. Under the chosen process model (§4) cloudflared children
-  die with the app, so there's no orphaned, half-broken tunnel: on the next launch the app kills
-  leftover children by pidfile and restarts them cleanly.
+- **If the app process dies** (crash, force-quit, SIGKILL), the proxy is gone. On macOS, child
+  processes do *not* die with their parent, so each cloudflared is launched through a tiny
+  **watchdog shim**: Burrow's own binary re-executed as `burrow --cloudflared-shim`. The shim
+  spawns cloudflared, holds the read end of a pipe from the app on its stdin, and on EOF (the app
+  died) sends SIGTERM to cloudflared, then SIGKILL after 5 s. Tunnels therefore go down within
+  seconds of an app crash rather than serving 502s indefinitely. As a second line of defence, the
+  next launch kills leftovers found by pidfile. Every launch mode, including uninspected named
+  tunnels, runs from a config file inside Burrow's data dir, so the command line always carries a
+  Burrow marker that identifies the process.
 - **Fail-open option:** if a listener can't be rebound, the supervisor restarts that tunnel with
   the original config (inspection off) and shows a warning. It favors traffic over capture.
 
