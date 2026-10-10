@@ -11,7 +11,6 @@
 import { spawn, execFileSync } from "node:child_process";
 import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
 import http from "node:http";
-import https from "node:https";
 import { Resolver } from "node:dns/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -143,28 +142,24 @@ try {
   log(`${host} resolves to ${ip} (via 1.1.1.1)`);
 
   const payload = JSON.stringify({ hello: "burrow", marker, items: [1, 2, 3] });
-  const send = () =>
-    new Promise((res, rej) => {
-      const req = https.request(
-        {
-          host,
-          servername: host,
-          path: "/e2e?source=run.mjs",
-          method: "POST",
-          headers: { "content-type": "application/json", "content-length": Buffer.byteLength(payload), authorization: "Bearer e2e-secret-token" },
-          lookup: (_h, opts, cb) => (opts && opts.all ? cb(null, [{ address: ip, family: 4 }]) : cb(null, ip, 4)),
-          timeout: 20000,
-        },
-        (r) => {
-          let b = "";
-          r.on("data", (c) => (b += c));
-          r.on("end", () => res({ status: r.statusCode, body: b }));
-        },
-      );
-      req.on("error", rej);
-      req.on("timeout", () => req.destroy(new Error("timeout")));
-      req.end(payload);
-    });
+  // Real curl, pinned to the IP from 1.1.1.1 with --resolve (the system resolver may have
+  // cached NXDOMAIN for the brand-new hostname).
+  const curlArgs = [
+    "-sS", "--max-time", "20", "--resolve", `${host}:443:${ip}`,
+    "-X", "POST", `https://${host}/e2e?source=run.mjs`,
+    "-H", "content-type: application/json", "-H", "authorization: Bearer e2e-secret-token",
+    "--data-raw", payload, "-w", "\n%{http_code}",
+  ];
+  evidence.curl = ["curl", ...curlArgs].join(" ");
+  const send = async () => {
+    try {
+      const out = execFileSync("curl", curlArgs).toString();
+      const nl = out.lastIndexOf("\n");
+      return { status: Number(out.slice(nl + 1)), body: out.slice(0, nl) };
+    } catch (e) {
+      return { status: 0, body: String(e.stderr ?? e) };
+    }
+  };
   const resp = await waitFor(
     "a 200 from the public URL",
     async () => {
@@ -175,7 +170,7 @@ try {
     120000,
     2500,
   );
-  log(`POST https://${host}/e2e -> ${resp.status} ${resp.body.slice(0, 120)}`);
+  log(`curl -X POST https://${host}/e2e (JSON body) -> ${resp.status} ${resp.body.slice(0, 120)}`);
   evidence.public_response = resp.body;
 
   // --- 5a. stored in SQLite ---------------------------------------------------------------
