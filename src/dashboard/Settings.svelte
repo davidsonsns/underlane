@@ -111,6 +111,12 @@
           <span class="label">Launch at login<span class="help">{login?.message ?? "Opens Burrow in the menu bar when you log in. Tunnels marked “Start automatically” come up with it."}</span></span>
           <Toggle checked={login?.enabled ?? false} disabled={!login || login.status === "unsupported"} label="Launch at login" onchange={setLogin} />
         </div>
+        {#if store.overview?.last_launch}
+          <div class="row">
+            <span class="label">This launch</span>
+            <span class="muted">{store.overview.last_launch.reason === "login_item" ? "Opened by macOS at login" : "Opened manually"} at {new Date(store.overview.last_launch.at).toLocaleTimeString()}</span>
+          </div>
+        {/if}
         <div class="row">
           <span class="label">Appearance</span>
           <div class="seg" role="radiogroup" aria-label="Appearance">

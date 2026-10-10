@@ -297,6 +297,14 @@ How the simulation was made faithful, rather than just "the app was opened":
 4. Tunnels marked **Start automatically** came up with no start command (screenshots 18–19). They
    logged `Registered tunnel connection` and served a public `curl`.
 
+5. The launch carried the same Apple event macOS sends when it opens login items
+   (`keyAELaunchedAsLogInItem`), and Burrow itself recognised it as a login launch (Settings: "This
+   launch: Opened by macOS at login"). A plain `open` was recorded as a normal launch, as the
+   control. On the login launch Burrow opened no window, and its "start automatically" tunnel
+   connected (verification.md §6d, screenshots 24–26). A real log-out would also have quit every
+   other app in the owner's session and left the Mac at the login window unattended, so it was
+   deliberately not done.
+
 Item 5's launch-at-login requirement is therefore met through the permitted simulation, and no
 further step is required. A user who wants extra assurance can turn the setting on and log out
 and back in. That is optional confirmation, not missing verification.

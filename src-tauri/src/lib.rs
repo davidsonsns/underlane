@@ -94,12 +94,17 @@ pub fn run() {
         .setup(|app| {
             #[cfg(target_os = "macos")]
             app.set_activation_policy(tauri::ActivationPolicy::Accessory);
+            // setup runs inside applicationDidFinishLaunching, where the launch event is current.
+            let at_login = platform::launched_as_login_item();
 
             let handle = app.handle().clone();
             let dir = data_dir(&handle);
             let shim = std::env::current_exe().ok();
             let core = tauri::async_runtime::block_on(Core::init(handle.clone(), dir, shim))?;
             app.manage(core.clone());
+            let launch = serde_json::json!({ "at": burrow_core::proxy::now_ms(), "reason": if at_login { "login_item" } else { "normal" } });
+            let _ = core.db.kv_set("last_launch", &launch.to_string());
+            tracing::info!("launched {}", if at_login { "as a login item" } else { "normally" });
             tray::create(&handle)?;
             tray::set_count(&handle, 0);
             core.start_autostart_tunnels();
@@ -110,7 +115,8 @@ pub fn run() {
             }
 
             // First run (nothing imported yet): open the dashboard so there's something to see.
-            if core.db.tunnels().map(|t| t.is_empty()).unwrap_or(false) && std::env::var_os("BURROW_E2E_PORT").is_none() {
+            // Never pop a window when macOS opened Burrow at login.
+            if !at_login && core.db.tunnels().map(|t| t.is_empty()).unwrap_or(false) && std::env::var_os("BURROW_E2E_PORT").is_none() {
                 tray::open_dashboard(&handle, None);
             }
             Ok(())

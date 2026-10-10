@@ -18,6 +18,19 @@ mod imp {
     use objc2_foundation::{NSActivityOptions, NSObjectProtocol, NSProcessInfo, NSString, NSUserDefaults};
     use objc2_service_management::{SMAppService, SMAppServiceStatus};
 
+    /// True when macOS opened the app as a login item: the launch Apple event carries
+    /// `keyAEPropData = keyAELaunchedAsLogInItem` ('lgit'). Call during did-finish-launching.
+    pub fn launched_as_login_item() -> bool {
+        const KEY_AE_PROP_DATA: u32 = u32::from_be_bytes(*b"prdt");
+        const LAUNCHED_AS_LOGIN_ITEM: u32 = u32::from_be_bytes(*b"lgit");
+        let mgr = objc2_foundation::NSAppleEventManager::sharedAppleEventManager();
+        let Some(event) = mgr.currentAppleEvent() else { return false };
+        match event.paramDescriptorForKeyword(KEY_AE_PROP_DATA) {
+            Some(d) => d.enumCodeValue() == LAUNCHED_AS_LOGIN_ITEM || d.typeCodeValue() == LAUNCHED_AS_LOGIN_ITEM,
+            None => false,
+        }
+    }
+
     /// A menu bar app has nothing to restore. Without this, a crash or force quit makes macOS
     /// show a modal "reopen windows?" prompt at the next launch, which blocks startup.
     pub fn disable_state_restoration() {
@@ -96,6 +109,10 @@ mod imp {
 
     pub fn disable_state_restoration() {}
 
+    pub fn launched_as_login_item() -> bool {
+        false
+    }
+
     pub fn login_item() -> LoginItem {
         LoginItem { status: "unsupported".into(), enabled: false, message: Some("Launch at login uses the autostart plugin on this platform.".into()) }
     }
@@ -112,4 +129,4 @@ mod imp {
     }
 }
 
-pub use imp::{disable_state_restoration, login_item, set_login_item, Activity};
+pub use imp::{disable_state_restoration, launched_as_login_item, login_item, set_login_item, Activity};

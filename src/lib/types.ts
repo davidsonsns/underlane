@@ -74,6 +74,7 @@ export interface Overview {
   active_count: number;
   dropped_captures: number;
   data_dir: string;
+  last_launch: { at: number; reason: "login_item" | "normal" } | null;
 }
 
 export interface LogLine {

@@ -72,6 +72,8 @@ pub struct Overview {
     pub active_count: usize,
     pub dropped_captures: u64,
     pub data_dir: String,
+    /// `{"at": ms, "reason": "login_item" | "normal"}` for the current launch.
+    pub last_launch: Option<serde_json::Value>,
 }
 
 pub fn capture_options(s: &Settings) -> CaptureOptions {
@@ -210,6 +212,7 @@ impl Core {
             active_count: self.active_count(),
             dropped_captures: self.dropped.load(Ordering::Relaxed),
             data_dir: self.data_dir.to_string_lossy().into_owned(),
+            last_launch: self.db.kv_get("last_launch").ok().flatten().and_then(|s| serde_json::from_str(&s).ok()),
         })
     }
 

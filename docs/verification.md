@@ -222,6 +222,32 @@ It logged `Registered tunnel connection` and got the public URL
 shim. Afterwards: 0 cloudflared processes left on quit, the test tunnel was deleted, and the login
 item was unregistered again.
 
+## 6d. Login-item launch with macOS's login Apple event (`node scripts/login-item-check.mjs`)
+
+When macOS opens a login item, its launch `oapp` Apple event carries
+`keyAEPropData = keyAELaunchedAsLogInItem` ('lgit'). That is the only signal an app gets that it
+was opened at login. Burrow reads it in `applicationDidFinishLaunching`, records the launch reason,
+shows it in Settings, and opens no window when launched at login.
+`scripts/launch-as-login-item.swift` launches the app through LaunchServices with exactly that
+event. Run against the installed release build:
+
+```
+[login-item-check] register: {"status":"enabled","enabled":true,"message":null}
+[login-item-check] plain open -> last_launch = {"at":1791621178855,"reason":"normal"}          <- control
+[login-item-check] launched …/Burrow.app as a login item (pid 81954)
+[login-item-check] login-item launch -> last_launch = {"at":1791621181718,"reason":"login_item"}
+[login-item-check] pid 81954, parent /sbin/launchd, tty ??
+[login-item-check] launchd job: 81954  0  application.com.davidsonsns.burrow.198534333.198534338
+[login-item-check] windows opened by the login launch: 0 (none expected)
+[login-item-check] auto-started "starts-at-login": https://synthetic-quick-6.trycloudflare.com; Registered tunnel connection
+[login-item-check] after quit: 0 cloudflared left
+[login-item-check] unregister: {"status":"not_registered","enabled":false,"message":null}
+```
+
+| Menu bar | Popover: tunnel auto-started at login | Settings: "Opened by macOS at login" |
+| --- | --- | --- |
+| ![](screenshots/24-login-item-menu-bar.png) | ![](screenshots/25-login-item-popover.png) | ![](screenshots/26-login-item-settings.png) |
+
 ## 7. Crash safety and quitting
 
 - **App SIGKILLed:** `kill -9` on the app made the watchdog shim stop cloudflared within 1 s
