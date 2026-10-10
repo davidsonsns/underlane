@@ -16,7 +16,7 @@
   let view = $state<View>("tunnels");
   let focusId = $state<string | null>(null);
   let adding = $state(false);
-  let requestsRef = $state<{ selectFirst: () => Promise<void> } | null>(null);
+  let requestsRef = $state<{ selectFirst: (side?: "req" | "resp") => Promise<void> } | null>(null);
 
   function navigate(target: string) {
     const [v, id] = target.replace(/^#/, "").split(":");
@@ -36,10 +36,10 @@
     const subs = [
       listen<string>("navigate", (e) => navigate(e.payload)),
       // The e2e harness asks for the rendered text of a view.
-      listen<{ nonce: string; view: string; select?: string }>("e2e-snapshot", async (e) => {
+      listen<{ nonce: string; view: string; select?: string; tab?: string }>("e2e-snapshot", async (e) => {
         navigate(e.payload.view);
         await tick();
-        if (e.payload.select === "first" && requestsRef) await requestsRef.selectFirst();
+        if (e.payload.select === "first" && requestsRef) await requestsRef.selectFirst(e.payload.tab === "req" ? "req" : "resp");
         await new Promise((r) => setTimeout(r, 400));
         await api.e2eReport(e.payload.nonce, document.body.innerText);
       }),

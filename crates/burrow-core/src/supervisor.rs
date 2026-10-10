@@ -4,6 +4,7 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::{Duration, Instant};
 
@@ -14,14 +15,14 @@ use hyper_util::rt::TokioExecutor;
 use serde::Serialize;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::{Child, ChildStdin, Command};
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, watch};
 use tokio::task::JoinHandle;
 
 use crate::cloudflared::{self, Validation};
 use crate::config::TunnelConfig;
 use crate::derived::{self, Upstream};
 use crate::model::{LogLine, Tunnel, TunnelKind};
-use crate::proxy::capture::{self, CapturedExchange, SharedOptions};
+use crate::proxy::capture::{CapturedExchange, SharedOptions};
 use crate::proxy::{self, now_ms, ProxyContext, ProxyHandle};
 
 #[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
@@ -70,6 +71,11 @@ pub struct TunnelState {
     pub started_at: Option<i64>,
     /// Inspection requested and actually running (false after fail-open).
     pub inspecting: bool,
+    /// A supervisor run exists (true even while crashed and waiting to retry), so the UI can
+    /// offer Stop for a crash loop.
+    pub supervised: bool,
+    /// Which run produced this state; later runs supersede earlier ones.
+    pub run: u64,
 }
 
 impl TunnelState {
@@ -87,6 +93,8 @@ impl TunnelState {
             restarts: 0,
             started_at: None,
             inspecting: false,
+            supervised: false,
+            run: 0,
         }
     }
 }
@@ -170,6 +178,18 @@ enum Cmd {
 struct RunHandle {
     tx: mpsc::UnboundedSender<Cmd>,
     task: JoinHandle<()>,
+    /// Becomes true when the run task has fully finished (process gone, pidfile cleaned).
+    done: watch::Receiver<bool>,
+    /// A stop was requested; the entry stays registered until the process is gone so a new
+    /// start can't overlap with it.
+    stopping: bool,
+    run: u64,
+}
+
+impl RunHandle {
+    fn live(&self) -> bool {
+        !self.task.is_finished()
+    }
 }
 
 pub struct Supervisor {
@@ -179,74 +199,135 @@ pub struct Supervisor {
     /// Captured at construction so tunnels can be started from any thread (UI callbacks,
     /// app setup), not just from inside the runtime.
     rt: tokio::runtime::Handle,
+    /// Monotonic run counter; every state event carries the run it belongs to so consumers can
+    /// drop late events from a run that has been replaced.
+    runs_started: AtomicU64,
 }
 
 impl Supervisor {
     /// Must be called from within a Tokio runtime.
     pub fn new(cfg: SupervisorConfig, sink: EventSink) -> Arc<Self> {
-        Arc::new(Supervisor { cfg, sink, runs: Mutex::new(HashMap::new()), rt: tokio::runtime::Handle::current() })
+        Arc::new(Supervisor {
+            cfg,
+            sink,
+            runs: Mutex::new(HashMap::new()),
+            rt: tokio::runtime::Handle::current(),
+            runs_started: AtomicU64::new(0),
+        })
     }
 
     pub fn config(&self) -> &SupervisorConfig {
         &self.cfg
     }
 
+    /// A run task exists for this tunnel (including crashed-and-retrying and stopping).
     pub fn is_running(&self, id: &str) -> bool {
-        self.runs.lock().unwrap().get(id).map(|r| !r.task.is_finished()).unwrap_or(false)
+        self.runs.lock().unwrap().get(id).map(RunHandle::live).unwrap_or(false)
     }
 
     pub fn running_ids(&self) -> Vec<String> {
-        self.runs
-            .lock()
-            .unwrap()
-            .iter()
-            .filter(|(_, r)| !r.task.is_finished())
-            .map(|(id, _)| id.clone())
-            .collect()
+        self.runs.lock().unwrap().iter().filter(|(_, r)| r.live()).map(|(id, _)| id.clone()).collect()
     }
 
-    /// Start a tunnel. If it is already running, this is a no-op.
-    pub fn start(&self, spec: RunSpec) {
+    fn spawn_run(&self, runs: &mut HashMap<String, RunHandle>, spec: RunSpec) {
+        let run_no = self.runs_started.fetch_add(1, Ordering::SeqCst) + 1;
+        let (tx, rx) = mpsc::unbounded_channel();
+        let (done_tx, done_rx) = watch::channel(false);
+        let id = spec.tunnel.id.clone();
+        let fut = run(spec, self.cfg.clone(), self.sink.clone(), rx, run_no);
+        let task = self.rt.spawn(async move {
+            fut.await;
+            let _ = done_tx.send(true);
+        });
+        runs.insert(id, RunHandle { tx, task, done: done_rx, stopping: false, run: run_no });
+    }
+
+    /// Start once the current run (if it is stopping) has fully exited.
+    fn start_after(self: &Arc<Self>, mut done: watch::Receiver<bool>, spec: RunSpec, restart: bool) {
+        let me = self.clone();
+        self.rt.spawn(async move {
+            let _ = done.wait_for(|d| *d).await;
+            if restart {
+                me.restart(spec);
+            } else {
+                me.start(spec);
+            }
+        });
+    }
+
+    /// Start a tunnel. A no-op if it is already running; deferred if it is still stopping.
+    pub fn start(self: &Arc<Self>, spec: RunSpec) {
         let mut runs = self.runs.lock().unwrap();
-        if runs.get(&spec.tunnel.id).map(|r| !r.task.is_finished()).unwrap_or(false) {
+        if let Some(h) = runs.get(&spec.tunnel.id).filter(|h| h.live()) {
+            if h.stopping {
+                let done = h.done.clone();
+                drop(runs);
+                self.start_after(done, spec, false);
+            }
             return;
         }
-        let (tx, rx) = mpsc::unbounded_channel();
-        let id = spec.tunnel.id.clone();
-        let task = self.rt.spawn(run(spec, self.cfg.clone(), self.sink.clone(), rx));
-        runs.insert(id, RunHandle { tx, task });
+        self.spawn_run(&mut runs, spec);
     }
 
     /// Restart with a (possibly updated) spec; starts it if it isn't running.
-    pub fn restart(&self, spec: RunSpec) {
-        let runs = self.runs.lock().unwrap();
-        if let Some(r) = runs.get(&spec.tunnel.id).filter(|r| !r.task.is_finished()) {
-            let _ = r.tx.send(Cmd::Restart(Box::new(spec)));
+    pub fn restart(self: &Arc<Self>, spec: RunSpec) {
+        let mut runs = self.runs.lock().unwrap();
+        if let Some(h) = runs.get(&spec.tunnel.id).filter(|h| h.live()) {
+            if h.stopping {
+                let done = h.done.clone();
+                drop(runs);
+                self.start_after(done, spec, true);
+            } else {
+                let _ = h.tx.send(Cmd::Restart(Box::new(spec)));
+            }
             return;
         }
-        drop(runs);
-        self.start(spec);
+        self.spawn_run(&mut runs, spec);
     }
 
-    /// Stop a tunnel and wait for its process to exit.
+    /// Stop a tunnel and wait until its process has exited.
     pub async fn stop(&self, id: &str) {
-        let handle = self.runs.lock().unwrap().remove(id);
-        match handle {
-            Some(h) => {
-                let _ = h.tx.send(Cmd::Stop);
-                let _ = h.task.await;
+        let waiting = {
+            let mut runs = self.runs.lock().unwrap();
+            match runs.get_mut(id) {
+                Some(h) if h.live() => {
+                    h.stopping = true;
+                    let _ = h.tx.send(Cmd::Stop);
+                    Some((h.done.clone(), h.run))
+                }
+                _ => {
+                    runs.remove(id);
+                    None
+                }
             }
-            None => (self.sink)(Event::State(TunnelState::stopped(id))),
+        };
+        match waiting {
+            Some((mut done, run_no)) => {
+                let _ = done.wait_for(|d| *d).await;
+                let mut runs = self.runs.lock().unwrap();
+                if runs.get(id).map(|h| h.run == run_no).unwrap_or(false) {
+                    runs.remove(id);
+                }
+            }
+            None => {
+                let mut s = TunnelState::stopped(id);
+                s.run = self.runs_started.load(Ordering::SeqCst);
+                (self.sink)(Event::State(s));
+            }
         }
     }
 
-    pub async fn stop_all(&self) {
-        let handles: Vec<(String, RunHandle)> = self.runs.lock().unwrap().drain().collect();
-        for (_, h) in &handles {
-            let _ = h.tx.send(Cmd::Stop);
-        }
-        for (_, h) in handles {
-            let _ = h.task.await;
+    pub async fn stop_all(self: &Arc<Self>) {
+        let ids = self.running_ids();
+        let tasks: Vec<_> = ids
+            .into_iter()
+            .map(|id| {
+                let me = self.clone();
+                self.rt.spawn(async move { me.stop(&id).await })
+            })
+            .collect();
+        for t in tasks {
+            let _ = t.await;
         }
     }
 }
@@ -334,11 +415,14 @@ async fn prepare(
             let path = PathBuf::from(t.config_path.as_deref().ok_or_else(|| fatal("No config file is set for this tunnel."))?);
             let config = TunnelConfig::load(&path).map_err(|e| fatal(e.to_string()))?;
 
-            let mut needles = vec![path.to_string_lossy().into_owned()];
-            if let Some(tid) = &config.tunnel {
-                needles.push(tid.clone());
-            }
-            if let Some(ext) = cloudflared::find_external(&needles, &cfg.marker()).first() {
+            let home_cf = crate::config::home_dir().join(".cloudflared");
+            let identity = cloudflared::TunnelIdentity {
+                config_path: Some(path.to_string_lossy().into_owned()),
+                tunnel: config.tunnel.clone(),
+                is_default_config: path.parent() == Some(home_cf.as_path())
+                    && matches!(path.file_name().and_then(|f| f.to_str()), Some("config.yml" | "config.yaml")),
+            };
+            if let Some(ext) = cloudflared::find_external(&identity, &cfg.marker()).first() {
                 return Err(Fatal {
                     detail: format!("This tunnel is already running outside Burrow (pid {}).", ext.pid),
                     hint: Some(format!(
@@ -501,7 +585,7 @@ fn spawn_child(bin: &Path, p: &Prepared, shim: Option<&Path>) -> std::io::Result
             c
         }
     };
-    cmd.args(&p.args).stdout(Stdio::piped()).stderr(Stdio::piped()).kill_on_drop(true).env_remove("TUNNEL_TOKEN");
+    cmd.args(&p.args).stdout(Stdio::piped()).stderr(Stdio::piped()).env_remove("TUNNEL_TOKEN");
     if let Some(dir) = &p.cwd {
         cmd.current_dir(dir);
     }
@@ -564,6 +648,24 @@ pub fn reap_orphans(data_dir: &Path) -> Vec<u32> {
             }
         }
         let _ = std::fs::remove_file(&path);
+    }
+    // Also catch processes whose pidfile is gone or names a dead shim: any cloudflared still
+    // carrying Burrow's data directory on its command line at startup is a leftover.
+    #[cfg(unix)]
+    if let Ok(out) = std::process::Command::new("ps").args(["-axww", "-o", "pid=,command="]).output() {
+        for line in String::from_utf8_lossy(&out.stdout).lines() {
+            let line = line.trim_start();
+            let Some((pid, cmd)) = line.split_once(' ') else { continue };
+            let Ok(pid) = pid.parse::<u32>() else { continue };
+            let exe = cmd.split_whitespace().next().unwrap_or("");
+            let is_cloudflared = Path::new(exe).file_name().and_then(|f| f.to_str()) == Some("cloudflared");
+            if is_cloudflared && cmd.contains(&marker) && !killed.contains(&pid) && pid != std::process::id() {
+                unsafe {
+                    libc::kill(pid as i32, libc::SIGTERM);
+                }
+                killed.push(pid);
+            }
+        }
     }
     if !killed.is_empty() {
         std::thread::sleep(Duration::from_millis(800));
@@ -633,8 +735,7 @@ struct LineInfo {
 impl LineCtx<'_> {
     fn handle(&self, line: &str) -> Option<LineInfo> {
         let redactor = self.cfg.capture.read().unwrap().redactor();
-        let mut p = cloudflared::parse_log_line(line, &redactor.headers)?;
-        p.message = capture::redact_query_in_text(&p.message, &redactor.query);
+        let p = cloudflared::parse_log_line_with(line, &redactor.headers, Some(&redactor.query))?;
         let info = LineInfo { level: p.level.clone(), message: p.message.clone() };
         (self.sink)(Event::Log(LogLine {
             id: 0,
@@ -648,9 +749,62 @@ impl LineCtx<'_> {
     }
 }
 
-async fn run(mut spec: RunSpec, cfg: SupervisorConfig, sink: EventSink, mut rx: mpsc::UnboundedReceiver<Cmd>) {
+/// Kills a whole process group if the run task unwinds (panic) while a child is alive, so a
+/// cloudflared behind a dead shim can't be orphaned.
+struct GroupGuard(Option<u32>);
+
+impl Drop for GroupGuard {
+    fn drop(&mut self) {
+        #[cfg(unix)]
+        if let Some(pgid) = self.0 {
+            unsafe {
+                libc::kill(-(pgid as i32), libc::SIGKILL);
+            }
+        }
+    }
+}
+
+/// After the direct child exits, make sure nothing else in its process group survives
+/// (e.g. the shim was killed on its own and cloudflared is still running).
+async fn sweep_group(pgid: Option<u32>, grace: Duration) {
+    #[cfg(unix)]
+    if let Some(pgid) = pgid {
+        let alive = || unsafe { libc::kill(-(pgid as i32), 0) == 0 };
+        if !alive() {
+            return;
+        }
+        unsafe {
+            libc::kill(-(pgid as i32), libc::SIGTERM);
+        }
+        let deadline = Instant::now() + grace;
+        while alive() && Instant::now() < deadline {
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+        if alive() {
+            unsafe {
+                libc::kill(-(pgid as i32), libc::SIGKILL);
+            }
+        }
+    }
+}
+
+/// Remove the pidfile only if it still names this run's process.
+fn remove_own_pidfile(cfg: &SupervisorConfig, id: &str, pid: Option<u32>) {
+    let path = pidfile(cfg, id);
+    let ours = match (std::fs::read_to_string(&path), pid) {
+        (Ok(content), Some(pid)) => content.trim() == pid.to_string(),
+        _ => false,
+    };
+    if ours {
+        let _ = std::fs::remove_file(path);
+    }
+}
+
+async fn run(mut spec: RunSpec, cfg: SupervisorConfig, sink: EventSink, mut rx: mpsc::UnboundedReceiver<Cmd>, run_no: u64) {
     let id = spec.tunnel.id.clone();
     let mut state = TunnelState::stopped(&id);
+    state.run = run_no;
+    state.supervised = true;
     let emit_state = |s: &TunnelState| sink(Event::State(s.clone()));
     let mut proxies: HashMap<usize, ProxyHandle> = HashMap::new();
     let req_sink = sink.clone();
@@ -689,7 +843,19 @@ async fn run(mut spec: RunSpec, cfg: SupervisorConfig, sink: EventSink, mut rx: 
             }
         };
 
-        let prepared = match prepare(&spec, &cfg, &bin, &mut proxies, &ctx, force_no_inspect).await {
+        // Preparing runs `ingress validate`; stay responsive to Stop while it does.
+        let prepared = tokio::select! {
+            p = prepare(&spec, &cfg, &bin, &mut proxies, &ctx, force_no_inspect) => p,
+            cmd = rx.recv() => match cmd {
+                Some(Cmd::Restart(s)) => {
+                    spec = *s;
+                    failures = 0;
+                    continue 'outer;
+                }
+                _ => break 'outer,
+            },
+        };
+        let prepared = match prepared {
             Ok(p) => p,
             Err(Fatal { detail, hint }) => {
                 state.status = Status::Crashed;
@@ -727,6 +893,8 @@ async fn run(mut spec: RunSpec, cfg: SupervisorConfig, sink: EventSink, mut rx: 
         };
         // Holding the shim's stdin open is what keeps it from killing cloudflared.
         let _shim_stdin: Option<ChildStdin> = child.stdin.take();
+        let child_pid = child.id();
+        let mut group_guard = GroupGuard(child_pid);
         let started = Instant::now();
         state.pid = child.id();
         state.started_at = Some(now_ms());
@@ -888,7 +1056,10 @@ async fn run(mut spec: RunSpec, cfg: SupervisorConfig, sink: EventSink, mut rx: 
                 }
             }
         };
-        let _ = std::fs::remove_file(pidfile(&cfg, &id));
+        // The direct child is gone; clean up anything left in its process group.
+        sweep_group(child_pid, cfg.grace_period).await;
+        group_guard.0 = None;
+        remove_own_pidfile(&cfg, &id, child_pid);
         state.pid = None;
         state.metrics_addr = None;
 
@@ -957,8 +1128,8 @@ async fn run(mut spec: RunSpec, cfg: SupervisorConfig, sink: EventSink, mut rx: 
     }
 
     drop(proxies);
-    let _ = std::fs::remove_file(pidfile(&cfg, &id));
     let mut final_state = TunnelState::stopped(&id);
+    final_state.run = run_no;
     final_state.restarts = state.restarts;
     final_state.mappings = state.mappings;
     sink(Event::State(final_state));

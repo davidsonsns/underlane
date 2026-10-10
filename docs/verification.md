@@ -40,6 +40,23 @@ server and exposes it as a quick tunnel with inspection on. Output of the run:
 [ 12.2s] E2E PASSED
 ```
 
+After the pre-ship review fixes (decisions.md §15), `make e2e` was run again. It passed, with two
+assertions added for the Request tab of the viewer:
+
+```
+[ 10.1s] connected: https://synthetic-quick-9.trycloudflare.com (inspecting=true)
+[ 34.5s] synthetic-quick-9.trycloudflare.com resolves to 104.16.230.132 (via 1.1.1.1)
+[ 35.2s] POST https://synthetic-quick-9.trycloudflare.com/e2e -> 200 {"echoed":{"hello":"burrow","marker":"burrow-e2e-mv22qqcz",…
+[ 35.7s] ok: SQLite has the request body / response body / Authorization redacted
+[ 39.7s] ok: request viewer shows the (pretty-printed) request body
+[ 39.7s] ok: request viewer shows the Authorization header redacted
+[ 41.6s] ok: menu bar count is back to 0 after stopping
+[ 41.7s] E2E PASSED
+```
+
+DNS for the new hostname took 24 s this time. The harness waits on 1.1.1.1 rather than the system
+resolver, so a negative cache entry can't break it.
+
 Notes on what the checks read:
 
 - The menu bar count comes from the title of the real `NSStatusItem` button, read on the main
@@ -156,8 +173,17 @@ None of the scenarios above depend on a terminal staying open:
 Terminals were only used to *trigger* steps (the build, `open`, the `--login-item` registration)
 and to inspect process trees.
 
+The screenshot session ran after a night of testing, and trycloudflare.com rate-limited new quick
+tunnels (`429`, error code 1015). The `web` tunnel in screenshots 05 and 10 shows "6 restarts".
+That is the crash backoff (1 s, 2 s, 4 s … 32 s) retrying until provisioning succeeded, which shows
+the restart-with-backoff behaviour working.
+
 ## Cleanup after verification
 
-The `login-demo` tunnel was removed from the real data folder after the checks, so no public quick
-tunnel starts at login. `example.yml` remains imported but doesn't auto-start. See the final summary
-for the state the launch-at-login setting was left in.
+- The `login-demo` tunnel was removed from the real data folder, so no public quick tunnel starts
+  at login. `example.yml` remains imported, without auto-start.
+- **Launch at login was unregistered** afterwards (`Burrow --login-item disable`, status
+  `not_registered`), to leave this Mac as it was. Turn it back on in Settings → General → Launch
+  at login.
+- `~/Applications/Burrow.app` is the latest release build.
+- The owner's own `example.yml` cloudflared process (pid 48763) was never touched.

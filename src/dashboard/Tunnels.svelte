@@ -4,7 +4,7 @@
   import { store } from "../lib/store.svelte";
   import { api } from "../lib/api";
   import { motion } from "../lib/theme";
-  import { statusLabel } from "../lib/format";
+  import { isOn, statusLabel } from "../lib/format";
   import type { Tunnel } from "../lib/types";
   import Toolbar from "./Toolbar.svelte";
   import StatusDot from "../components/StatusDot.svelte";
@@ -32,13 +32,14 @@
     return [...map.entries()].map(([id, g]) => ({ id, ...g }));
   });
   const current = $derived(store.tunnels.find((t) => t.id === selected) ?? null);
-  const anyOn = $derived(store.tunnels.some((t) => ["starting", "connected", "degraded"].includes(t.state.status)));
+  const anyOn = $derived(store.tunnels.some(isOn));
 </script>
 
 <div class="page">
   <Toolbar title="Tunnels" subtitle={store.tunnels.length ? `${store.activeCount} of ${store.tunnels.length} running` : ""}>
     {#if store.tunnels.length}
       {#if anyOn}
+        <button class="btn" onclick={() => api.restartAll()} title="Restart every running tunnel"><Icon name="restart" size={13} /> Restart all</button>
         <button class="btn" onclick={() => api.stopAll()}><Icon name="stop" size={11} /> Stop all</button>
       {:else}
         <button class="btn" onclick={() => api.startAll()}><Icon name="play" size={11} /> Start all</button>
@@ -61,7 +62,7 @@
     </div>
   {:else}
     <div class="split">
-      <div class="list" role="listbox" aria-label="Tunnels">
+      <nav class="list" aria-label="Tunnels">
         {#each groups as g (g.id)}
           <div class="group" animate:flip={{ duration: motion(200) }}>
             <div class="group-name">{g.name}</div>
@@ -69,8 +70,7 @@
               <button
                 class="item"
                 class:sel={t.id === selected}
-                role="option"
-                aria-selected={t.id === selected}
+                aria-current={t.id === selected ? "true" : undefined}
                 onclick={() => (selected = t.id)}
                 animate:flip={{ duration: motion(200) }}
                 in:fly={{ x: -8, duration: motion(200) }}
@@ -86,7 +86,7 @@
             {/each}
           </div>
         {/each}
-      </div>
+      </nav>
       <div class="detail">
         {#if current}
           {#key current.id}

@@ -523,11 +523,22 @@ impl Db {
     pub fn sweep(&self, now_ms: i64, ttl_ms: i64, max_bytes: u64) -> anyhow::Result<SweepStats> {
         let mut stats = SweepStats::default();
         let cutoff = now_ms - ttl_ms;
-        self.with(|c| {
-            stats.logs_expired = c.execute("DELETE FROM logs WHERE ts < ?1", [cutoff])?;
-            stats.requests_expired = c.execute("DELETE FROM requests WHERE ts < ?1", [cutoff])?;
-            Ok(())
-        })?;
+        // Delete in small batches so the connection lock is never held for long (the UI and
+        // the log writer share it).
+        loop {
+            let n = self.with(|c| c.execute("DELETE FROM logs WHERE id IN (SELECT id FROM logs WHERE ts < ?1 LIMIT 2000)", [cutoff]))?;
+            stats.logs_expired += n;
+            if n == 0 {
+                break;
+            }
+        }
+        loop {
+            let n = self.with(|c| c.execute("DELETE FROM requests WHERE id IN (SELECT id FROM requests WHERE ts < ?1 LIMIT 200)", [cutoff]))?;
+            stats.requests_expired += n;
+            if n == 0 {
+                break;
+            }
+        }
 
         let mut guard = 0;
         while self.used_bytes()? > max_bytes && guard < 10_000 {

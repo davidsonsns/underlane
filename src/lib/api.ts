@@ -19,6 +19,7 @@ export const api = {
   restart: (id: string) => invoke<void>("restart_tunnel", { id }),
   startAll: () => invoke<void>("start_all"),
   stopAll: () => invoke<void>("stop_all"),
+  restartAll: () => invoke<void>("restart_all"),
   validate: (id: string) => invoke<Validation>("validate_tunnel", { id }),
   queryLogs: (args: { tunnelId?: string | null; levels?: string[]; search?: string; beforeId?: number; afterId?: number; limit?: number }) =>
     invoke<LogLine[]>("query_logs", { args }),

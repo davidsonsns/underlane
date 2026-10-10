@@ -72,6 +72,8 @@ pub struct Settings {
     pub max_db_mb: u32,
     pub max_body_kb: u32,
     pub redact_headers: Vec<String>,
+    /// Extra query parameter names to redact in captured URLs and logs.
+    pub redact_query: Vec<String>,
     /// "system" | "light" | "dark"
     pub theme: String,
     pub default_loglevel: String,
@@ -85,6 +87,7 @@ impl Default for Settings {
             max_db_mb: 256,
             max_body_kb: 1024,
             redact_headers: Vec::new(),
+            redact_query: Vec::new(),
             theme: "system".into(),
             default_loglevel: "info".into(),
         }

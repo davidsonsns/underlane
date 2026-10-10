@@ -18,6 +18,7 @@
   let error = $state<string | null>(null);
   let detecting = $state(false);
   let redactText = $state("");
+  let redactQueryText = $state("");
   let savedTimer: ReturnType<typeof setTimeout>;
 
   // Follow changes made elsewhere (another window, the tray) as well as the initial load.
@@ -26,8 +27,12 @@
     if (!s) return;
     const snap = structuredClone($state.snapshot(s));
     untrack(() => {
+      // Don't clobber a field the user is typing in.
+      const focused = document.activeElement?.getAttribute("data-field");
+      if (draft && focused === "path") snap.cloudflared_path = draft.cloudflared_path;
       draft = snap;
-      redactText = snap.redact_headers.join(", ");
+      if (focused !== "redact") redactText = snap.redact_headers.join(", ");
+      if (focused !== "redact-query") redactQueryText = (snap.redact_query ?? []).join(", ");
     });
   });
 
@@ -95,7 +100,7 @@
         {/if}
         <div class="row">
           <span class="label">Path<span class="help">Leave empty to look on PATH and in Homebrew's folders.</span></span>
-          <input class="field mono wide" placeholder="/opt/homebrew/bin/cloudflared" bind:value={draft.cloudflared_path} />
+          <input class="field mono wide" data-field="path" placeholder="/opt/homebrew/bin/cloudflared" bind:value={draft.cloudflared_path} />
           <button class="btn" disabled={detecting} onclick={detect}>{detecting ? "Detecting…" : "Detect"}</button>
         </div>
       </div>
@@ -150,8 +155,13 @@
         </div>
         <div class="row column">
           <span class="label">Redact these headers too<span class="help">Authorization, Cookie, Set-Cookie, X-Api-Key and other credential headers are always redacted, as are token-like query parameters. Bodies are stored as sent.</span></span>
-          <input class="field mono full" placeholder="X-Internal-Key, X-Session" bind:value={redactText}
+          <input class="field mono full" data-field="redact" placeholder="X-Internal-Key, X-Session" bind:value={redactText}
             onchange={() => save({ redact_headers: redactText.split(",").map((s) => s.trim()).filter(Boolean) })} />
+        </div>
+        <div class="row column">
+          <span class="label">Redact these query parameters too<span class="help">token, access_token, api_key, key, code, sig, signature, password and secret are always redacted in captured URLs and logs.</span></span>
+          <input class="field mono full" data-field="redact-query" placeholder="session, auth" bind:value={redactQueryText}
+            onchange={() => save({ redact_query: redactQueryText.split(",").map((s) => s.trim()).filter(Boolean) })} />
         </div>
         {#if (store.overview?.dropped_captures ?? 0) > 0}
           <div class="row"><span class="label">Dropped under load</span><span class="muted">{store.overview?.dropped_captures} log lines or requests weren't stored because the writer fell behind.</span></div>

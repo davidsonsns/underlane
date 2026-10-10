@@ -143,7 +143,10 @@ impl TunnelConfig {
 
     /// True when the file uses a top-level `url:` instead of ingress rules.
     pub fn is_single_origin(&self) -> bool {
-        self.raw.as_mapping().map(|m| !m.contains_key("ingress") && m.contains_key("url")).unwrap_or(false)
+        self.raw
+            .as_mapping()
+            .map(|m| !m.contains_key("ingress") && (m.contains_key("url") || m.get("hello-world").and_then(Value::as_bool) == Some(true)))
+            .unwrap_or(false)
     }
 
     /// A display name: the file stem, unless it is the generic `config`, in which case the

@@ -18,11 +18,22 @@ fn parses_json_log_lines_and_redacts_debug_headers() {
 }
 
 #[test]
+fn redacts_query_secrets_in_structured_fields() {
+    let o = CaptureOptions::default();
+    let line = r#"{"level":"error","message":"Request failed","dest":"https://x.example.com/a?token=s3cret&x=1","error":"GET /b?password=hunter2 failed","time":"2026-10-10T06:01:53Z"}"#;
+    let p = parse_log_line_with(line, &o.redaction_set(), Some(&o.query_redaction_set())).unwrap();
+    assert!(!p.fields.contains("s3cret") && !p.fields.contains("hunter2"), "{}", p.fields);
+    assert!(p.fields.contains("x=1"));
+}
+
+#[test]
 fn falls_back_to_plain_text_lines() {
     let p = parse_log_line("2026-10-10T06:01:19Z ERR something broke", &HashSet::new()).unwrap();
     assert_eq!(p.level, "error");
     assert_eq!(p.message, "2026-10-10T06:01:19Z ERR something broke");
     assert!(parse_log_line("   ", &HashSet::new()).is_none());
+    let p = parse_log_line("quick tunnel provisioning failed with status 429: error code: 1015", &HashSet::new()).unwrap();
+    assert_eq!(p.level, "error");
 }
 
 #[test]
@@ -69,7 +80,23 @@ fn detects_cloudflared_running_outside_burrow() {
   50002 /opt/homebrew/bin/cloudflared tunnel run 00000000-0000-4000-8000-000000000101
 ";
     let marker = "/Users/me/Library/Application Support/com.davidsonsns.burrow";
-    let found = external_from_ps(ps, &["/Users/me/.cloudflared/example.yml".into(), "00000000-0000-4000-8000-000000000101".into()], marker);
-    let pids: Vec<u32> = found.iter().map(|p| p.pid).collect();
+    let id = TunnelIdentity {
+        config_path: Some("/Users/me/.cloudflared/example.yml".into()),
+        tunnel: Some("00000000-0000-4000-8000-000000000101".into()),
+        is_default_config: false,
+    };
+    let pids: Vec<u32> = external_from_ps(ps, &id, marker).iter().map(|p| p.pid).collect();
     assert_eq!(pids, vec![48763, 50002], "node script and Burrow's own process are ignored");
+
+    // Tunnel names only match whole arguments.
+    let named = TunnelIdentity { config_path: Some("/x/api.yml".into()), tunnel: Some("api".into()), is_default_config: false };
+    let ps2 = "  1 cloudflared tunnel --config /Users/me/work/api-gw/x.yml run\n  2 cloudflared tunnel run api\n";
+    let pids: Vec<u32> = external_from_ps(ps2, &named, marker).iter().map(|p| p.pid).collect();
+    assert_eq!(pids, vec![2]);
+
+    // A default config is what a bare `cloudflared tunnel run` (e.g. the launchd service) uses.
+    let default = TunnelIdentity { config_path: Some("/Users/me/.cloudflared/config.yml".into()), tunnel: Some("site".into()), is_default_config: true };
+    let ps3 = "  7 /opt/homebrew/bin/cloudflared tunnel run\n  8 cloudflared tunnel --url http://localhost:3000\n";
+    let pids: Vec<u32> = external_from_ps(ps3, &default, marker).iter().map(|p| p.pid).collect();
+    assert_eq!(pids, vec![7]);
 }

@@ -21,8 +21,9 @@ pub fn create<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
     let open = MenuItem::with_id(app, "open", "Open Dashboard", true, None::<&str>)?;
     let start_all = MenuItem::with_id(app, "start_all", "Start All Tunnels", true, None::<&str>)?;
     let stop_all = MenuItem::with_id(app, "stop_all", "Stop All Tunnels", true, None::<&str>)?;
+    let restart_all = MenuItem::with_id(app, "restart_all", "Restart Running Tunnels", true, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", "Quit Burrow", true, Some("CmdOrCtrl+Q"))?;
-    let menu = Menu::with_items(app, &[&open, &PredefinedMenuItem::separator(app)?, &start_all, &stop_all, &PredefinedMenuItem::separator(app)?, &quit])?;
+    let menu = Menu::with_items(app, &[&open, &PredefinedMenuItem::separator(app)?, &start_all, &stop_all, &restart_all, &PredefinedMenuItem::separator(app)?, &quit])?;
 
     TrayIconBuilder::with_id(TRAY_ID)
         .icon(Image::from_bytes(include_bytes!("../icons/tray-template@2x.png"))?)
@@ -32,10 +33,8 @@ pub fn create<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
         .show_menu_on_left_click(false)
         .on_menu_event(|app, event| match event.id().as_ref() {
             "open" => open_dashboard(app, None),
-            "start_all" => {
-                let _ = app.emit("menu-action", "start_all");
-                crate::commands::start_all_inner(app);
-            }
+            "start_all" => crate::commands::start_all_inner(app),
+            "restart_all" => crate::commands::restart_all_inner(app),
             "stop_all" => {
                 let app = app.clone();
                 tauri::async_runtime::spawn(async move { crate::commands::stop_all_inner(&app).await });
@@ -70,7 +69,7 @@ pub fn set_count<R: Runtime>(app: &AppHandle<R>, count: usize) {
 }
 
 /// Read the title straight from the `NSStatusItem` button (used by the e2e check).
-#[cfg_attr(not(feature = "e2e"), allow(dead_code))]
+#[cfg_attr(not(all(feature = "e2e", debug_assertions)), allow(dead_code))]
 pub fn status_item_title<R: Runtime>(app: &AppHandle<R>) -> Option<String> {
     #[cfg(target_os = "macos")]
     {

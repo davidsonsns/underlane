@@ -164,15 +164,8 @@ struct Shared {
 }
 
 /// Hop-by-hop headers (RFC 9110 §7.6.1) are connection-specific and never forwarded.
-const HOP_BY_HOP: &[&str] = &[
-    "connection",
-    "keep-alive",
-    "proxy-connection",
-    "te",
-    "trailer",
-    "transfer-encoding",
-    "upgrade",
-];
+/// `Trailer` is end-to-end and is kept so trailer fields still get forwarded.
+const HOP_BY_HOP: &[&str] = &["connection", "keep-alive", "proxy-connection", "te", "transfer-encoding", "upgrade"];
 
 fn strip_hop_by_hop(headers: &mut HeaderMap) {
     // Headers named in `Connection` are hop-by-hop too.
@@ -239,7 +232,7 @@ impl Shared {
             host,
             path: capture::redact_query(&path, &redact.query),
             status: None,
-            req_headers: capture::redact_headers(req.headers(), &redact.headers),
+            req_headers: capture::redact_headers(req.headers(), &redact),
             resp_headers: Vec::new(),
             req_body: BodyCapture::default(),
             resp_body: BodyCapture::default(),
@@ -294,7 +287,7 @@ impl Shared {
         {
             let mut p = pending.lock().unwrap();
             p.record.status = Some(status.as_u16());
-            p.record.resp_headers = capture::redact_headers(resp.headers(), &redact.headers);
+            p.record.resp_headers = capture::redact_headers(resp.headers(), &redact);
             if is_sse {
                 p.record.kind = ExchangeKind::Sse;
                 p.capture_response_body = false;

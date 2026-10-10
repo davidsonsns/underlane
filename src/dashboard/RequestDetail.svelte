@@ -4,8 +4,9 @@
   import type { BodyView, RequestDetail } from "../lib/types";
   import Icon from "../components/Icon.svelte";
 
-  let { detail }: { detail: RequestDetail } = $props();
-  let side = $state<"req" | "resp">("resp");
+  let { detail, side: initial = "resp" }: { detail: RequestDetail; side?: "req" | "resp" } = $props();
+  // svelte-ignore state_referenced_locally
+  let side = $state<"req" | "resp">(initial);
   let mode = $state<"pretty" | "raw" | "hex">("pretty");
   let copied = $state(false);
 
@@ -34,7 +35,7 @@
       <span class="faint">{formatClock(detail.ts)}</span>
       {#if detail.kind !== "http"}<span class="pill">{detail.kind === "sse" ? "Server-sent events" : "WebSocket"}, body not stored</span>{/if}
       <span class="spacer"></span>
-      <button class="btn" onclick={copyCurl}><Icon name={copied ? "check" : "copy"} size={13} /> {copied ? "Copied" : "Copy as curl"}</button>
+      <button class="btn" onclick={copyCurl} title={detail.req.truncated ? "The request body was truncated; the command includes only the stored part" : "Copy this request as a curl command"}><Icon name={copied ? "check" : "copy"} size={13} /> {copied ? "Copied" : "Copy as curl"}</button>
     </div>
     {#if detail.error}<div class="error selectable">{detail.error}</div>{/if}
   </div>

@@ -22,6 +22,8 @@ export interface TunnelState {
   restarts: number;
   started_at: number | null;
   inspecting: boolean;
+  supervised: boolean;
+  run: number;
 }
 
 export interface Tunnel {
@@ -59,6 +61,7 @@ export interface Settings {
   max_db_mb: number;
   max_body_kb: number;
   redact_headers: string[];
+  redact_query: string[];
   theme: "system" | "light" | "dark";
   default_loglevel: string;
 }

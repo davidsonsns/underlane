@@ -129,7 +129,8 @@ no Go toolchain here; fewer reference tray apps).
 ## 8. Validation messages
 
 `cloudflared tunnel --config <file> ingress validate` runs before every start of a config-based
-tunnel, and also on import. Known messages map to plain language, for example:
+tunnel (bounded by a 20 s timeout, and cancellable by Stop), and on demand from the tunnel's
+**Validate** button. Import only parses the file, so importing never needs the binary. Known messages map to plain language, for example:
 
 - "The last ingress rule must match all URLs" → "Add a final catch-all rule without a hostname,
   for example `- service: http_status:404`."
@@ -232,7 +233,7 @@ they landed:
 | Uninspected named tunnels weren't identifiable as Burrow's | both | Always run from a file in the data dir (§3) |
 | The same tunnel already running outside Burrow | opus | Detect it and refuse, with an explanation (§3) |
 | Compressed bodies unreadable | opus | Raw storage, truncation-tolerant decode at display (research §3.3.1) |
-| E2E DNS/NXDOMAIN flakiness, 429s | opus | e2e polls 1.1.1.1, then uses `curl --resolve`, retries with a budget and a marker (README) |
+| E2E DNS/NXDOMAIN flakiness, 429s | opus | e2e resolves through 1.1.1.1 and pins that IP for the HTTPS request (the `curl --resolve` technique, done in Node), retries with a budget and a marker (README) |
 | h2 upstream breaks WebSocket/Host; `http2Origin`, `matchSNItoHost`, `tlsTimeout` | both | HTTP/1.1 upstream; those rules aren't inspected; `tlsTimeout` is applied (§4) |
 | Relative paths resolve against the CWD | both | Spawn with CWD = config dir, absolutize the same way, credentials preflight (§4) |
 | `unix:`/`ws:` services | opus | ws/wss inspected; unix not inspected in v1 (§4) |
@@ -249,3 +250,31 @@ they landed:
 Not adopted: a Unix-socket proxy listener instead of loopback TCP (opus L3). Ports are held for the
 life of a run and reused across cloudflared restarts, which closes the rebind window. A socket
 listener can come later.
+
+## 15. Review outcomes (pre-ship)
+
+The finished code was reviewed by opus-5.5 and gpt-6-astra (Codex). Accepted findings and fixes:
+
+| Finding | Source | Fix |
+| --- | --- | --- |
+| Stop followed by a quick Start overlapped two runs; the old run's late `Stopped` and pidfile removal clobbered the new one | both | A stopping run stays registered until its process is gone, and a Start is deferred until then. Every state carries a run number, and stale ones are dropped. A pidfile is only removed if it names this run's pid. Regression test `stop_then_immediate_start_does_not_overlap`. |
+| Killing only the shim, or a panic, could orphan cloudflared | both | After the direct child exits, its whole process group is swept (SIGTERM, then SIGKILL), and a drop guard kills the group on unwind. `kill_on_drop` on the shim is gone. At startup Burrow also reaps any cloudflared carrying its data-dir marker. Test `killing_only_the_shim_does_not_orphan_cloudflared`. |
+| Sync commands blocked the main thread on SQLite | opus | Database-backed commands are `async` and run in `spawn_blocking`. TTL deletes run in small batches. Base64 is only sent for binary bodies (64 KB max for the hex view). |
+| Captured bodies escaped the memory budget once queued | both | The write queue has its own 64 MB byte budget; overflow is dropped and counted. A size-cap sweep runs after every 32 MB written, not only every 10 minutes. |
+| Capture could resume after a gap (`AAA`+`CCC`) | Codex | After the first skipped byte, a side only counts bytes and stores nothing more. |
+| Query secrets in structured log fields (`dest`, `error`) and in `Location`/`Referer` | both | Query redaction applies to every string in a log line's JSON and to URL-valued headers. `Sec-WebSocket-Protocol` is redacted. User-configurable query names are in Settings. |
+| Copy as curl: unquoted method (shell injection), HEAD, decoded body with `Content-Encoding` | both | The method is shell-quoted, HEAD becomes `-I`, encoding headers are dropped, and a truncated body is flagged. Unit tests cover it. |
+| The Toggle inside the Quick tunnel form submitted the form (created and started a tunnel) | Codex | `type="button"`, and the toggle is disabled while busy. |
+| A crash loop couldn't be stopped from its own controls | opus | `supervised` state: Stop is offered whenever a run exists, including crashed-and-retrying. |
+| Same-tunnel detection: name substring false positives; bare `tunnel run` missed | opus | Names match only whole arguments. A default config matches a bare `cloudflared tunnel run` (e.g. the launchd service). Tests cover both. |
+| Single-origin legacy flags (`no-tls-verify`, `origin-server-name`, …) ignored; `hello-world` configs failed validation | both | Legacy keys are honoured, and `hello-world` counts as single-origin. |
+| `Trailer` stripped as hop-by-hop | Codex | It's end-to-end (RFC 9110) and is now forwarded. |
+| Validation could hang and block Stop | Codex | 20 s timeout, `kill_on_drop`, and Stop is handled while preparing. |
+| The e2e server could be compiled into a release build with `--features e2e` | Codex | It now requires both the `e2e` feature and `debug_assertions`. |
+| No bulk restart | Codex | "Restart all" in the dashboard and the tray menu. |
+| Log view duplicates, all levels off showing everything, missed events on load, settings overwriting typing, stale request detail, label-wrapped toggles, listbox roles without keyboard support | opus/Codex | All fixed in the Svelte views. |
+
+Not changed: `tlsTimeout` is enforced as part of one combined connect deadline
+(`connectTimeout + tlsTimeout`), not as a separate handshake deadline that starts after TCP
+connects. A stalled handshake therefore fails at the combined deadline. This is recorded as a known
+difference in research.md §3.5.

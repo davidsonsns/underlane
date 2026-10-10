@@ -41,23 +41,26 @@ class AppStore {
   applyState(s: TunnelState) {
     const t = this.overview?.tunnels.find((t) => t.id === s.id);
     if (!t) return this.scheduleRefresh();
+    if (s.run < (t.state.run ?? 0)) return; // late event from a replaced run
     // A stopped config tunnel keeps showing the routes parsed from its file.
     if (s.mappings.length === 0 && t.state.mappings.length && t.kind === "config") s = { ...s, mappings: t.state.mappings };
     t.state = s;
   }
 
   async init() {
-    await this.refresh();
+    // Subscribe first so nothing that happens during the initial load is missed.
     await listen<TunnelState>("tunnel-state", (e) => this.applyState(e.payload));
     await listen("tunnels-changed", () => this.scheduleRefresh());
     await listen("settings-changed", (e) => {
-      if (this.overview) this.overview.settings = e.payload as Overview["settings"];
-      applyTheme(this.overview!.settings.theme);
+      const s = e.payload as Overview["settings"];
+      if (this.overview) this.overview.settings = s;
+      applyTheme(s.theme);
     });
     await listen<{ tunnel_id: string }>("request", (e) => {
       const id = e.payload.tunnel_id;
       this.pulses[id] = (this.pulses[id] ?? 0) + 1;
     });
+    await this.refresh();
   }
 }
 

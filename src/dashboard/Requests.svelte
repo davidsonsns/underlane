@@ -31,7 +31,15 @@
   });
   const tunnel = $derived(store.tunnels.find((t) => t.id === tunnelId) ?? null);
 
+  let loadedFor: string | null | undefined = undefined;
   async function load() {
+    if (loadedFor !== tunnelId) {
+      // Switching tunnels: don't keep showing another tunnel's request.
+      selected = null;
+      detail = null;
+      detailError = null;
+      loadedFor = tunnelId;
+    }
     loading = true;
     error = null;
     try {
@@ -60,8 +68,10 @@
     }
   }
 
-  /** Used by the e2e check: open the newest request's detail. */
-  export async function selectFirst() {
+  let initialSide = $state<"req" | "resp">("resp");
+  /** Used by the e2e check: open the newest request's detail on the given tab. */
+  export async function selectFirst(side: "req" | "resp" = "resp") {
+    initialSide = side;
     await load();
     if (rows[0]) await select(rows[0].id);
   }
@@ -114,7 +124,7 @@
   {:else}
     <div class="split">
       <div class="table-wrap">
-        <div class="thead" role="row">
+        <div class="thead" aria-hidden="true">
           <span>Method</span><span>Path</span><span class="num">Status</span><span class="num">Time</span><span class="num">Size</span><span class="num">At</span>
         </div>
         {#if loading && rows.length === 0}
@@ -124,14 +134,14 @@
         {:else if rows.length === 0}
           <StatePanel kind="empty" title={search ? "No matching requests" : "Waiting for requests"} message={search ? "Try a different filter." : tunnel?.state.status === "connected" ? `Requests to ${tunnel.state.public_url ?? "this tunnel"} will appear here as they happen.` : "Start the tunnel, then send it some traffic."} />
         {:else}
-          <div class="rows" role="listbox" aria-label="Requests">
+          <div class="rows" aria-label="Requests">
             {#each rows as r (r.id)}
               <button
                 class="tr"
                 class:sel={r.id === selected}
                 class:fresh={fresh[r.id]}
-                role="option"
-                aria-selected={r.id === selected}
+                aria-current={r.id === selected ? "true" : undefined}
+                aria-label="{r.method} {r.path}, status {r.status ?? 'none'}"
                 onclick={() => select(r.id)}
                 in:fly={{ y: -4, duration: motion(160) }}
               >
@@ -150,7 +160,7 @@
         {#if detailError}
           <StatePanel kind="error" title="Couldn't load this request" message={detailError} />
         {:else if detail}
-          {#key detail.id}<RequestDetail {detail} />{/key}
+          {#key `${detail.id}:${initialSide}`}<RequestDetail {detail} side={initialSide} />{/key}
         {:else}
           <StatePanel kind="empty" title="Select a request" message="Headers and bodies show here." />
         {/if}

@@ -234,7 +234,7 @@ proxy:
 | `httpHostHeader` | cloudflared still sets it on the request to the proxy. The proxy forwards Host unchanged. |
 | `connectTimeout` | proxy (upstream connect timeout); also kept for cloudflared → proxy |
 | `disableChunkedEncoding`, `keepAlive*`, `tcpKeepAlive`, `noHappyEyeballs`, `proxyType`, `access` | stay in the derived config for cloudflared → proxy |
-| `tlsTimeout` | proxy (TLS handshake timeout on the upstream leg) |
+| `tlsTimeout` | proxy: enforced as part of one combined deadline (`connectTimeout + tlsTimeout`) covering TCP connect and the TLS handshake |
 | `http2Origin: true` | **rule is not inspected**: it keeps its original service, and the UI says why. gRPC and h2-only origins need h2 and trailers end to end. Translating them isn't worth the risk in v1. |
 | `matchSNItoHost: true` | **rule is not inspected**: per-request SNI from Host can't be expressed with a pooled upstream connector without changing behavior. |
 

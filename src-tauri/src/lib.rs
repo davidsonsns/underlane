@@ -75,6 +75,7 @@ pub fn run() {
             commands::restart_tunnel,
             commands::start_all,
             commands::stop_all,
+            commands::restart_all,
             commands::validate_tunnel,
             commands::query_logs,
             commands::clear_logs,
@@ -103,7 +104,7 @@ pub fn run() {
             tray::set_count(&handle, 0);
             core.start_autostart_tunnels();
 
-            #[cfg(feature = "e2e")]
+            #[cfg(all(feature = "e2e", debug_assertions))]
             if let Some(port) = std::env::var("BURROW_E2E_PORT").ok().and_then(|p| p.parse().ok()) {
                 e2e::start(handle.clone(), port);
             }

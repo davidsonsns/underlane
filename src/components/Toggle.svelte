@@ -9,6 +9,7 @@
 </script>
 
 <button
+  type="button"
   class="toggle"
   class:on={checked}
   class:busy
@@ -16,7 +17,8 @@
   aria-checked={checked}
   aria-label={label}
   title={label}
-  {disabled}
+  disabled={disabled || busy}
+  aria-busy={busy}
   onclick={(e) => {
     e.stopPropagation();
     onchange(!checked);

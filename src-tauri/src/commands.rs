@@ -26,9 +26,16 @@ fn err(e: impl std::fmt::Display) -> String {
     e.to_string()
 }
 
+/// Run database work off the main thread (sync Tauri commands run on it) and off the async
+/// workers.
+async fn blocking<T: Send + 'static>(core: &Arc<Core>, f: impl FnOnce(&Core) -> Res<T> + Send + 'static) -> Res<T> {
+    let core = core.clone();
+    tokio::task::spawn_blocking(move || f(&core)).await.map_err(err)?
+}
+
 #[tauri::command]
-pub fn overview(core: CoreState<'_>) -> Res<Overview> {
-    core.overview().map_err(err)
+pub async fn overview(core: CoreState<'_>) -> Res<Overview> {
+    blocking(&core, |c| c.overview().map_err(err)).await
 }
 
 #[derive(Serialize)]
@@ -42,7 +49,11 @@ pub struct Candidate {
 
 /// Config files in `~/.cloudflared`, for the import sheet.
 #[tauri::command]
-pub fn scan_default(core: CoreState<'_>) -> Res<Vec<Candidate>> {
+pub async fn scan_default(core: CoreState<'_>) -> Res<Vec<Candidate>> {
+    blocking(&core, scan_default_inner).await
+}
+
+fn scan_default_inner(core: &Core) -> Res<Vec<Candidate>> {
     let dir = home_dir().join(".cloudflared");
     let mut out = Vec::new();
     for p in scan_dir(&dir) {
@@ -60,12 +71,15 @@ pub fn scan_default(core: CoreState<'_>) -> Res<Vec<Candidate>> {
 }
 
 #[tauri::command]
-pub fn import_paths(core: CoreState<'_>, paths: Vec<String>) -> Res<ImportReport> {
-    let level = core.settings.read().unwrap().default_loglevel.clone();
-    let paths: Vec<PathBuf> = paths.into_iter().map(PathBuf::from).collect();
-    let report = import::import_configs(&core.db, &paths, &level);
-    core.notify_changed();
-    Ok(report)
+pub async fn import_paths(core: CoreState<'_>, paths: Vec<String>) -> Res<ImportReport> {
+    blocking(&core, move |core| {
+        let level = core.settings.read().unwrap().default_loglevel.clone();
+        let paths: Vec<PathBuf> = paths.into_iter().map(PathBuf::from).collect();
+        let report = import::import_configs(&core.db, &paths, &level);
+        core.notify_changed();
+        Ok(report)
+    })
+    .await
 }
 
 #[tauri::command]
@@ -113,7 +127,11 @@ pub struct TunnelPatch {
 }
 
 #[tauri::command]
-pub fn update_tunnel(core: CoreState<'_>, id: String, patch: TunnelPatch) -> Res<()> {
+pub async fn update_tunnel(core: CoreState<'_>, id: String, patch: TunnelPatch) -> Res<()> {
+    blocking(&core, move |c| update_tunnel_inner(c, id, patch)).await
+}
+
+fn update_tunnel_inner(core: &Core, id: String, patch: TunnelPatch) -> Res<()> {
     let mut t = core.db.tunnel(&id).map_err(err)?.ok_or("Tunnel not found")?;
     let mut needs_restart = false;
     if let Some(n) = patch.name.filter(|n| !n.trim().is_empty()) {
@@ -179,8 +197,8 @@ pub fn rename_project(core: CoreState<'_>, id: String, name: String) -> Res<()> 
 }
 
 #[tauri::command]
-pub fn start_tunnel(core: CoreState<'_>, id: String) -> Res<()> {
-    core.start(&id).map_err(err)
+pub async fn start_tunnel(core: CoreState<'_>, id: String) -> Res<()> {
+    blocking(&core, move |c| c.start(&id).map_err(err)).await
 }
 
 #[tauri::command]
@@ -190,8 +208,21 @@ pub async fn stop_tunnel(core: CoreState<'_>, id: String) -> Res<()> {
 }
 
 #[tauri::command]
-pub fn restart_tunnel(core: CoreState<'_>, id: String) -> Res<()> {
-    core.restart(&id).map_err(err)
+pub async fn restart_tunnel(core: CoreState<'_>, id: String) -> Res<()> {
+    blocking(&core, move |c| c.restart(&id).map_err(err)).await
+}
+
+/// Restart every tunnel that is currently running.
+pub fn restart_all_inner<R: Runtime>(app: &AppHandle<R>) {
+    let core = app.state::<Arc<Core>>();
+    for id in core.sup.running_ids() {
+        let _ = core.restart(&id);
+    }
+}
+
+#[tauri::command]
+pub fn restart_all(app: AppHandle) {
+    restart_all_inner(&app);
 }
 
 pub fn start_all_inner<R: Runtime>(app: &AppHandle<R>) {
@@ -241,9 +272,9 @@ pub struct LogArgs {
 }
 
 #[tauri::command]
-pub fn query_logs(core: CoreState<'_>, args: LogArgs) -> Res<Vec<LogLine>> {
-    core.db
-        .query_logs(&LogQuery {
+pub async fn query_logs(core: CoreState<'_>, args: LogArgs) -> Res<Vec<LogLine>> {
+    blocking(&core, move |c| {
+        c.db.query_logs(&LogQuery {
             tunnel_id: args.tunnel_id,
             levels: args.levels,
             search: args.search,
@@ -252,16 +283,18 @@ pub fn query_logs(core: CoreState<'_>, args: LogArgs) -> Res<Vec<LogLine>> {
             limit: args.limit.unwrap_or(500),
         })
         .map_err(err)
+    })
+    .await
 }
 
 #[tauri::command]
-pub fn clear_logs(core: CoreState<'_>, tunnel_id: Option<String>) -> Res<()> {
-    core.db.clear_logs(tunnel_id.as_deref()).map_err(err)
+pub async fn clear_logs(core: CoreState<'_>, tunnel_id: Option<String>) -> Res<()> {
+    blocking(&core, move |c| c.db.clear_logs(tunnel_id.as_deref()).map_err(err)).await
 }
 
 #[tauri::command]
-pub fn list_requests(core: CoreState<'_>, tunnel_id: Option<String>, search: Option<String>, limit: Option<usize>) -> Res<Vec<RequestSummary>> {
-    core.db.list_requests(tunnel_id.as_deref(), search.as_deref(), limit.unwrap_or(500)).map_err(err)
+pub async fn list_requests(core: CoreState<'_>, tunnel_id: Option<String>, search: Option<String>, limit: Option<usize>) -> Res<Vec<RequestSummary>> {
+    blocking(&core, move |c| c.db.list_requests(tunnel_id.as_deref(), search.as_deref(), limit.unwrap_or(500)).map_err(err)).await
 }
 
 #[derive(Serialize)]
@@ -292,7 +325,8 @@ fn body_view(b: &BodyCapture, headers: &[(String, String)]) -> BodyView {
         decode_partial: decoded.partial,
         is_text,
         text: is_text.then(|| String::from_utf8_lossy(&decoded.bytes).into_owned()),
-        base64: base64::engine::general_purpose::STANDARD.encode(&decoded.bytes),
+        // The hex view only needs binary bodies; text goes over once.
+        base64: if is_text { String::new() } else { base64::engine::general_purpose::STANDARD.encode(&decoded.bytes[..decoded.bytes.len().min(64 * 1024)]) },
     }
 }
 
@@ -342,22 +376,27 @@ pub fn detail_of(x: CapturedExchange) -> RequestDetail {
 }
 
 #[tauri::command]
-pub fn get_request(core: CoreState<'_>, id: String) -> Res<Option<RequestDetail>> {
-    Ok(core.db.get_request(&id).map_err(err)?.map(detail_of))
+pub async fn get_request(core: CoreState<'_>, id: String) -> Res<Option<RequestDetail>> {
+    blocking(&core, move |c| Ok(c.db.get_request(&id).map_err(err)?.map(detail_of))).await
 }
 
 #[tauri::command]
-pub fn clear_requests(core: CoreState<'_>, tunnel_id: Option<String>) -> Res<()> {
-    core.db.clear_requests(tunnel_id.as_deref()).map_err(err)
+pub async fn clear_requests(core: CoreState<'_>, tunnel_id: Option<String>) -> Res<()> {
+    blocking(&core, move |c| c.db.clear_requests(tunnel_id.as_deref()).map_err(err)).await
 }
 
 #[tauri::command]
-pub fn save_settings(core: CoreState<'_>, settings: Settings) -> Res<()> {
+pub async fn save_settings(core: CoreState<'_>, settings: Settings) -> Res<()> {
+    blocking(&core, move |c| save_settings_inner(c, settings)).await
+}
+
+fn save_settings_inner(core: &Core, settings: Settings) -> Res<()> {
     let mut s = settings;
     s.log_ttl_days = s.log_ttl_days.clamp(1, 365);
     s.max_db_mb = s.max_db_mb.clamp(16, 10_240);
     s.max_body_kb = s.max_body_kb.min(16 * 1024);
     s.redact_headers = s.redact_headers.into_iter().map(|h| h.trim().to_string()).filter(|h| !h.is_empty()).collect();
+    s.redact_query = s.redact_query.into_iter().map(|h| h.trim().to_string()).filter(|h| !h.is_empty()).collect();
     if !["system", "light", "dark"].contains(&s.theme.as_str()) {
         s.theme = "system".into();
     }

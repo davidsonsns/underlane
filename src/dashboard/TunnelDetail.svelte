@@ -5,7 +5,7 @@
   import { store } from "../lib/store.svelte";
   import { api, errorText } from "../lib/api";
   import { motion } from "../lib/theme";
-  import { formatUptime, publicUrl, statusLabel } from "../lib/format";
+  import { formatUptime, isOn, publicUrl, statusLabel } from "../lib/format";
   import type { Tunnel, Validation } from "../lib/types";
   import StatusDot from "../components/StatusDot.svelte";
   import Toggle from "../components/Toggle.svelte";
@@ -30,7 +30,7 @@
   });
 
   const s = $derived(tunnel.state);
-  const on = $derived(["starting", "connected", "degraded"].includes(s.status));
+  const on = $derived(isOn(tunnel));
   const url = $derived(publicUrl(tunnel));
   const routes = $derived(
     s.mappings.length
@@ -102,7 +102,7 @@
   <div class="actions">
     {#if on}
       <button class="btn" disabled={busy} onclick={() => run(() => api.stop(tunnel.id))}><Icon name="stop" size={10} /> Stop</button>
-      <button class="btn" disabled={busy} onclick={() => run(() => api.restart(tunnel.id))}><Icon name="restart" size={13} /> Restart</button>
+      <button class="btn" disabled={busy} onclick={() => run(() => api.restart(tunnel.id))}><Icon name="restart" size={13} /> {s.status === "crashed" ? "Try again now" : "Restart"}</button>
     {:else}
       <button class="btn primary" disabled={busy || !store.overview?.cloudflared} onclick={() => run(() => api.start(tunnel.id))}>
         <Icon name="play" size={10} /> {s.status === "crashed" ? "Try again" : "Start"}
@@ -163,7 +163,7 @@
 <section>
   <h2>Behaviour</h2>
   <div class="rows">
-    <label class="row">
+    <div class="row">
       <span class="label">
         Inspect requests
         <span class="help">
@@ -171,17 +171,17 @@
         </span>
       </span>
       <Toggle checked={tunnel.inspect} disabled={tunnel.kind === "token" || busy} label="Inspect requests" onchange={(v) => patch({ inspect: v })} />
-    </label>
-    <label class="row">
+    </div>
+    <div class="row">
       <span class="label">Start automatically<span class="help">Start this tunnel whenever Burrow launches.</span></span>
       <Toggle checked={tunnel.autostart} disabled={busy} label="Start automatically" onchange={(v) => patch({ autostart: v })} />
-    </label>
-    <label class="row">
+    </div>
+    <div class="row">
       <span class="label">Log level<span class="help">Debug logs every request's headers (redacted before storage).</span></span>
       <select class="field" value={tunnel.loglevel} onchange={(e) => patch({ loglevel: (e.target as HTMLSelectElement).value })}>
         {#each ["debug", "info", "warn", "error"] as l}<option value={l}>{l}</option>{/each}
       </select>
-    </label>
+    </div>
     <div class="row">
       <span class="label">Project</span>
       <input

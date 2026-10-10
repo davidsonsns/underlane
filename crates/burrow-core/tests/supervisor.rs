@@ -309,3 +309,60 @@ fn can_start_from_a_thread_outside_the_runtime() {
         sup.stop("tun-1").await;
     });
 }
+
+#[tokio::test]
+async fn stop_then_immediate_start_does_not_overlap() {
+    let f = fake("ok");
+    let (sup, states, _) = supervisor(&f, |_| {});
+    let spec = || RunSpec { tunnel: tunnel(TunnelKind::Quick), token: None };
+    sup.start(spec());
+    wait_status(&states, Status::Connected).await;
+    let first_pid = states.lock().unwrap().iter().rev().find_map(|s| s.pid).unwrap();
+    // Stop and start again without waiting: the new run must begin only after the old one exits.
+    let stopper = { let sup = sup.clone(); tokio::spawn(async move { sup.stop("tun-1").await }) };
+    tokio::time::sleep(Duration::from_millis(20)).await;
+    sup.start(spec());
+    stopper.await.unwrap();
+    for _ in 0..200 {
+        let last = states.lock().unwrap().last().cloned().unwrap();
+        if last.status == Status::Connected && last.pid.is_some() && last.pid != Some(first_pid) {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(25)).await;
+    }
+    let all = states.lock().unwrap().clone();
+    let last = all.last().unwrap();
+    assert_eq!(last.status, Status::Connected, "{:?}", all.iter().map(|s| (s.run, s.status)).collect::<Vec<_>>());
+    assert!(last.run > all.iter().find(|s| s.pid == Some(first_pid)).unwrap().run, "newer run");
+    // The first run's final Stopped was emitted before the new run started.
+    let stopped_idx = all.iter().position(|s| s.status == Status::Stopped).unwrap();
+    let second_start = all.iter().position(|s| s.run == last.run).unwrap();
+    assert!(stopped_idx < second_start);
+    assert_eq!(std::fs::read_to_string(f.data.join("run/tun-1.pid")).unwrap().trim(), last.pid.unwrap().to_string());
+    sup.stop("tun-1").await;
+}
+
+#[tokio::test]
+async fn killing_only_the_shim_does_not_orphan_cloudflared() {
+    let f = fake("ok");
+    let shim = std::path::PathBuf::from(env!("CARGO_BIN_EXE_burrow-shim"));
+    let (sup, states, _) = supervisor(&f, |c| {
+        c.shim = Some(shim.clone());
+        c.max_failures = 1;
+    });
+    sup.start(RunSpec { tunnel: tunnel(TunnelKind::Quick), token: None });
+    let s = wait_status(&states, Status::Connected).await;
+    let shim_pid = s.pid.unwrap();
+    // Find the fake cloudflared (child of the shim).
+    let out = std::process::Command::new("pgrep").args(["-P", &shim_pid.to_string()]).output().unwrap();
+    let cf_pid: i32 = String::from_utf8_lossy(&out.stdout).trim().parse().unwrap();
+    unsafe { libc::kill(shim_pid as i32, libc::SIGKILL) };
+    for _ in 0..100 {
+        if unsafe { libc::kill(cf_pid, 0) } != 0 {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    assert_ne!(unsafe { libc::kill(cf_pid, 0) }, 0, "cloudflared behind a killed shim was cleaned up");
+    sup.stop("tun-1").await;
+}

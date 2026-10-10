@@ -31,6 +31,18 @@ describe("format", () => {
     expect(shortService("http://127.0.0.1:51112", true)).toBe(":51112");
     expect(shortService("https://api.internal:8443", true)).toBe("api.internal:8443");
   });
+  it("shell-quotes untrusted methods and handles HEAD", () => {
+    const base = { host: "h.example.com", path: "/", req_headers: [] as [string, string][], req: { stored: 0, size: 0, truncated: false } as never };
+    expect(toCurl({ ...base, method: "X`touch /tmp/pwned`" })).toBe("curl -X 'X`touch /tmp/pwned`' 'https://h.example.com/'");
+    expect(toCurl({ ...base, method: "HEAD" })).toBe("curl -I 'https://h.example.com/'");
+  });
+  it("drops content-encoding when replaying a decoded body", () => {
+    const cmd = toCurl({
+      method: "POST", host: "h", path: "/", req_headers: [["Content-Encoding", "gzip"], ["Content-Type", "application/json"]],
+      req: { stored: 2, size: 2, truncated: false, is_text: true, text: "{}" } as never,
+    });
+    expect(cmd).not.toContain("gzip");
+  });
   it("builds curl commands with quoting and without edge headers", () => {
     const cmd = toCurl({
       method: "POST",
@@ -40,7 +52,7 @@ describe("format", () => {
       req: { stored: 11, is_text: true, text: `{"a":"it's"}` } as never,
     });
     expect(cmd).toBe(
-      `curl -X POST 'https://x.trycloudflare.com/api?q=1' -H 'Content-Type: application/json' -H 'Authorization: [redacted]' --data-raw '{"a":"it'\\''s"}'`,
+      `curl -X 'POST' 'https://x.trycloudflare.com/api?q=1' -H 'Content-Type: application/json' -H 'Authorization: [redacted]' --data-raw '{"a":"it'\\''s"}'`,
     );
   });
 });

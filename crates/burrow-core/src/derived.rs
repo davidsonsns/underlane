@@ -105,7 +105,23 @@ pub fn plan(config: &TunnelConfig) -> InspectionPlan {
             .and_then(Value::as_mapping)
             .and_then(|m| m.get("originRequest"))
             .and_then(Value::as_mapping);
-        let get = |key: &str| rule_or.and_then(|m| m.get(key)).or_else(|| top_or.and_then(|m| m.get(key)));
+        // Single-origin configs use cloudflared's legacy top-level flags (no-tls-verify, ...).
+        let legacy = |key: &str| -> Option<&Value> {
+            if !config.is_single_origin() {
+                return None;
+            }
+            let flag = match key {
+                "noTLSVerify" => "no-tls-verify",
+                "originServerName" => "origin-server-name",
+                "caPool" => "origin-ca-pool",
+                "connectTimeout" => "proxy-connect-timeout",
+                "tlsTimeout" => "proxy-tls-timeout",
+                "http2Origin" => "http2-origin",
+                _ => return None,
+            };
+            root.and_then(|m| m.get(flag))
+        };
+        let get = |key: &str| rule_or.and_then(|m| m.get(key)).or_else(|| top_or.and_then(|m| m.get(key))).or_else(|| legacy(key));
 
         if get("http2Origin").and_then(Value::as_bool) == Some(true) {
             plan.skipped.push((rule.index, "Uses http2Origin (HTTP/2 or gRPC origin); traffic goes straight to the origin.".into()));

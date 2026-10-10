@@ -261,3 +261,28 @@ async fn bench_added_latency() {
     );
     tokio::time::sleep(Duration::from_millis(50)).await;
 }
+
+#[test]
+fn capture_stays_a_faithful_prefix_after_a_gap() {
+    let mut b = capture::BodyCapture::default();
+    assert_eq!(b.push_limited(b"AAA", 100, 3), 3);
+    // Budget exhausted for this chunk: nothing stored, marked truncated.
+    assert_eq!(b.push_limited(b"BBB", 100, 0), 0);
+    // Budget available again, but storing CCC would produce AAACCC; it must not.
+    assert_eq!(b.push_limited(b"CCC", 100, 100), 0);
+    assert_eq!(b.bytes, b"AAA");
+    assert_eq!(b.size, 9);
+    assert!(b.truncated);
+}
+
+#[tokio::test]
+async fn redacts_query_strings_inside_url_headers() {
+    let h = Harness::new(CaptureOptions::default()).await;
+    let req = Request::get(h.url("/echo"))
+        .header("referer", "https://app.example.com/callback?code=abc123&state=ok")
+        .body(Full::new(Bytes::new()).boxed())
+        .unwrap();
+    client().request(req).await.unwrap().into_body().collect().await.unwrap();
+    let x = h.wait_for("/echo").await;
+    assert_eq!(header(&x.req_headers, "referer"), Some("https://app.example.com/callback?code=[redacted]&state=ok"));
+}

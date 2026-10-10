@@ -25,7 +25,11 @@ pub const ALWAYS_REDACT: &[&str] = &[
     "cf-access-client-secret",
     "x-api-key",
     "x-auth-token",
+    "sec-websocket-protocol",
 ];
+
+/// Headers whose values are URLs; their query strings get the query redaction.
+const URL_HEADERS: &[&str] = &["location", "referer", "content-location", "refresh"];
 
 /// Query parameters whose values are always redacted in captured paths and log messages.
 pub const ALWAYS_REDACT_QUERY: &[&str] =
@@ -215,6 +219,10 @@ impl BodyCapture {
     /// Like [`push`](Self::push) but also bounded by `allowance` (the global budget grant).
     pub fn push_limited(&mut self, chunk: &[u8], cap: usize, allowance: usize) -> usize {
         self.size += chunk.len() as u64;
+        // Once anything was skipped, stop storing: the capture must stay a faithful prefix.
+        if self.truncated {
+            return 0;
+        }
         let room = cap.saturating_sub(self.bytes.len()).min(allowance);
         if chunk.len() > room {
             self.truncated = true;
@@ -252,16 +260,23 @@ pub struct CapturedExchange {
     pub error: Option<String>,
 }
 
-/// Header list with sensitive values replaced. Names keep their wire spelling.
-pub fn redact_headers(headers: &HeaderMap, redact: &HashSet<String>) -> Vec<(String, String)> {
+/// Header list with sensitive values replaced. Names keep their wire spelling. URL-valued
+/// headers (Location, Referer, ...) get their query parameters redacted.
+pub fn redact_headers(headers: &HeaderMap, r: &Redactor) -> Vec<(String, String)> {
     headers
         .iter()
         .map(|(name, value)| {
             let n = name.as_str().to_string();
-            let v = if redact.contains(&n.to_ascii_lowercase()) {
+            let lower = n.to_ascii_lowercase();
+            let v = if r.headers.contains(&lower) {
                 REDACTED.to_string()
             } else {
-                String::from_utf8_lossy(value.as_bytes()).into_owned()
+                let raw = String::from_utf8_lossy(value.as_bytes()).into_owned();
+                if URL_HEADERS.contains(&lower.as_str()) {
+                    redact_query_in_text(&raw, &r.query)
+                } else {
+                    raw
+                }
             };
             (n, v)
         })

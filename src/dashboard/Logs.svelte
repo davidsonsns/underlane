@@ -32,6 +32,11 @@
   async function load() {
     loading = true;
     error = null;
+    if (activeLevels.length === 0) {
+      lines = [];
+      loading = false;
+      return;
+    }
     try {
       lines = await api.queryLogs({ tunnelId, levels: activeLevels.length === 5 ? [] : activeLevels, search, limit: 1000 });
       await scrollToEnd();
@@ -70,7 +75,9 @@
 
   onMount(() => {
     const un = listen<LogLine[]>("logs", (e) => {
-      const add = e.payload.filter(matches);
+      // Rows can already be in the snapshot loaded a moment ago; only append newer ids.
+      const last = lines.length ? lines[lines.length - 1].id : 0;
+      const add = e.payload.filter((l) => l.id > last && matches(l));
       if (!add.length) return;
       lines = [...lines, ...add].slice(-MAX);
       scrollToEnd();
@@ -116,7 +123,7 @@
     {:else if lines.length === 0}
       <StatePanel kind="empty" title={search || activeLevels.length < 5 ? "No matching log lines" : "No logs yet"} message={search ? "Try a different search or level filter." : "Start a tunnel and cloudflared's output streams here live."} />
     {:else}
-      <div class="log" bind:this={scroller} onscroll={onScroll} role="log" aria-live="polite">
+      <div class="log" bind:this={scroller} onscroll={onScroll} role="log" aria-live="off">
         {#each lines as l (l.id)}
           <button class="line {l.level}" class:open={expanded === l.id} onclick={() => (expanded = expanded === l.id ? null : l.id)}>
             <span class="ts">{formatClock(l.ts)}</span>

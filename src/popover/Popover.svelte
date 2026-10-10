@@ -8,7 +8,7 @@
   import { store } from "../lib/store.svelte";
   import { api, errorText } from "../lib/api";
   import { motion } from "../lib/theme";
-  import { publicUrl, statusLabel } from "../lib/format";
+  import { isOn, publicUrl, statusLabel } from "../lib/format";
   import type { Tunnel } from "../lib/types";
   import StatusDot from "../components/StatusDot.svelte";
   import Toggle from "../components/Toggle.svelte";
@@ -39,7 +39,6 @@
     return [...map.entries()].map(([id, g]) => ({ id, ...g }));
   });
 
-  const isOn = (t: Tunnel) => ["starting", "connected", "degraded"].includes(t.state.status);
 
   function flash(msg: string) {
     toast = msg;

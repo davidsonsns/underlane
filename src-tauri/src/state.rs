@@ -2,7 +2,7 @@
 
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::Duration;
 
@@ -26,6 +26,14 @@ pub enum Write {
 }
 
 const WRITE_QUEUE: usize = 20_000;
+/// Body bytes allowed to wait in the write queue; beyond this, captures are dropped and counted.
+const QUEUE_BYTES: usize = 64 * 1024 * 1024;
+/// Trigger a size-cap sweep after this many bytes were written since the last one.
+const SWEEP_AFTER_BYTES: usize = 32 * 1024 * 1024;
+
+fn record_bytes(x: &CapturedExchange) -> usize {
+    x.req_body.bytes.len() + x.resp_body.bytes.len() + 512
+}
 
 pub struct Core {
     pub handle: AppHandle,
@@ -37,6 +45,11 @@ pub struct Core {
     pub settings: RwLock<Settings>,
     pub data_dir: PathBuf,
     pub dropped: Arc<AtomicU64>,
+    queued_bytes: Arc<AtomicUsize>,
+    written_since_sweep: AtomicUsize,
+    sweep_now: tokio::sync::Notify,
+    /// Latest supervisor run seen per tunnel; older runs' late events are ignored.
+    latest_run: Mutex<HashMap<String, u64>>,
     activity: Mutex<Option<platform::Activity>>,
 }
 
@@ -65,7 +78,7 @@ pub fn capture_options(s: &Settings) -> CaptureOptions {
     CaptureOptions {
         max_body_bytes: s.max_body_kb as usize * 1024,
         redact_headers: s.redact_headers.clone(),
-        redact_query: Vec::new(),
+        redact_query: s.redact_query.clone(),
     }
 }
 
@@ -85,6 +98,8 @@ impl Core {
         let (state_tx, state_rx) = mpsc::unbounded_channel::<TunnelState>();
         let dropped = Arc::new(AtomicU64::new(0));
         let dropped_sink = dropped.clone();
+        let queued_bytes = Arc::new(AtomicUsize::new(0));
+        let queued_sink = queued_bytes.clone();
         let sink = Arc::new(move |e: Event| match e {
             Event::State(s) => {
                 let _ = state_tx.send(s);
@@ -95,7 +110,12 @@ impl Core {
                 }
             }
             Event::Request(x) => {
-                if write_tx.try_send(Write::Request(x)).is_err() {
+                let n = record_bytes(&x);
+                if queued_sink.fetch_add(n, Ordering::AcqRel) + n > QUEUE_BYTES {
+                    queued_sink.fetch_sub(n, Ordering::AcqRel);
+                    dropped_sink.fetch_add(1, Ordering::Relaxed);
+                } else if write_tx.try_send(Write::Request(x)).is_err() {
+                    queued_sink.fetch_sub(n, Ordering::AcqRel);
                     dropped_sink.fetch_add(1, Ordering::Relaxed);
                 }
             }
@@ -115,6 +135,10 @@ impl Core {
             settings: RwLock::new(settings),
             data_dir,
             dropped,
+            queued_bytes,
+            written_since_sweep: AtomicUsize::new(0),
+            sweep_now: tokio::sync::Notify::new(),
+            latest_run: Mutex::new(HashMap::new()),
             activity: Mutex::new(None),
         });
         tokio::spawn(writer_task(core.clone(), write_rx));
@@ -132,7 +156,13 @@ impl Core {
     fn state_with_routes(&self, t: &Tunnel) -> TunnelState {
         let mut s = self.state_of(&t.id);
         if s.mappings.is_empty() && t.kind == TunnelKind::Config {
-            if let Some(c) = t.config_path.as_deref().and_then(|p| burrow_core::config::TunnelConfig::load(std::path::Path::new(p)).ok()) {
+            let loaded = t.config_path.as_deref().map(|p| burrow_core::config::TunnelConfig::load(std::path::Path::new(p)));
+            if let Some(Err(e)) = &loaded {
+                if s.status == Status::Stopped && s.detail.is_none() {
+                    s.detail = Some(format!("The config file can't be read: {e}"));
+                }
+            }
+            if let Some(Ok(c)) = loaded {
                 s.mappings = c
                     .ingress
                     .iter()
@@ -246,6 +276,14 @@ impl Core {
     }
 
     fn on_state(&self, s: TunnelState) {
+        {
+            let mut latest = self.latest_run.lock().unwrap();
+            let seen = latest.entry(s.id.clone()).or_insert(0);
+            if s.run < *seen {
+                return; // a late event from a run that has been replaced
+            }
+            *seen = s.run;
+        }
         let prev = self.states.lock().unwrap().insert(s.id.clone(), s.clone());
         if prev.as_ref() == Some(&s) {
             return;
@@ -314,15 +352,23 @@ async fn writer_task(core: Arc<Core>, mut rx: mpsc::Receiver<Write>) {
                 }
             }
             let mut out_reqs = Vec::new();
+            let mut bytes = 0usize;
             for x in batch_reqs {
+                bytes += record_bytes(&x);
                 if db.upsert_request(&x).is_ok() {
                     out_reqs.push(summary_of(&x));
                 }
             }
-            (out_logs, out_reqs)
+            (out_logs, out_reqs, bytes)
         })
         .await;
-        if let Ok((l, r)) = stored {
+        if let Ok((l, r, bytes)) = stored {
+            core.queued_bytes.fetch_sub(bytes.min(core.queued_bytes.load(Ordering::Acquire)), Ordering::AcqRel);
+            let log_bytes: usize = l.iter().map(|x| x.message.len() + x.fields.len() + 64).sum();
+            if core.written_since_sweep.fetch_add(bytes + log_bytes, Ordering::AcqRel) + bytes + log_bytes > SWEEP_AFTER_BYTES {
+                core.written_since_sweep.store(0, Ordering::Release);
+                core.sweep_now.notify_one();
+            }
             if !l.is_empty() {
                 let _ = core.handle.emit("logs", &l);
             }
@@ -343,7 +389,11 @@ async fn state_task(core: Arc<Core>, mut rx: mpsc::UnboundedReceiver<TunnelState
 async fn sweep_task(core: Arc<Core>) {
     let mut tick = tokio::time::interval(Duration::from_secs(600));
     loop {
-        tick.tick().await;
+        // Every 10 minutes, or sooner when a lot has been written.
+        tokio::select! {
+            _ = tick.tick() => {}
+            _ = core.sweep_now.notified() => {}
+        }
         let (ttl_days, max_mb) = {
             let s = core.settings.read().unwrap();
             (s.log_ttl_days.max(1) as i64, s.max_db_mb.max(16) as u64)

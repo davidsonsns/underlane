@@ -121,14 +121,17 @@ pub async fn validate(bin: &Path, config: &Path) -> Validation {
     if let Some(dir) = config.parent().filter(|d| d.is_dir()) {
         cmd.current_dir(dir);
     }
-    let out = cmd
-        .arg("tunnel")
-        .arg("--config")
-        .arg(config)
-        .args(["ingress", "validate"])
-        .stdin(Stdio::null())
-        .output()
-        .await;
+    cmd.arg("tunnel").arg("--config").arg(config).args(["ingress", "validate"]).stdin(Stdio::null()).kill_on_drop(true);
+    let out = match tokio::time::timeout(std::time::Duration::from_secs(20), cmd.output()).await {
+        Ok(r) => r,
+        Err(_) => {
+            return Validation {
+                ok: false,
+                raw: "`cloudflared tunnel ingress validate` didn't finish within 20 seconds.".into(),
+                hint: Some("Check that the cloudflared path in Settings points at the real binary.".into()),
+            }
+        }
+    };
     match out {
         Ok(o) => {
             let text = format!("{}{}", String::from_utf8_lossy(&o.stdout), String::from_utf8_lossy(&o.stderr));
@@ -190,6 +193,26 @@ pub struct ParsedLog {
 
 /// Parse one line of `--output json` (falls back to the raw text for anything else).
 pub fn parse_log_line(line: &str, redact: &HashSet<String>) -> Option<ParsedLog> {
+    parse_log_line_with(line, redact, None)
+}
+
+/// Redact sensitive query parameters in every string inside a JSON value (cloudflared puts
+/// full URLs in fields such as `dest`, `url` and `error`).
+fn redact_query_in_json(v: &mut serde_json::Value, q: &HashSet<String>) {
+    match v {
+        serde_json::Value::String(s) => {
+            if s.contains('?') {
+                *s = crate::proxy::capture::redact_query_in_text(s, q);
+            }
+        }
+        serde_json::Value::Array(a) => a.iter_mut().for_each(|x| redact_query_in_json(x, q)),
+        serde_json::Value::Object(o) => o.values_mut().for_each(|x| redact_query_in_json(x, q)),
+        _ => {}
+    }
+}
+
+/// Like [`parse_log_line`], also redacting query parameters in the message and all fields.
+pub fn parse_log_line_with(line: &str, redact: &HashSet<String>, query_redact: Option<&HashSet<String>>) -> Option<ParsedLog> {
     let line = line.trim_end();
     if line.trim().is_empty() {
         return None;
@@ -199,23 +222,43 @@ pub fn parse_log_line(line: &str, redact: &HashSet<String>) -> Option<ParsedLog>
             .remove("level")
             .and_then(|v| v.as_str().map(normalize_level))
             .unwrap_or_else(|| "info".into());
-        let message = map.remove("message").and_then(|v| v.as_str().map(String::from)).unwrap_or_default();
+        let mut message = map.remove("message").and_then(|v| v.as_str().map(String::from)).unwrap_or_default();
+        if let Some(q) = query_redact {
+            message = crate::proxy::capture::redact_query_in_text(&message, q);
+        }
         let ts_ms = map.remove("time").and_then(|v| v.as_str().and_then(parse_rfc3339_ms));
         if let Some(h) = map.get_mut("headers") {
             redact_json_headers(h, redact);
+        }
+        if let Some(q) = query_redact {
+            for v in map.values_mut() {
+                redact_query_in_json(v, q);
+            }
         }
         let fields = serde_json::Value::Object(map).to_string();
         return Some(ParsedLog { ts_ms, level, message, fields });
     }
     // Plain text (e.g. "2026-10-10T06:01:19Z INF message").
     let mut level = "info".to_string();
+    let mut tagged = false;
     for (tag, l) in [(" DBG ", "debug"), (" INF ", "info"), (" WRN ", "warn"), (" ERR ", "error"), (" FTL ", "fatal")] {
         if line.contains(tag) {
             level = l.into();
+            tagged = true;
             break;
         }
     }
-    Some(ParsedLog { ts_ms: None, level, message: line.to_string(), fields: "{}".into() })
+    // Untagged plain-text lines are what cloudflared prints for fatal startup problems
+    // (e.g. "quick tunnel provisioning failed with status 429"); surface them as errors.
+    let lower = line.to_ascii_lowercase();
+    if !tagged && (lower.contains("failed") || lower.contains("error")) {
+        level = "error".into();
+    }
+    let message = match query_redact {
+        Some(q) => crate::proxy::capture::redact_query_in_text(line, q),
+        None => line.to_string(),
+    };
+    Some(ParsedLog { ts_ms: None, level, message, fields: "{}".into() })
 }
 
 fn normalize_level(l: &str) -> String {
@@ -286,17 +329,58 @@ pub struct ExternalProcess {
     pub command: String,
 }
 
+/// What identifies a tunnel on another process's command line.
+#[derive(Debug, Clone, Default)]
+pub struct TunnelIdentity {
+    /// Config file path (matched as a substring; paths are specific).
+    pub config_path: Option<String>,
+    /// `tunnel:` value. UUIDs match as substrings, names only as whole arguments.
+    pub tunnel: Option<String>,
+    /// The file is a default config (`~/.cloudflared/config.yml` etc.), so a bare
+    /// `cloudflared tunnel run` without `--config` (e.g. `cloudflared service install`) uses it.
+    pub is_default_config: bool,
+}
+
+impl TunnelIdentity {
+    fn matches(&self, cmd: &str) -> bool {
+        let tokens: Vec<&str> = cmd.split_whitespace().collect();
+        if let Some(p) = self.config_path.as_deref().filter(|p| !p.is_empty()) {
+            if cmd.contains(p) {
+                return true;
+            }
+        }
+        if let Some(t) = self.tunnel.as_deref().filter(|t| !t.is_empty()) {
+            if crate::derived::looks_like_uuid(t) {
+                if cmd.contains(t) {
+                    return true;
+                }
+            } else if tokens.iter().skip(1).any(|tok| *tok == t) {
+                return true;
+            }
+        }
+        if self.is_default_config {
+            let has_config = tokens.iter().any(|t| *t == "--config" || t.starts_with("--config="));
+            let runs = tokens.contains(&"run") && tokens.contains(&"tunnel");
+            let has_other_source = tokens.iter().any(|t| *t == "--token" || *t == "--url" || t.starts_with("--token="));
+            if runs && !has_config && !has_other_source && !cmd.contains("TUNNEL_TOKEN") {
+                return true;
+            }
+        }
+        false
+    }
+}
+
 /// cloudflared processes not started by Burrow (their command line doesn't mention
-/// `data_marker`) whose command line mentions any of `needles` (config path, tunnel id).
-pub fn find_external(needles: &[String], data_marker: &str) -> Vec<ExternalProcess> {
+/// `data_marker`) that run the given tunnel.
+pub fn find_external(id: &TunnelIdentity, data_marker: &str) -> Vec<ExternalProcess> {
     let out = match std::process::Command::new("ps").args(["-axww", "-o", "pid=,command="]).output() {
         Ok(o) => String::from_utf8_lossy(&o.stdout).to_string(),
         Err(_) => return Vec::new(),
     };
-    external_from_ps(&out, needles, data_marker)
+    external_from_ps(&out, id, data_marker)
 }
 
-pub fn external_from_ps(ps: &str, needles: &[String], data_marker: &str) -> Vec<ExternalProcess> {
+pub fn external_from_ps(ps: &str, id: &TunnelIdentity, data_marker: &str) -> Vec<ExternalProcess> {
     ps.lines()
         .filter_map(|l| {
             let l = l.trim_start();
@@ -307,8 +391,7 @@ pub fn external_from_ps(ps: &str, needles: &[String], data_marker: &str) -> Vec<
             if !is_cloudflared || cmd.contains(data_marker) {
                 return None;
             }
-            let matches = needles.iter().filter(|n| !n.is_empty()).any(|n| cmd.contains(n.as_str()));
-            if !matches {
+            if !id.matches(cmd) {
                 return None;
             }
             Some(ExternalProcess { pid: pid.parse().ok()?, command: cmd.to_string() })

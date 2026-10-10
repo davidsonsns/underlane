@@ -49,6 +49,11 @@ export function shortService(service: string, compact = false): string {
 }
 
 /** Public URL a user most likely wants: the quick-tunnel URL or the first concrete hostname. */
+/** The tunnel is under supervision: starting, up, or crashed-and-retrying (so Stop applies). */
+export function isOn(t: Pick<Tunnel, "state">): boolean {
+  return t.state.supervised || ["starting", "connected", "degraded"].includes(t.state.status);
+}
+
 export function publicUrl(t: Pick<Tunnel, "state" | "kind">): string | null {
   if (t.state.public_url) return t.state.public_url;
   const host = t.state.mappings.find((m: RouteMapping) => m.hostname && !m.hostname.includes("*"))?.hostname;
@@ -92,14 +97,16 @@ function shellQuote(s: string): string {
 }
 
 const SKIP_CURL_HEADERS = new Set([
-  "host", "content-length", "connection", "accept-encoding", "cdn-loop", "cf-connecting-ip", "cf-ew-via", "cf-ipcountry",
+  "host", "content-length", "connection", "accept-encoding", "content-encoding", "transfer-encoding", "keep-alive", "te", "upgrade", "cdn-loop", "cf-connecting-ip", "cf-ew-via", "cf-ipcountry",
   "cf-ray", "cf-visitor", "cf-warp-tag-id", "cf-worker", "x-forwarded-for", "x-forwarded-proto",
 ]);
 
-/** Rebuild a request as a curl command against its public URL. Redacted values stay redacted. */
+/** Rebuild a request as a curl command against its public URL. Redacted values stay redacted;
+ * every captured value is shell-quoted (methods and headers come from untrusted clients). */
 export function toCurl(r: Pick<RequestDetail, "method" | "host" | "path" | "req_headers" | "req">): string {
   const parts = ["curl"];
-  if (r.method !== "GET") parts.push("-X", r.method);
+  if (r.method === "HEAD") parts.push("-I");
+  else if (r.method !== "GET") parts.push("-X", shellQuote(r.method));
   parts.push(shellQuote(`https://${r.host}${r.path}`));
   for (const [k, v] of r.req_headers) {
     if (SKIP_CURL_HEADERS.has(k.toLowerCase())) continue;
@@ -109,7 +116,8 @@ export function toCurl(r: Pick<RequestDetail, "method" | "host" | "path" | "req_
     if (r.req.is_text && r.req.text != null) parts.push("--data-raw", shellQuote(r.req.text));
     else parts.push("--data-binary", "@body.bin");
   }
-  return parts.join(" ");
+  const cmd = parts.join(" ");
+  return r.req.truncated ? `# Request body was truncated to ${r.req.stored} of ${r.req.size} bytes\n${cmd}` : cmd;
 }
 
 export function statusClass(code: number | null): "ok" | "redirect" | "client" | "server" | "none" {

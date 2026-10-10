@@ -170,3 +170,14 @@ fn credentials_preflight() {
     std::fs::write(dir.path().join("c.json"), format!(r#"{{"TunnelID":"{id}"}}"#)).unwrap();
     assert!(preflight_credentials(&c).is_ok());
 }
+
+#[test]
+fn single_origin_legacy_tls_flags_are_honoured() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("s.yml");
+    std::fs::write(&path, "tunnel: x\nurl: https://localhost:8443\nno-tls-verify: true\norigin-server-name: dev.local\n").unwrap();
+    let c = TunnelConfig::load(&path).unwrap();
+    let p = plan(&c);
+    assert!(p.upstreams[0].no_tls_verify);
+    assert_eq!(p.upstreams[0].origin_server_name.as_deref(), Some("dev.local"));
+}

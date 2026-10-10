@@ -16,10 +16,11 @@ pub fn report(nonce: String, text: String) {
     }
 }
 
-#[cfg(feature = "e2e")]
+// Debug builds only: even `--features e2e` on a release build doesn't include the server.
+#[cfg(all(feature = "e2e", debug_assertions))]
 pub use server::start;
 
-#[cfg(feature = "e2e")]
+#[cfg(all(feature = "e2e", debug_assertions))]
 mod server {
     use std::collections::HashMap;
     use std::convert::Infallible;
@@ -173,7 +174,7 @@ mod server {
                 let _ = app.emit_to(
                     tray::DASHBOARD,
                     "e2e-snapshot",
-                    json!({"nonce": nonce, "view": view, "select": q.get("select")}),
+                    json!({"nonce": nonce, "view": view, "select": q.get("select"), "tab": q.get("tab")}),
                 );
                 match tokio::time::timeout(Duration::from_secs(10), rx).await {
                     Ok(Ok(text)) => reply(200, json!({"text": text})),

@@ -207,6 +207,11 @@ try {
   assert(text.includes("/e2e?source=run.mjs"), "request viewer lists the request");
   assert(text.includes(`"marker": "${marker}"`), "request viewer shows the (pretty-printed) response body");
   assert(text.includes("Copy as curl"), "request detail pane is open");
+  const reqUi = await ctl("GET", `/ui?view=${encodeURIComponent(`requests:${tunnelId}`)}&select=first&tab=req`);
+  const reqText = reqUi.body.text ?? "";
+  writeFileSync(join(outDir, "request-viewer-request-tab.txt"), reqText);
+  assert(reqText.includes(`"marker": "${marker}"`) && reqText.includes(`"hello": "burrow"`), "request viewer shows the (pretty-printed) request body");
+  assert(reqText.includes("[redacted]") && !reqText.includes("e2e-secret-token"), "request viewer shows the Authorization header redacted");
 
   const logsUi = await ctl("GET", `/ui?view=${encodeURIComponent(`logs:${tunnelId}`)}`);
   writeFileSync(join(outDir, "log-viewer.txt"), logsUi.body.text ?? "");
