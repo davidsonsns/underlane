@@ -201,6 +201,27 @@ request went through the public URL, cloudflared, Burrow's proxy and the origin,
 | --- | --- | --- |
 | ![](screenshots/21-release-settings-light.png) | ![](screenshots/22-release-dashboard-light.png) | ![](screenshots/23-release-settings-dark.png) |
 
+## 6c. The simulated login launch uses the same mechanism as a real login
+
+Apps that macOS opened at this Mac's last real login run as LaunchServices launchd jobs,
+`application.<bundle-id>.<n>`, with `/sbin/launchd` as their parent. Raycast and Warp are both in
+**Open at Login** (screenshot 15). Burrow, registered through `SMAppService` and launched the
+login-item way, runs as exactly the same kind of job:
+
+```
+1418   application.com.raycast.macos.1911346.184570496          <- started by the real login
+1417   application.dev.warp.Warp-Stable.196840554.196840559     <- started by the real login
+78770  application.com.davidsonsns.burrow.198522606.198522611   <- Burrow, simulated login launch
+Burrow  pid=78770 parent=/sbin/launchd tty=??
+Raycast pid=1418  parent=/sbin/launchd tty=??
+```
+
+In that launch, a tunnel marked **Start automatically** came up with no start command from anyone.
+It logged `Registered tunnel connection` and got the public URL
+`https://synthetic-quick-8.trycloudflare.com`, with cloudflared running under Burrow's
+shim. Afterwards: 0 cloudflared processes left on quit, the test tunnel was deleted, and the login
+item was unregistered again.
+
 ## 7. Crash safety and quitting
 
 - **App SIGKILLed:** `kill -9` on the app made the watchdog shim stop cloudflared within 1 s
