@@ -57,6 +57,19 @@ assertions added for the Request tab of the viewer:
 DNS for the new hostname took 24 s this time. The harness waits on 1.1.1.1 rather than the system
 resolver, so a negative cache entry can't break it.
 
+Final run, after the e2e switched to the real `curl` binary (`curl --resolve <host>:443:<ip from
+1.1.1.1> -X POST … --data-raw '<json>'`):
+
+```
+[  5.4s] connected: https://synthetic-quick-13.trycloudflare.com (inspecting=true)
+[  5.4s] ok: menu bar count is 1 while the tunnel runs
+[  6.0s] curl -X POST https://synthetic-quick-13.trycloudflare.com/e2e (JSON body) -> 200 {"echoed":{"hello":"burrow","marker":"burrow-e2e-mv24l6g2",…
+[  6.5s] ok: SQLite has the POST with status 200 / request body / response body / Authorization redacted
+[ 10.5s] ok: request viewer shows the (pretty-printed) request body
+[ 12.5s] ok: menu bar count is back to 0 after stopping
+[ 12.5s] E2E PASSED
+```
+
 Notes on what the checks read:
 
 - The menu bar count comes from the title of the real `NSStatusItem` button, read on the main

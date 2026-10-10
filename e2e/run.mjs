@@ -8,7 +8,8 @@
 //      menu bar count (read from the real NSStatusItem) goes 0 -> 1 -> 0
 //
 // usage: node e2e/run.mjs path/to/Burrow.app
-import { spawn, execFileSync } from "node:child_process";
+import { spawn, execFile, execFileSync } from "node:child_process";
+import { promisify } from "node:util";
 import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
 import http from "node:http";
 import { Resolver } from "node:dns/promises";
@@ -151,9 +152,11 @@ try {
     "--data-raw", payload, "-w", "\n%{http_code}",
   ];
   evidence.curl = ["curl", ...curlArgs].join(" ");
+  // Async on purpose: the echo server lives in this process, so a blocking exec would deadlock.
+  const run = promisify(execFile);
   const send = async () => {
     try {
-      const out = execFileSync("curl", curlArgs).toString();
+      const out = (await run("curl", curlArgs)).stdout.toString();
       const nl = out.lastIndexOf("\n");
       return { status: Number(out.slice(nl + 1)), body: out.slice(0, nl) };
     } catch (e) {
