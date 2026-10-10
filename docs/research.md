@@ -266,6 +266,20 @@ bodies, which is negligible next to the edge round trip of ~20–80 ms. The meas
 §3.6.1 once the proxy exists. Because inspection is per tunnel, tunnels that don't need it pay
 nothing.
 
+#### 3.6.1 Measured
+
+Measured with `cargo test --release -p burrow-core --test proxy_capture -- --ignored --nocapture`
+(`bench_added_latency`): 1,000 sequential POSTs with a small JSON body after a 200-request warm-up,
+on this Mac (Apple Silicon, macOS 27), loopback origin, capture on.
+
+| | p50 | p99 |
+| --- | --- | --- |
+| direct to origin | 0.032 ms | 0.127 ms |
+| through the inspecting proxy | 0.060 ms | 0.095 ms |
+| **added by the proxy** | **0.027 ms** | — |
+
+That's three orders of magnitude below the edge round trip.
+
 ### 3.7 If the proxy crashes
 
 The proxy runs inside the app process as tokio tasks:

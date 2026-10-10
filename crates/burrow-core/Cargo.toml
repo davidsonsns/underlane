@@ -1,0 +1,36 @@
+[package]
+name = "burrow-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Platform-independent core of Burrow: cloudflared supervision, config handling, inspecting proxy, storage."
+
+[dependencies]
+anyhow = "1"
+bytes = "1"
+flate2 = "1"
+futures-util = { version = "0.3", default-features = false, features = ["std"] }
+brotli-decompressor = "6"
+http-body-util = "0.1"
+hyper = { version = "1", features = ["server", "client", "http1", "http2"] }
+hyper-util = { version = "0.1", features = ["tokio", "client-legacy", "http1", "http2", "server"] }
+hyper-rustls = { version = "0.27", default-features = false, features = ["http1", "http2", "ring", "tls12", "native-tokio", "logging"] }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12", "logging"] }
+rustls-pemfile = "2"
+rustls-native-certs = "0.8"
+rusqlite = { version = "0.40", features = ["bundled"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+serde_norway = "0.9"
+thiserror = "2"
+tokio = { version = "1", features = ["full"] }
+tower-service = "0.3"
+tracing = "0.1"
+uuid = { version = "1", features = ["v4"] }
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+[dev-dependencies]
+tempfile = "3"
+futures-util = { version = "0.3", default-features = false, features = ["std"] }

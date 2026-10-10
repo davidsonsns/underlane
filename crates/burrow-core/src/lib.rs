@@ -1,0 +1,12 @@
+//! Burrow's platform-independent core: cloudflared supervision, config handling, the
+//! inspecting proxy and storage. Nothing in here depends on Tauri.
+
+pub mod cloudflared;
+pub mod config;
+pub mod db;
+pub mod decode;
+pub mod derived;
+pub mod model;
+pub mod proxy;
+pub mod shim;
+pub mod supervisor;
