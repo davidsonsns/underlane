@@ -5,10 +5,10 @@
   import { api, errorText } from "../lib/api";
   import { formatClock } from "../lib/format";
   import type { LogLine } from "../lib/types";
-  import Toolbar from "./Toolbar.svelte";
+  import Toolbar from "$lib/components/app/Toolbar.svelte";
   import TunnelPicker from "./TunnelPicker.svelte";
-  import StatePanel from "../components/StatePanel.svelte";
-  import Icon from "../components/Icon.svelte";
+  import StatePanel from "$lib/components/app/StatePanel.svelte";
+  import Icon from "$lib/components/app/Icon.svelte";
 
   let { focusId = null }: { focusId?: string | null } = $props();
   let tunnelId = $state<string | null>(null);

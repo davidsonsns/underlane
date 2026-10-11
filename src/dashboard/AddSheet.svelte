@@ -5,9 +5,9 @@
   import { api, errorText } from "../lib/api";
   import { motion } from "../lib/theme";
   import type { Candidate, ImportReport } from "../lib/types";
-  import Icon from "../components/Icon.svelte";
-  import StatePanel from "../components/StatePanel.svelte";
-  import Toggle from "../components/Toggle.svelte";
+  import Icon from "$lib/components/app/Icon.svelte";
+  import StatePanel from "$lib/components/app/StatePanel.svelte";
+  import Toggle from "$lib/components/app/Toggle.svelte";
 
   let { onclose, onadded }: { onclose: () => void; onadded: (id: string | null) => void } = $props();
 

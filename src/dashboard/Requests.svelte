@@ -7,10 +7,10 @@
   import { motion } from "../lib/theme";
   import { formatBytes, formatClock, formatDuration, statusClass } from "../lib/format";
   import type { RequestSummary, RequestDetail as Detail } from "../lib/types";
-  import Toolbar from "./Toolbar.svelte";
+  import Toolbar from "$lib/components/app/Toolbar.svelte";
   import TunnelPicker from "./TunnelPicker.svelte";
-  import StatePanel from "../components/StatePanel.svelte";
-  import Icon from "../components/Icon.svelte";
+  import StatePanel from "$lib/components/app/StatePanel.svelte";
+  import Icon from "$lib/components/app/Icon.svelte";
   import RequestDetail from "./RequestDetail.svelte";
 
   let { focusId = null }: { focusId?: string | null } = $props();

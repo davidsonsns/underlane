@@ -6,10 +6,10 @@
   import { motion } from "../lib/theme";
   import { isOn, statusLabel } from "../lib/format";
   import type { Tunnel } from "../lib/types";
-  import Toolbar from "./Toolbar.svelte";
-  import StatusDot from "../components/StatusDot.svelte";
-  import Icon from "../components/Icon.svelte";
-  import StatePanel from "../components/StatePanel.svelte";
+  import Toolbar from "$lib/components/app/Toolbar.svelte";
+  import StatusDot from "$lib/components/app/StatusDot.svelte";
+  import Icon from "$lib/components/app/Icon.svelte";
+  import StatePanel from "$lib/components/app/StatePanel.svelte";
   import TunnelDetail from "./TunnelDetail.svelte";
 
   let { focusId = null, onadd }: { focusId?: string | null; onadd: () => void } = $props();

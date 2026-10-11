@@ -5,7 +5,7 @@
   import { store } from "../lib/store.svelte";
   import { api } from "../lib/api";
   import { motion } from "../lib/theme";
-  import Icon from "../components/Icon.svelte";
+  import Icon from "$lib/components/app/Icon.svelte";
   import Tunnels from "./Tunnels.svelte";
   import Requests from "./Requests.svelte";
   import Logs from "./Logs.svelte";

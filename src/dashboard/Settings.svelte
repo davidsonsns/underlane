@@ -7,10 +7,10 @@
   import { api, errorText } from "../lib/api";
   import { motion } from "../lib/theme";
   import type { LoginItem, Settings } from "../lib/types";
-  import Toolbar from "./Toolbar.svelte";
-  import Toggle from "../components/Toggle.svelte";
-  import StatePanel from "../components/StatePanel.svelte";
-  import Icon from "../components/Icon.svelte";
+  import Toolbar from "$lib/components/app/Toolbar.svelte";
+  import Toggle from "$lib/components/app/Toggle.svelte";
+  import StatePanel from "$lib/components/app/StatePanel.svelte";
+  import Icon from "$lib/components/app/Icon.svelte";
 
   let draft = $state<Settings | null>(null);
   let login = $state<LoginItem | null>(null);

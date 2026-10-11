@@ -1,7 +1,7 @@
 <script lang="ts">
   // hostname ⟶ local service, joined by a conduit. When a request flows through an inspected
   // route, a pulse travels along the conduit (motion that answers real activity).
-  import { shortService } from "../lib/format";
+  import { shortService } from "$lib/format";
   let {
     hostname,
     service,
