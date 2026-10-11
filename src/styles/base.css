@@ -195,3 +195,14 @@ textarea.field {
     transition-duration: 0.001ms !important;
   }
 }
+
+/* Preflight compat (UI migration Phase 0). Tailwind's preflight resets these and base.css
+   didn't set them, so unported screens changed. `revert` restores WebKit's own style.
+   Deleted with this file. */
+::placeholder {
+  color: revert; /* preflight: currentcolor at 50%, darker than WebKit's darkGray */
+}
+input[type="checkbox"],
+input[type="radio"] {
+  margin: revert; /* preflight: margin 0 moved the AddSheet import checkboxes 4px left */
+}
