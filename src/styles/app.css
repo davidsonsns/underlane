@@ -96,6 +96,7 @@
   --animate-spinner: spin 0.8s linear infinite; /* StatePanel loading ring */
   --animate-rise: rise 260ms var(--ease-out); /* StatePanel entrance */
   --animate-travel: travel 650ms var(--ease-out) forwards; /* RouteLine request pulse */
+  --animate-route-ping: route-ping 650ms var(--ease-out) forwards; /* Routes reach dot: inspected traffic */
 
   /* base.css's body line-height. Shared components ported before their screens keep it so
      they render exactly as before; delete with base.css in Phase 3. */
@@ -407,6 +408,17 @@
   }
 }
 
+@keyframes route-ping {
+  from {
+    transform: scale(1);
+    opacity: 0.9;
+  }
+  to {
+    transform: scale(3);
+    opacity: 0;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
@@ -415,4 +427,18 @@
     animation-iteration-count: 1 !important;
     transition-duration: 0.001ms !important;
   }
+}
+
+/* ---------------------------------------------------------------------------------------------
+   7. Routes table (02 §1.2 convention 1). One grid for the whole list and every row a subgrid,
+   so the services line up in one right-hand column however long the hostname in front of it is. */
+@utility routes-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) max-content;
+  column-gap: calc(var(--spacing) * 4);
+}
+@utility routes-row {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: subgrid;
 }
