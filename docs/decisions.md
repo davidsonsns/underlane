@@ -396,6 +396,21 @@ variable-height lines: 8 rows in the DOM, `scrollToIndex(last, { align: "end" })
   (`keepMounted={[480]}` while at the top) is mounted too. So the active row can't be recycled
   under `aria-activedescendant` by pointer scrolling.
 
+**Requests list (Phase 2e).** No fallback was needed: Requests runs on virtua as planned
+(`src/dashboard/RequestList.svelte`). A `role=listbox` wrapper holds focus and points
+`aria-activedescendant` at the active row once it exists; rows are never focused; the active
+index is passed to `keepMounted`. Selection is by request id, falling back to the row now at the
+same index when its request is filtered out, cleared or trimmed by the cap. New requests are
+queued and prepended in batches. Scrolled down below the cap, `shift` keeps the view; at the cap
+the first visible row is re-anchored by hand, **reading and writing the viewport's `scrollTop`,
+not virtua's offset**: virtua's `scrollTo` is async and `getScrollOffset()` only catches up on the
+next scroll event, so in a burst of events every batch after the first anchored against a stale
+offset and the view slid by a row (found in the real app with 6 requests in flight). Measured
+with 500 rows in the real app (outside snapshot mode): 30 `[role=option]` in the DOM at rest and
+at most 39 while wheel-scrolling, with no frame over 20 ms. The first visible row stays put
+through bursts of 1 to 30 requests at the cap (ui-lab harness on the real component, and the
+e2e debug build).
+
 **E2E snapshot mode.** The e2e harness asserts on `document.body.innerText`, which a virtualized
 list would truncate. A snapshot flag renders every row while the harness reads the text, so the
 assertions stay as they are.
