@@ -11,6 +11,7 @@
   import * as Command from "$lib/components/ui/command/index.js";
   import { Button } from "$lib/components/ui/button/index.js";
   import { returnFocusOnClose } from "$lib/focus";
+  import { menuIndicator } from "$lib/components/ui/mac";
   import { cn } from "$lib/utils";
 
   let {
@@ -45,7 +46,8 @@
   const canCreate = $derived(typed !== "" && !items.some((x) => x.toLowerCase() === typed.toLowerCase()));
   // Back to the trigger on Escape or a pick; to the field an outside click went to (02 R7).
   const focusOnClose = returnFocusOnClose(() => trigger);
-  const row = "relative h-[22px] rounded-sm ps-[22px] pe-3"; // menuItem height (01 §5.18)
+  // menuItem geometry (01 §5.18): 22px rows, check column on the left.
+  const row = "relative h-[22px] rounded-sm ps-[22px] pe-3";
 
   function pick(name: string) {
     open = false;
@@ -69,7 +71,7 @@
         <Command.Group {heading}>
           {#each items as name (name)}
             <Command.Item value={name} onSelect={() => pick(name)} class={row}>
-              {#if name === value}<Check class="absolute start-[6px] size-3 stroke-[2.5]" />{/if}<span class="truncate">{name}</span>
+              {#if name === value}<span class={menuIndicator}><Check /></span>{/if}<span class="truncate">{name}</span>
             </Command.Item>
           {/each}
         </Command.Group>
