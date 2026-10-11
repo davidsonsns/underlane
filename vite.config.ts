@@ -10,7 +10,7 @@ export default defineConfig({
   server: { port: 1420, strictPort: true },
   resolve: { alias: { $lib: resolve(__dirname, "src/lib") } },
   build: {
-    target: "safari16",
+    target: "safari16.4",
     rollupOptions: {
       input: {
         dashboard: resolve(__dirname, "index.html"),
