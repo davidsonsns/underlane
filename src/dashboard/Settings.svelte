@@ -1,25 +1,29 @@
 <script lang="ts">
   import { onMount, untrack } from "svelte";
-  import { slide } from "svelte/transition";
   import { revealItemInDir } from "@tauri-apps/plugin-opener";
-  import { writeText } from "@tauri-apps/plugin-clipboard-manager";
+  import Check from "@lucide/svelte/icons/check";
+  import FolderOpen from "@lucide/svelte/icons/folder-open";
   import { store } from "../lib/store.svelte";
-  import { api, errorText } from "../lib/api";
-  import { motion } from "../lib/theme";
+  import { api } from "../lib/api";
+  import { notify } from "$lib/toast";
   import type { LoginItem, Settings } from "../lib/types";
   import Toolbar from "$lib/components/app/Toolbar.svelte";
-  import Toggle from "$lib/components/app/Toggle.svelte";
   import StatePanel from "$lib/components/app/StatePanel.svelte";
-  import Icon from "$lib/components/app/Icon.svelte";
+  import SettingsGroup from "$lib/components/app/SettingsGroup.svelte";
+  import SettingsRow from "$lib/components/app/SettingsRow.svelte";
+  import Segmented from "$lib/components/app/Segmented.svelte";
+  import CopyButton from "$lib/components/app/CopyButton.svelte";
+  import IconAction from "$lib/components/app/IconAction.svelte";
+  import { Button } from "$lib/components/ui/button/index.js";
+  import { Input } from "$lib/components/ui/input/index.js";
+  import { Switch } from "$lib/components/ui/switch/index.js";
+  import * as InputGroup from "$lib/components/ui/input-group/index.js";
 
   let draft = $state<Settings | null>(null);
   let login = $state<LoginItem | null>(null);
-  let saved = $state(false);
-  let error = $state<string | null>(null);
   let detecting = $state(false);
   let redactText = $state("");
   let redactQueryText = $state("");
-  let savedTimer: ReturnType<typeof setTimeout>;
 
   // Follow changes made elsewhere (another window, the tray) as well as the initial load.
   $effect(() => {
@@ -43,14 +47,11 @@
   async function save(patch: Partial<Settings>) {
     if (!draft) return;
     Object.assign(draft, patch);
-    error = null;
     try {
       await api.saveSettings($state.snapshot(draft));
-      saved = true;
-      clearTimeout(savedTimer);
-      savedTimer = setTimeout(() => (saved = false), 1200);
+      notify.saved();
     } catch (e) {
-      error = errorText(e);
+      notify.error(e, "Couldn't save settings");
     }
   }
 
@@ -60,229 +61,143 @@
       await save({ cloudflared_path: draft?.cloudflared_path?.trim() || null });
       await api.detectCloudflared();
       await store.refresh();
+    } catch (e) {
+      notify.error(e, "Couldn't detect cloudflared");
     } finally {
       detecting = false;
     }
   }
 
+  // Optimistic, then whatever macOS reports (it can refuse or ask for approval).
   async function setLogin(v: boolean) {
-    login = await api.setLaunchAtLogin(v);
+    const before = login;
+    if (login) login = { ...login, enabled: v };
+    try {
+      login = await api.setLaunchAtLogin(v);
+    } catch (e) {
+      login = before;
+      notify.error(e, "Couldn't change Launch at login");
+    }
   }
 
   const num = (e: Event) => Number((e.target as HTMLInputElement).value);
+  const list = (s: string) => s.split(",").map((x) => x.trim()).filter(Boolean);
+  const themes = [
+    { value: "system", label: "System" },
+    { value: "light", label: "Light" },
+    { value: "dark", label: "Dark" },
+  ] as const;
 </script>
 
-<div class="page">
-  <Toolbar title="Settings" subtitle={saved ? "Saved" : ""} />
+{#snippet path(text: string | undefined)}
+  <!-- Truncated, so the native title reveals the whole path (02 §2 Tip exception). -->
+  <span class="max-w-70 truncate font-mono text-callout text-muted-foreground select-text" title={text}>{text}</span>
+{/snippet}
+
+<div class="flex h-full flex-col">
+  <Toolbar title="Settings" />
   {#if !draft}
     <StatePanel kind="loading" title="Loading settings…" />
   {:else}
-    <div class="scroll">
-      {#if error}<div class="err" transition:slide={{ duration: motion(160) }} role="alert">{error}</div>{/if}
-
-      <h2>cloudflared</h2>
-      <div class="group">
-        <div class="row">
-          <span class="label">Status</span>
+    <!-- Full-width scroller (scrollbar at the edge), content capped at 760px and centred. -->
+    <div class="overflow-y-auto px-[max(24px,calc((100%-760px)/2))] pt-2 pb-8">
+      <SettingsGroup title="cloudflared">
+        <SettingsRow label="Status">
           {#if store.overview?.cloudflared}
-            <span class="ok"><Icon name="check" size={13} /> Version {store.overview.cloudflared.version ?? "unknown"}</span>
-            <span class="mono faint path" title={store.overview.cloudflared.path}>{store.overview.cloudflared.path}</span>
+            <span class="inline-flex items-center gap-1 text-ok-text"><Check class="size-3.5" /> Version {store.overview.cloudflared.version ?? "unknown"}</span>
+            {@render path(store.overview.cloudflared.path)}
           {:else}
-            <span class="bad">Not found</span>
+            <span class="text-bad-text">Not found</span>
           {/if}
-        </div>
+        </SettingsRow>
         {#if !store.overview?.cloudflared}
-          <div class="row install">
-            <span class="label">Install it with Homebrew, then choose Detect.</span>
-            <code class="mono">brew install cloudflared</code>
-            <button class="icon-btn" aria-label="Copy command" title="Copy command" onclick={() => writeText("brew install cloudflared")}><Icon name="copy" /></button>
-          </div>
+          <SettingsRow label="Install it with Homebrew, then choose Detect.">
+            <code class="rounded-sm bg-(--code-bg) px-2 py-0.5 font-mono text-callout select-text">brew install cloudflared</code>
+            <CopyButton value="brew install cloudflared" what="command" />
+          </SettingsRow>
         {/if}
-        <div class="row">
-          <span class="label">Path<span class="help">Leave empty to look on PATH and in Homebrew's folders.</span></span>
-          <input class="field mono wide" data-field="path" placeholder="/opt/homebrew/bin/cloudflared" bind:value={draft.cloudflared_path} />
-          <button class="btn" disabled={detecting} onclick={detect}>{detecting ? "Detecting…" : "Detect"}</button>
-        </div>
-      </div>
+        <SettingsRow label="Path" help="Leave empty to look on PATH and in Homebrew's folders.">
+          {#snippet control({ id, describedBy })}
+            <Input {id} aria-describedby={describedBy} data-field="path" class="w-65 font-mono text-callout" placeholder="/opt/homebrew/bin/cloudflared" bind:value={draft!.cloudflared_path} />
+          {/snippet}
+          <Button variant="outline" disabled={detecting} onclick={detect}>{detecting ? "Detecting…" : "Detect"}</Button>
+        </SettingsRow>
+      </SettingsGroup>
 
-      <h2>General</h2>
-      <div class="group">
-        <div class="row">
-          <span class="label">Launch at login<span class="help">{login?.message ?? "Opens Burrow in the menu bar when you log in. Tunnels marked “Start automatically” come up with it."}</span></span>
-          <Toggle checked={login?.enabled ?? false} disabled={!login || login.status === "unsupported"} label="Launch at login" onchange={setLogin} />
-        </div>
+      <SettingsGroup title="General">
+        <SettingsRow label="Launch at login" help={login?.message ?? "Opens Burrow in the menu bar when you log in. Tunnels marked “Start automatically” come up with it."}>
+          {#snippet control({ id, describedBy })}
+            <Switch {id} aria-describedby={describedBy} disabled={!login || login.status === "unsupported"} bind:checked={() => login?.enabled ?? false, setLogin} />
+          {/snippet}
+        </SettingsRow>
         {#if store.overview?.last_launch}
-          <div class="row">
-            <span class="label">This launch</span>
-            <span class="muted">{store.overview.last_launch.reason === "login_item" ? "Opened by macOS at login" : "Opened manually"} at {new Date(store.overview.last_launch.at).toLocaleTimeString()}</span>
-          </div>
+          <SettingsRow label="This launch">
+            <span class="text-muted-foreground">{store.overview.last_launch.reason === "login_item" ? "Opened by macOS at login" : "Opened manually"} at {new Date(store.overview.last_launch.at).toLocaleTimeString()}</span>
+          </SettingsRow>
         {/if}
-        <div class="row">
-          <span class="label">Appearance</span>
-          <div class="seg" role="radiogroup" aria-label="Appearance">
-            {#each [["system", "System"], ["light", "Light"], ["dark", "Dark"]] as [v, l]}
-              <button role="radio" aria-checked={draft.theme === v} class:active={draft.theme === v} onclick={() => save({ theme: v as Settings["theme"] })}>{l}</button>
-            {/each}
-          </div>
-        </div>
-        <div class="row">
-          <span class="label">Default log level<span class="help">Used for newly added tunnels.</span></span>
-          <select class="field" value={draft.default_loglevel} onchange={(e) => save({ default_loglevel: (e.target as HTMLSelectElement).value })}>
-            {#each ["debug", "info", "warn", "error"] as l}<option value={l}>{l}</option>{/each}
-          </select>
-        </div>
-      </div>
+        <SettingsRow label="Appearance">
+          {#snippet control({ id, labelId, describedBy })}
+            <Segmented {id} label="Appearance" aria-labelledby={labelId} aria-describedby={describedBy} items={themes} bind:value={draft!.theme} onchange={(theme) => save({ theme })} />
+          {/snippet}
+        </SettingsRow>
+        <SettingsRow label="Default log level" help="Used for newly added tunnels.">
+          {#snippet control({ id, describedBy })}
+            <!-- A plain native select: the real AppKit pop-up (01 §5.11). No bg/border/radius/appearance utilities. -->
+            <select {id} aria-describedby={describedBy} value={draft!.default_loglevel} onchange={(e) => save({ default_loglevel: e.currentTarget.value })}>
+              {#each ["debug", "info", "warn", "error"] as l (l)}<option value={l}>{l}</option>{/each}
+            </select>
+          {/snippet}
+        </SettingsRow>
+      </SettingsGroup>
 
-      <h2>Storage</h2>
-      <div class="group">
-        <div class="row">
-          <span class="label">Keep logs and requests for<span class="help">Older entries are deleted automatically.</span></span>
-          <input class="field num" type="number" min="1" max="365" value={draft.log_ttl_days} onchange={(e) => save({ log_ttl_days: num(e) })} />
-          <span class="unit">days</span>
-        </div>
-        <div class="row">
-          <span class="label">Maximum database size<span class="help">The oldest entries go first when this is reached.</span></span>
-          <input class="field num" type="number" min="16" step="16" value={draft.max_db_mb} onchange={(e) => save({ max_db_mb: num(e) })} />
-          <span class="unit">MB</span>
-        </div>
-        <div class="row">
-          <span class="label">Data folder</span>
-          <span class="mono faint path" title={store.overview?.data_dir}>{store.overview?.data_dir}</span>
-          <button class="icon-btn" aria-label="Show in Finder" title="Show in Finder" onclick={() => store.overview && revealItemInDir(store.overview.data_dir + "/burrow.db")}><Icon name="folder" /></button>
-        </div>
-      </div>
+      <SettingsGroup title="Storage">
+        <SettingsRow label="Keep logs and requests for" help="Older entries are deleted automatically.">
+          {#snippet control({ id, describedBy })}
+            <InputGroup.Root class="w-28">
+              <InputGroup.Input {id} aria-describedby={describedBy} type="number" min="1" max="365" class="text-right" value={draft!.log_ttl_days} onchange={(e) => save({ log_ttl_days: num(e) })} />
+              <InputGroup.Addon align="inline-end">days</InputGroup.Addon>
+            </InputGroup.Root>
+          {/snippet}
+        </SettingsRow>
+        <SettingsRow label="Maximum database size" help="The oldest entries go first when this is reached.">
+          {#snippet control({ id, describedBy })}
+            <InputGroup.Root class="w-28">
+              <InputGroup.Input {id} aria-describedby={describedBy} type="number" min="16" step="16" class="text-right" value={draft!.max_db_mb} onchange={(e) => save({ max_db_mb: num(e) })} />
+              <InputGroup.Addon align="inline-end">MB</InputGroup.Addon>
+            </InputGroup.Root>
+          {/snippet}
+        </SettingsRow>
+        <SettingsRow label="Data folder">
+          {@render path(store.overview?.data_dir)}
+          <IconAction label="Show in Finder" onclick={() => store.overview && revealItemInDir(store.overview.data_dir + "/burrow.db")}><FolderOpen /></IconAction>
+        </SettingsRow>
+      </SettingsGroup>
 
-      <h2>Request inspection</h2>
-      <div class="group">
-        <div class="row">
-          <span class="label">Body capture limit<span class="help">Bodies larger than this are stored truncated. 0 keeps headers only.</span></span>
-          <input class="field num" type="number" min="0" max="16384" value={draft.max_body_kb} onchange={(e) => save({ max_body_kb: num(e) })} />
-          <span class="unit">KB</span>
-        </div>
-        <div class="row column">
-          <span class="label">Redact these headers too<span class="help">Authorization, Cookie, Set-Cookie, X-Api-Key and other credential headers are always redacted, as are token-like query parameters. Bodies are stored as sent.</span></span>
-          <input class="field mono full" data-field="redact" placeholder="X-Internal-Key, X-Session" bind:value={redactText}
-            onchange={() => save({ redact_headers: redactText.split(",").map((s) => s.trim()).filter(Boolean) })} />
-        </div>
-        <div class="row column">
-          <span class="label">Redact these query parameters too<span class="help">token, access_token, api_key, key, code, sig, signature, password and secret are always redacted in captured URLs and logs.</span></span>
-          <input class="field mono full" data-field="redact-query" placeholder="session, auth" bind:value={redactQueryText}
-            onchange={() => save({ redact_query: redactQueryText.split(",").map((s) => s.trim()).filter(Boolean) })} />
-        </div>
+      <SettingsGroup title="Request inspection">
+        <SettingsRow label="Body capture limit" help="Bodies larger than this are stored truncated. 0 keeps headers only.">
+          {#snippet control({ id, describedBy })}
+            <InputGroup.Root class="w-28">
+              <InputGroup.Input {id} aria-describedby={describedBy} type="number" min="0" max="16384" class="text-right" value={draft!.max_body_kb} onchange={(e) => save({ max_body_kb: num(e) })} />
+              <InputGroup.Addon align="inline-end">KB</InputGroup.Addon>
+            </InputGroup.Root>
+          {/snippet}
+        </SettingsRow>
+        <SettingsRow column label="Redact these headers too" help="Authorization, Cookie, Set-Cookie, X-Api-Key and other credential headers are always redacted, as are token-like query parameters. Bodies are stored as sent.">
+          {#snippet control({ id, describedBy })}
+            <Input {id} aria-describedby={describedBy} data-field="redact" class="font-mono text-callout" placeholder="X-Internal-Key, X-Session" bind:value={redactText} onchange={() => save({ redact_headers: list(redactText) })} />
+          {/snippet}
+        </SettingsRow>
+        <SettingsRow column label="Redact these query parameters too" help="token, access_token, api_key, key, code, sig, signature, password and secret are always redacted in captured URLs and logs.">
+          {#snippet control({ id, describedBy })}
+            <Input {id} aria-describedby={describedBy} data-field="redact-query" class="font-mono text-callout" placeholder="session, auth" bind:value={redactQueryText} onchange={() => save({ redact_query: list(redactQueryText) })} />
+          {/snippet}
+        </SettingsRow>
         {#if (store.overview?.dropped_captures ?? 0) > 0}
-          <div class="row"><span class="label">Dropped under load</span><span class="muted">{store.overview?.dropped_captures} log lines or requests weren't stored because the writer fell behind.</span></div>
+          <SettingsRow label="Dropped under load">
+            <span class="text-muted-foreground">{store.overview?.dropped_captures} log lines or requests weren't stored because the writer fell behind.</span>
+          </SettingsRow>
         {/if}
-      </div>
+      </SettingsGroup>
     </div>
   {/if}
 </div>
-
-<style>
-  .page {
-    display: flex;
-    flex-direction: column;
-    height: 100%;
-  }
-  .scroll {
-    overflow-y: auto;
-    padding: 8px 24px 32px;
-    /* Full-width scroller (scrollbar at the edge), content capped at 760px and centred. */
-    padding-inline: max(24px, calc((100% - 760px) / 2));
-  }
-  h2 {
-    margin: 20px 0 8px 2px;
-    font-size: var(--text-sm);
-    font-weight: 600;
-  }
-  .group {
-    background: var(--surface);
-    border-radius: var(--radius);
-    box-shadow: var(--shadow);
-  }
-  .row {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    padding: 10px 12px;
-    min-height: 42px;
-  }
-  .row + .row {
-    border-top: 0.5px solid var(--line);
-  }
-  .row.column {
-    flex-direction: column;
-    align-items: stretch;
-  }
-  .label {
-    display: flex;
-    flex-direction: column;
-    flex: 1;
-    min-width: 0;
-  }
-  .help {
-    font-size: var(--text-xs);
-    color: var(--text-2);
-    margin-top: 1px;
-    line-height: 1.4;
-  }
-  .ok {
-    display: inline-flex;
-    gap: 4px;
-    align-items: center;
-    color: var(--ok);
-  }
-  .bad {
-    color: var(--bad);
-  }
-  .path {
-    max-width: 280px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-  .install code {
-    padding: 2px 8px;
-    border-radius: 5px;
-    background: var(--code-bg);
-  }
-  .wide {
-    width: 260px;
-  }
-  .full {
-    width: 100%;
-  }
-  .num {
-    width: 80px;
-    text-align: right;
-  }
-  .unit {
-    width: 34px;
-    color: var(--text-2);
-  }
-  .seg {
-    display: inline-flex;
-    padding: 2px;
-    border-radius: 7px;
-    background: var(--hover);
-  }
-  .seg button {
-    height: 22px;
-    padding: 0 12px;
-    border: 0;
-    border-radius: 5px;
-    background: transparent;
-    color: var(--text-2);
-  }
-  .seg button.active {
-    background: var(--surface);
-    color: var(--text-1);
-    box-shadow: var(--shadow);
-  }
-  .err {
-    margin-top: 12px;
-    padding: 8px 12px;
-    border-radius: var(--radius);
-    background: color-mix(in srgb, var(--bad) 12%, transparent);
-    color: var(--bad);
-  }
-</style>
