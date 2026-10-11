@@ -11,6 +11,8 @@
   import Logs from "./Logs.svelte";
   import Settings from "./Settings.svelte";
   import AddSheet from "./AddSheet.svelte";
+  import * as Tooltip from "$lib/components/ui/tooltip/index.js";
+  import { Toaster } from "$lib/components/ui/sonner/index.js";
   import logo from "../../src-tauri/icons/64x64.png";
 
   type View = "tunnels" | "requests" | "logs" | "settings";
@@ -56,6 +58,8 @@
   ];
 </script>
 
+<!-- One tooltip provider and one toaster per window (02 §1.4, §2). -->
+<Tooltip.Provider delayDuration={250}>
 <div class="shell">
   <aside class="sidebar" data-tauri-drag-region>
     <div class="traffic-space" data-tauri-drag-region></div>
@@ -103,6 +107,9 @@
 {#if adding}
   <AddSheet onclose={() => (adding = false)} onadded={(id) => { adding = false; focusId = id; view = "tunnels"; store.refresh(); }} />
 {/if}
+
+<Toaster theme={store.overview?.settings.theme ?? "system"} position="bottom-right" visibleToasts={3} />
+</Tooltip.Provider>
 
 <style>
   :global(.dashboard-body) {

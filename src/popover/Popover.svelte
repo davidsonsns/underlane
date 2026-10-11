@@ -15,6 +15,9 @@
   import RouteLine from "$lib/components/app/RouteLine.svelte";
   import Icon from "$lib/components/app/Icon.svelte";
   import StatePanel from "$lib/components/app/StatePanel.svelte";
+  import * as Tooltip from "$lib/components/ui/tooltip/index.js";
+  import { Toaster } from "$lib/components/ui/sonner/index.js";
+  import { notify } from "$lib/toast";
 
   let busy = $state<Record<string, boolean>>({});
   let toast = $state<string | null>(null);
@@ -77,6 +80,10 @@
   });
 </script>
 
+<!-- The popover hides on blur (tray.rs); drop toasts so a stale one doesn't reappear. -->
+<svelte:window onblur={() => notify.dismiss()} />
+
+<Tooltip.Provider delayDuration={250}>
 <main class="popover">
   <header>
     <div class="title">
@@ -159,6 +166,16 @@
     <div class="toast" transition:fly={{ y: 8, duration: motion(180) }}>{toast}</div>
   {/if}
 </main>
+
+<!-- Above the footer; the window is 360px wide, so sonner uses mobileOffset (<= 600px). -->
+<Toaster
+  theme={store.overview?.settings.theme ?? "system"}
+  position="bottom-center"
+  visibleToasts={1}
+  offset={{ bottom: 52 }}
+  mobileOffset={{ bottom: 52, left: 20, right: 20 }}
+/>
+</Tooltip.Provider>
 
 <style>
   :global(.popover-body) {
