@@ -137,15 +137,28 @@
     }
   }
 
+  // Names, URLs and tokens aren't prose: no autocorrect or capitalisation, and no spelling or
+  // completion bubble, whose dismissal would eat the first Escape (measured in the real app).
+  const plainText = { autocorrect: "off", autocapitalize: "off", spellcheck: false, writingsuggestions: false } as const;
+
   // Source fields commit on Enter, then clear (the placeholder shows the saved value).
   function commitOnEnter(e: KeyboardEvent, value: string, save: (v: string) => void) {
     if (e.key === "Enter" && value.trim()) save(value.trim());
   }
 
-  function remove() {
+  // Confirmed in the AlertDialog. On success the parent selects and focuses the next tunnel
+  // (this detail unmounts), so the dialog must not hand focus back to Remove; on failure it does.
+  let removing = false;
+  async function remove() {
+    removing = true;
     removeOpen = false;
-    run(() => onremove(tunnel.id));
+    await run(() => onremove(tunnel.id));
+    if (error) {
+      removing = false;
+      removeTrigger?.focus({ preventScroll: true });
+    }
   }
+  const backToRemove = returnFocusTo(() => removeTrigger);
 </script>
 
 <!-- Persistent state stays inline, not a toast (02 §1.4). One-offs: the 3px status edge and the
@@ -169,6 +182,7 @@
       <Input
         bind:ref={nameInput}
         bind:value={nameDraft}
+        {...plainText}
         aria-label="Tunnel name"
         class="h-7.5 w-70 text-lg"
         onkeydown={onNameKey}
@@ -296,7 +310,7 @@
   {#if tunnel.kind === "quick"}
     <SettingsRow label="Local address" help="Press Return to save. A running tunnel restarts.">
       {#snippet control({ id, describedBy })}
-        <Input {id} aria-describedby={describedBy} class="w-55 font-mono text-callout" placeholder={tunnel.origin_url ?? ""} bind:value={originDraft}
+        <Input {id} {...plainText} aria-describedby={describedBy} class="w-55 font-mono text-callout" placeholder={tunnel.origin_url ?? ""} bind:value={originDraft}
           onkeydown={(e) => commitOnEnter(e, originDraft, (originUrl) => { patch({ originUrl }); originDraft = ""; })} />
       {/snippet}
     </SettingsRow>
@@ -304,7 +318,7 @@
   {#if tunnel.kind === "token"}
     <SettingsRow label="Token" help={tunnel.has_token ? "Stored in the keychain." : "Missing."}>
       {#snippet control({ id, describedBy })}
-        <Input {id} aria-describedby={describedBy} class="w-55 font-mono text-callout" type="password" placeholder="Paste a new token" bind:value={tokenDraft}
+        <Input {id} {...plainText} aria-describedby={describedBy} class="w-55 font-mono text-callout" type="password" placeholder="Paste a new token" bind:value={tokenDraft}
           onkeydown={(e) => commitOnEnter(e, tokenDraft, (token) => { patch({ token }); tokenDraft = ""; })} />
       {/snippet}
     </SettingsRow>
@@ -322,7 +336,7 @@
       {/snippet}
     </AlertDialog.Trigger>
     <!-- Escape/Cancel return focus to Remove explicitly (02 R7); after a removal Tunnels focuses the next tunnel. -->
-    <AlertDialog.Content onCloseAutoFocus={returnFocusTo(() => removeTrigger)}>
+    <AlertDialog.Content onCloseAutoFocus={(e) => (removing ? e.preventDefault() : backToRemove(e))}>
       <AlertDialog.Header>
         <AlertDialog.Title>Remove “{tunnel.name}”?</AlertDialog.Title>
         {#if tunnel.kind === "config"}
