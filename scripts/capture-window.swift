@@ -24,7 +24,12 @@ let candidates = list.filter { w in
     return ba["Width"]! * ba["Height"]! > bb["Width"]! * bb["Height"]!
 }
 guard let win = candidates.first, let id = win[kCGWindowNumber as String] as? Int else {
-    print("no window for \(owner)"); exit(1)
+    print("no window for \(owner)" + (pid.map { " (pid \($0))" } ?? ""))
+    // Say what was there, so a failed capture can be diagnosed.
+    for w in list where (w[kCGWindowOwnerName as String] as? String) == owner {
+        print("  seen: pid \(w[kCGWindowOwnerPID as String] ?? "?") layer \(w[kCGWindowLayer as String] ?? "?") bounds \(w[kCGWindowBounds as String] ?? "?")")
+    }
+    exit(1)
 }
 let p = Process()
 p.executableURL = URL(fileURLWithPath: "/usr/sbin/screencapture")
