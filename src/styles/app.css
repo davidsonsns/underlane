@@ -124,6 +124,7 @@
   --color-fill: var(--fill);
   --color-fill-strong: var(--fill-strong);
   --color-faint: var(--text-3);
+  --color-placeholder: var(--text-placeholder);
   --color-link: var(--link);
   --color-ok: var(--ok);
   --color-ok-text: var(--ok-text);
@@ -164,7 +165,10 @@
     --menu: rgb(246 246 246 / 0.82);
     --text-1: #1d1d1f;
     --text-2: #6e6e73; /* AA on every surface (4.66:1 on --bg) */
-    --text-3: #8a8a8e; /* placeholder / disabled / decoration only: 3.2:1, not for content */
+    --text-3: #8a8a8e; /* disabled / decoration only: 3.2:1, not for content */
+    /* Placeholder text: WCAG 1.4.3 covers it, so >= 4.5:1 on every field background
+       (light: 5.07 on --control, 4.66 on --bg). */
+    --text-placeholder: var(--text-2);
     --line: rgb(0 0 0 / 0.085);
     --line-strong: rgb(0 0 0 / 0.14);
     --fill: rgb(0 0 0 / 0.05);
@@ -202,6 +206,9 @@
       --text-1: #f5f5f7;
       --text-2: #a1a1a6;
       --text-3: #7c7c82;
+      /* Brighter than --text-2: a field is white 10% over the surface, where #a1a1a6 is only
+         4.08-4.90:1. #aeaeb2 is 4.75 on --surface-2, 5.21 on --surface, 5.70 on --bg. */
+      --text-placeholder: #aeaeb2;
       --line: rgb(255 255 255 / 0.08);
       --line-strong: rgb(255 255 255 / 0.14);
       --fill: rgb(255 255 255 / 0.07);

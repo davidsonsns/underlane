@@ -1,6 +1,6 @@
 <script lang="ts" module>
 	// burrow: macOS overrides, see .scratch/shadcn-luma/01-theming.md §5 (stock Luma: commit 9f0aa7b).
-	import { tv, type VariantProps } from "tailwind-variants";
+	import { tv, type VariantProps } from "$lib/utils.js"; // burrow: tv without its own merge (01 §5)
 
 	export const tabsListVariants = tv({
 		base: "group/tabs-list inline-flex w-fit items-center justify-center text-sm group-data-horizontal/tabs:h-[22px] group-data-vertical/tabs:h-fit group-data-vertical/tabs:flex-col data-[variant=line]:rounded-none",

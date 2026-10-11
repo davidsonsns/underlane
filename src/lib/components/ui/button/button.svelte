@@ -1,6 +1,6 @@
 <script lang="ts" module>
 	// burrow: macOS overrides, see .scratch/shadcn-luma/01-theming.md §5 (stock Luma: commit 9f0aa7b).
-	import { type VariantProps, tv } from "tailwind-variants";
+	import { tv, type VariantProps } from "$lib/utils.js"; // burrow: tv without its own merge (01 §5)
 	import { cn, type WithElementRef } from "$lib/utils.js";
 	import type { HTMLAnchorAttributes, HTMLButtonAttributes } from "svelte/elements";
 

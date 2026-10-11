@@ -1,4 +1,5 @@
 <script lang="ts">
+	// burrow: macOS overrides, see .scratch/shadcn-luma/01-theming.md §5.18 (stock Luma: shadcn-svelte@1.7.0 add; the spike tuned only command and command-item).
 	import { Command as CommandPrimitive, useId } from "bits-ui";
 	import { cn } from "$lib/utils.js";
 
@@ -17,12 +18,12 @@
 <CommandPrimitive.Group
 	bind:ref
 	data-slot="command-group"
-	class={cn("text-foreground **:[[cmdk-group-heading]]:text-muted-foreground overflow-hidden p-1.5 **:[[cmdk-group-heading]]:px-3 **:[[cmdk-group-heading]]:py-2 **:[[cmdk-group-heading]]:text-xs **:[[cmdk-group-heading]]:font-medium", className)}
+	class={cn("overflow-hidden text-foreground", className)}
 	value={value ?? heading ?? `----${useId()}`}
 	{...restProps}
 >
 	{#if heading}
-		<CommandPrimitive.GroupHeading class="px-2 py-1.5 text-xs font-medium text-muted-foreground">
+		<CommandPrimitive.GroupHeading class="px-2 pt-1 pb-0.5 text-xs font-semibold text-muted-foreground">
 			{heading}
 		</CommandPrimitive.GroupHeading>
 	{/if}

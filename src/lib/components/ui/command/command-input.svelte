@@ -1,4 +1,5 @@
 <script lang="ts">
+	// burrow: macOS overrides, see .scratch/shadcn-luma/01-theming.md §5.18 (stock Luma: shadcn-svelte@1.7.0 add; the spike tuned only command and command-item).
 	import { Command as CommandPrimitive } from "bits-ui";
 	import * as InputGroup from "$lib/components/ui/input-group/index.js";
 	import SearchIcon from '@lucide/svelte/icons/search';
@@ -12,13 +13,13 @@
 	}: CommandPrimitive.InputProps = $props();
 </script>
 
-<div data-slot="command-input-wrapper" class="p-1 pb-0">
-	<InputGroup.Root class="bg-input/50 h-9">
+<div data-slot="command-input-wrapper" class="pb-[5px]">
+	<InputGroup.Root>
 		<CommandPrimitive.Input
 			{value}
 			data-slot="command-input"
 			class={cn(
-				"w-full text-sm outline-hidden disabled:cursor-not-allowed disabled:opacity-50",
+				"w-full text-sm outline-hidden disabled:cursor-default disabled:opacity-45",
 				className
 			)}
 			{...restProps}
@@ -28,7 +29,7 @@
 			{/snippet}
 		</CommandPrimitive.Input>
 		<InputGroup.Addon>
-			<SearchIcon class="size-4 shrink-0 opacity-50" />
+			<SearchIcon class="size-3.5 shrink-0" />
 		</InputGroup.Addon>
 	</InputGroup.Root>
 </div>

@@ -1,4 +1,5 @@
 <script lang="ts">
+	// burrow: macOS overrides, see .scratch/shadcn-luma/01-theming.md §5.18 (stock Luma: shadcn-svelte@1.7.0 add; the spike tuned only command and command-item).
 	import { Command as CommandPrimitive } from "bits-ui";
 	import { cn } from "$lib/utils.js";
 
@@ -12,6 +13,6 @@
 <CommandPrimitive.Separator
 	bind:ref
 	data-slot="command-separator"
-	class={cn("bg-border/50 my-1.5 h-px", className)}
+	class={cn("mx-[5px] my-[5px] h-0 border-t border-border", className)}
 	{...restProps}
 />

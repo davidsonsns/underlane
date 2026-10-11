@@ -1,4 +1,5 @@
 <script lang="ts">
+	// burrow: macOS overrides, see .scratch/shadcn-luma/01-theming.md §5.18 (stock Luma: shadcn-svelte@1.7.0 add; the spike tuned only command and command-item).
 	import { cn, type WithElementRef } from "$lib/utils.js";
 	import type { HTMLAttributes } from "svelte/elements";
 
@@ -13,7 +14,7 @@
 <span
 	bind:this={ref}
 	data-slot="command-shortcut"
-	class={cn("text-muted-foreground group-data-selected/command-item:text-foreground ml-auto text-xs tracking-widest", className)}
+	class={cn("ms-auto ps-6 text-sm tracking-normal text-muted-foreground group-data-selected/command-item:text-accent-foreground", className)}
 	{...restProps}
 >
 	{@render children?.()}

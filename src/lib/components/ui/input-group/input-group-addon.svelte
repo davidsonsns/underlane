@@ -1,13 +1,15 @@
 <script lang="ts" module>
-	import { tv, type VariantProps } from "tailwind-variants";
+	// burrow: macOS overrides, see .scratch/shadcn-luma/01-theming.md §5.25 (stock Luma: shadcn-svelte@1.7.0 add).
+	import { tv, type VariantProps } from "$lib/utils.js"; // burrow: tv without its own merge (01 §5)
 	export const inputGroupAddonVariants = tv({
-		base: "text-muted-foreground **:data-[slot=kbd]:bg-muted-foreground/10 h-auto gap-2 py-2 text-sm font-medium group-data-[disabled=true]/input-group:opacity-50 **:data-[slot=kbd]:rounded-3xl **:data-[slot=kbd]:px-1.5 [&>svg:not([class*='size-'])]:size-4 flex cursor-text items-center justify-center select-none",
+		// Unit/icon addon: 12px muted text, tight padding inside a 22px field.
+		base: "flex h-auto cursor-text items-center justify-center gap-1 text-callout text-muted-foreground select-none group-data-[disabled=true]/input-group:opacity-45 [&>svg:not([class*='size-'])]:size-3.5",
 		variants: {
 			align: {
-				"inline-start": "pl-3 has-[>button]:-ml-1 has-[>kbd]:-ml-1 order-first",
-				"inline-end": "pr-3 has-[>button]:-mr-1 has-[>kbd]:-mr-1 order-last",
-				"block-start": "px-3 pt-3 group-has-[>input]/input-group:pt-3.5 [.border-b]:pb-3.5 order-first w-full justify-start",
-				"block-end": "px-3 pb-3 group-has-[>input]/input-group:pb-3.5 [.border-t]:pt-3.5 order-last w-full justify-start",
+				"inline-start": "order-first ps-1.5 has-[>button]:ps-0.5",
+				"inline-end": "order-last pe-1.5 has-[>button]:pe-0.5",
+				"block-start": "order-first w-full justify-start px-2 pt-1.5",
+				"block-end": "order-last w-full justify-start px-2 pb-1.5",
 			},
 		},
 		defaultVariants: {

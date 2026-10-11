@@ -2,7 +2,7 @@
 	// burrow: macOS overrides, see .scratch/shadcn-luma/01-theming.md §5 (stock Luma: commit 9f0aa7b).
 	import { getContext, setContext } from "svelte";
 	import { toggleVariants } from "$lib/components/ui/toggle/index.js";
-	import type { VariantProps } from "tailwind-variants";
+	import type { VariantProps } from "$lib/utils.js";
 
 	type ToggleVariants = VariantProps<typeof toggleVariants>;
 
