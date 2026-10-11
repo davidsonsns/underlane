@@ -55,7 +55,7 @@
     {#if detail.error}<div class="mt-2 text-callout text-bad-text select-text">{detail.error}</div>{/if}
   </div>
 
-  <Tabs.Root class="flex min-h-0 flex-1 flex-col" bind:value={() => side, (v) => (side = v as Side)}>
+  <Tabs.Root class="flex min-h-0 flex-1 flex-col gap-0" bind:value={() => side, (v) => (side = v as Side)}>
     <Tabs.List class="mx-4 mt-2">
       <Tabs.Trigger value="req">Request</Tabs.Trigger>
       <Tabs.Trigger value="resp">Response</Tabs.Trigger>
@@ -81,18 +81,18 @@
     </tbody>
   </table>
 
-  <div class="mt-3 flex items-center gap-2 text-xs">
+  <div class="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1.5 text-xs">
     <h3 class="text-callout font-semibold">Body</h3>
-    <span class="text-muted-foreground">{formatBytes(body.size)}{body.content_type ? `, ${body.content_type.split(";")[0]}` : ""}</span>
+    <span class="whitespace-nowrap text-muted-foreground">{formatBytes(body.size)}{body.content_type ? `, ${body.content_type.split(";")[0]}` : ""}</span>
     {#if body.truncated}
       <Tip text="Only the first {formatBytes(body.stored)} were stored">
         {#snippet children({ props })}<Badge {...{ ...props, tabindex: undefined }} variant="warning">Truncated at {formatBytes(body.stored)}</Badge>{/snippet}
       </Tip>
     {/if}
     {#if body.decoded_from}<Badge>Decoded {body.decoded_from}{body.decode_partial ? " (partial)" : ""}</Badge>{/if}
-    <span class="flex-1"></span>
     {#if body.stored > 0}
-      <Segmented label="Body view" items={modes} bind:value={() => effectiveMode, (v) => (mode = v)} />
+      <!-- ms-auto keeps it on the right, also when it wraps under the badges in a narrow pane. -->
+      <Segmented class="ms-auto" label="Body view" items={modes} bind:value={() => effectiveMode, (v) => (mode = v)} />
     {/if}
   </div>
   {#if body.stored === 0}
