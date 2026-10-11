@@ -422,6 +422,15 @@ chunk carrying every installed component's utilities and sonner's stylesheet. Un
 budget, so sonner stays statically imported (no lazy load). Budgets for the finished port: popover JS ≤ 70 kB gzip,
 dashboard JS ≤ 150 kB, CSS ≤ 20 kB per page.
 
+**Tooltip chunking (Phase 2a).** Phase 1's popover figure didn't include the tooltip
+surface: nothing rendered `Tooltip.Content` yet, so floating-ui and Bits' popper layers were
+tree-shaken. Settings is the first screen with Tips. Because the popover imported the
+`ui/tooltip` barrel (for the provider), those modules then landed in the shared chunk and the
+popover's JS went to 88.8 kB gzip. The popover now imports `tooltip-provider.svelte` directly:
+popover 67.9 kB (3.4 entry + 64.5 shared), dashboard 116.6 kB. Phase 2i, which puts Tips in the
+popover, brings floating-ui back to it (about +20 kB), so 2i needs O10 (lazy sonner) or a lazy
+tooltip content to stay within 70 kB.
+
 **Alternatives rejected.** Bits UI alone with hand-written styles (an earlier spike: every
 component's look written from scratch, and its dark variant missed "System" in dark mode).
 Keeping scoped CSS (1,440 lines of duplicated per-component styles, no shared primitives, and the
