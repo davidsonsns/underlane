@@ -22,15 +22,12 @@
   let {
     rows = $bindable(),
     selected,
-    fresh = {},
     cap = 500,
     onselect,
   }: {
     rows: RequestSummary[];
     /** The active request's id. */
     selected: string | null;
-    /** Ids that just arrived: their row flashes the accent bar once. */
-    fresh?: Record<string, boolean>;
     cap?: number;
     /** A user move (click, keys) or a fallback after the active row went away. */
     onselect: (id: string | null) => void;
@@ -39,6 +36,8 @@
   let box = $state<HTMLDivElement>();
   let list = $state<VList<RequestSummary>>();
   let shift = $state(false);
+  /** Ids that just arrived: their row flashes the accent bar once. */
+  let fresh = $state<Record<string, boolean>>({});
   const active = $derived(selected == null ? -1 : rows.findIndex((r) => r.id === selected));
   // Keep the active row mounted while the pointer scrolls it away, so aria-activedescendant
   // never points at a recycled row (03 R-22).
@@ -108,26 +107,52 @@
     box?.focus({ preventScroll: true });
   }
 
-  /** The first row in view and how far it's scrolled past, to put it back after an update. */
-  function anchor() {
-    if (!list) return null;
-    const offset = list.getScrollOffset();
-    const i = list.findItemIndex(offset);
-    return rows[i] ? { id: rows[i].id, delta: offset - list.getItemOffset(i) } : null;
+  // New requests arrive as events, sometimes in bursts: queue them and put each batch on top in
+  // one update, so the anchoring below runs once per batch and never interleaves with another.
+  let incoming: RequestSummary[] = [];
+  let flushing = false;
+
+  /** A request that just arrived (newer than every row). Updates of a known id go to the parent. */
+  export function add(r: RequestSummary) {
+    const q = incoming.findIndex((x) => x.id === r.id);
+    if (q >= 0) incoming[q] = r;
+    else incoming.push(r);
+    flush();
+  }
+
+  async function flush() {
+    if (flushing) return;
+    flushing = true;
+    try {
+      while (incoming.length) {
+        const batch = incoming.reverse(); // newest first
+        incoming = [];
+        await prepend(batch);
+        for (const r of batch) {
+          fresh[r.id] = true;
+          setTimeout(() => delete fresh[r.id], 1200);
+        }
+      }
+    } finally {
+      flushing = false;
+    }
   }
 
   /**
-   * Put newly arrived requests (newest first) on top and keep at most `cap` rows. At the top of
-   * the list they appear in view. Scrolled down, the rows in view stay put: below the cap virtua's
-   * `shift` keeps them (the length grows); once the cap trims the tail the length doesn't change
-   * and `shift` does nothing (decisions.md §17), so the first visible row is re-anchored by hand.
+   * Put a batch (newest first) on top and keep at most `cap` rows. At the top of the list the new
+   * rows appear in view. Scrolled down, the rows in view stay put: below the cap virtua's `shift`
+   * keeps them (the length grows); once the cap trims the tail the length doesn't change and
+   * `shift` does nothing (decisions.md §17), so the first visible row is re-anchored by hand.
    */
-  export async function prepend(batch: RequestSummary[]) {
-    if (!batch.length) return;
+  async function prepend(batch: RequestSummary[]) {
     const ids = new Set(batch.map((r) => r.id));
     const merged = [...batch, ...rows.filter((r) => !ids.has(r.id))];
-    const offset = list?.getScrollOffset() ?? 0;
-    if (!list || snapshot.full || offset <= 0) {
+    // The DOM's scrollTop, not list.getScrollOffset(): virtua's offset only catches up on the
+    // next scroll event, so in a burst it would still hold the offset from before the previous
+    // batch's re-anchoring.
+    const viewport = list ? (box?.firstElementChild as HTMLElement | null) : null;
+    const top = viewport?.scrollTop ?? 0;
+    if (!viewport || snapshot.full || top <= 0) {
       rows = merged.slice(0, cap);
     } else if (merged.length <= cap) {
       shift = true;
@@ -135,11 +160,12 @@
       await tick();
       shift = false;
     } else {
-      const a = anchor();
+      const i = Math.floor(top / ROW);
+      const anchor = rows[i]?.id;
       rows = merged.slice(0, cap);
       await tick();
-      const i = a ? rows.findIndex((r) => r.id === a.id) : -1;
-      if (i >= 0) list?.scrollTo(list.getItemOffset(i) + a!.delta);
+      const j = anchor ? rows.findIndex((r) => r.id === anchor) : -1;
+      if (j >= 0) viewport.scrollTop = j * ROW + (top - i * ROW);
     }
   }
 

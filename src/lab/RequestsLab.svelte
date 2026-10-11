@@ -31,18 +31,14 @@
 
   let rows = $state<RequestSummary[]>(seed());
   let selected = $state<string | null>(null);
-  let fresh = $state<Record<string, boolean>>({});
   let list = $state<RequestList>();
   const detail = $derived(rows.find((r) => r.id === selected) ?? null);
 
+  /** n requests arriving as separate events in the same task, like a burst of real ones. */
   async function add(n: number) {
-    const batch = Array.from({ length: n }, mk).reverse();
-    await list?.prepend(batch);
-    for (const r of batch) {
-      fresh[r.id] = true;
-      setTimeout(() => delete fresh[r.id], 1200);
-    }
+    for (let i = 0; i < n; i++) list?.add(mk());
     await tick();
+    await new Promise((r) => setTimeout(r, 0));
   }
 
   if (typeof window !== "undefined") {
@@ -77,7 +73,7 @@
     <div class="{columns} h-7 flex-none border-b-[0.5px] border-border text-xs text-muted-foreground" aria-hidden="true">
       <span>Method</span><span>Path</span><span class="text-right">Status</span><span class="text-right">Time</span><span class="text-right">Size</span><span class="text-right">At</span>
     </div>
-    <RequestList bind:this={list} bind:rows {selected} {fresh} cap={CAP} onselect={(id) => (selected = id)} />
+    <RequestList bind:this={list} bind:rows {selected} cap={CAP} onselect={(id) => (selected = id)} />
   </div>
   <div class="flex flex-wrap items-center gap-2">
     <Button variant="outline" size="sm" onclick={() => add(1)}>New request</Button>

@@ -24,7 +24,6 @@
   let selected = $state<string | null>(null);
   let detail = $state<Detail | null>(null);
   let detailError = $state<string | null>(null);
-  let fresh = $state<Record<string, boolean>>({});
   let list = $state<RequestList>();
 
   const inspectable = (t: { kind: string }) => t.kind !== "token";
@@ -102,29 +101,6 @@
     if (rows[0]) await select(rows[0].id, 0);
   }
 
-  // New requests arrive as events, sometimes in bursts: queue them and put each batch on top
-  // in one update, so the scroll anchoring runs once per batch and never interleaves.
-  let incoming: RequestSummary[] = [];
-  let flushing = false;
-  async function flush() {
-    if (flushing) return;
-    flushing = true;
-    try {
-      while (incoming.length) {
-        const batch = incoming.reverse(); // newest first
-        incoming = [];
-        if (list) await list.prepend(batch);
-        else rows = [...batch, ...rows].slice(0, CAP);
-        for (const r of batch) {
-          fresh[r.id] = true;
-          setTimeout(() => delete fresh[r.id], 1200);
-        }
-      }
-    } finally {
-      flushing = false;
-    }
-  }
-
   onMount(() => {
     const un = listen<RequestSummary>("request", (e) => {
       const r = e.payload;
@@ -132,12 +108,8 @@
       if (search) return;
       const i = rows.findIndex((x) => x.id === r.id);
       if (i >= 0) rows[i] = r;
-      else {
-        const q = incoming.findIndex((x) => x.id === r.id);
-        if (q >= 0) incoming[q] = r;
-        else incoming.push(r);
-        flush();
-      }
+      else if (list) list.add(r); // batched, keeps the view when scrolled down
+      else rows = [r, ...rows].slice(0, CAP);
       if (selected === r.id) select(r.id);
     });
     return () => un.then((f) => f());
@@ -189,7 +161,7 @@
         {:else if rows.length === 0}
           <StatePanel kind="empty" title={search ? "No matching requests" : "Waiting for requests"} message={search ? "Try a different filter." : tunnel?.state.status === "connected" ? `Requests to ${tunnel.state.public_url ?? "this tunnel"} will appear here as they happen.` : "Start the tunnel, then send it some traffic."} />
         {:else}
-          <RequestList bind:this={list} bind:rows {selected} {fresh} cap={CAP} onselect={(id) => select(id)} />
+          <RequestList bind:this={list} bind:rows {selected} cap={CAP} onselect={(id) => select(id)} />
         {/if}
       </div>
       <div class="flex min-w-0 flex-col overflow-hidden">
