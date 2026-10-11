@@ -87,7 +87,7 @@
     up: "bg-ok",
     ready: "bg-off",
     down: "bg-bad",
-    idle: "shadow-[inset_0_0_0_1.5px_var(--off)]",
+    idle: "shadow-[inset_0_0_0_1.5px_var(--off)]", // a hollow ring: probed nothing yet (StatusDot's idle look)
     none: "invisible", // keeps the column width so services stay aligned
   };
   const link = `cursor-pointer select-none rounded-xs hover:underline ${kbRing}`;
@@ -132,8 +132,7 @@
               </Tip>
               <CopyButton
                 value="https://{host}"
-                what="URL"
-                tip="Copy https://{host}"
+                what="https://{host}"
                 size="icon-sm"
                 class="opacity-0 transition-opacity duration-(--dur) group-hover/route:opacity-100 focus-visible:opacity-100"
               />
@@ -161,11 +160,16 @@
                 </span>
               {/snippet}
             </Tip>
-            {#if /^https?:\/\//.test(m.service)}
-              <a href={m.service} class="font-mono {link}" onclick={(e) => open(e, m.service)}>{shortService(m.service)}</a>
-            {:else}
-              <span class={serviceLabel(m.service) === shortService(m.service) ? "font-mono select-text" : undefined}>{serviceLabel(m.service)}</span>
-            {/if}
+            <!-- The service carries the same explanation, so hovering it, or Tab to its link, shows it too (as before). -->
+            <Tip text={tip ?? ""} disabled={!tip}>
+              {#snippet children({ props })}
+                {#if /^https?:\/\//.test(m.service)}
+                  <a {...mergeProps(props, { onclick: (e: MouseEvent) => open(e, m.service) })} href={m.service} class="font-mono {link}">{shortService(m.service)}</a>
+                {:else}
+                  <span {...{ ...props, tabindex: undefined }} class={serviceLabel(m.service) === shortService(m.service) ? "font-mono select-text" : undefined}>{serviceLabel(m.service)}</span>
+                {/if}
+              {/snippet}
+            </Tip>
           </span>
           {#if m.note && tunnel.inspect}<span class="col-span-full mt-0.5 text-xs text-muted-foreground">{m.note}</span>{/if}
         </li>
