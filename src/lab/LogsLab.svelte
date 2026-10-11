@@ -6,6 +6,7 @@
   import { tick } from "svelte";
   import { Button } from "$lib/components/ui/button/index.js";
   import LogList from "../dashboard/LogList.svelte";
+  import { snapshot } from "$lib/snapshot.svelte";
   import type { LogLine } from "$lib/types";
 
   const CAP = 3000;
@@ -41,6 +42,11 @@
     (window as unknown as { __loglab: unknown }).__loglab = {
       append,
       ids: () => lines.map((l) => l.id),
+      /** E2E snapshot mode (every row rendered), as App.svelte's e2e handler sets it. */
+      snapshot: async (full: boolean) => {
+        snapshot.full = full;
+        await tick();
+      },
       reset: async () => {
         seq = 1;
         lines = seed();
