@@ -2,50 +2,30 @@
   import type { Status } from "$lib/types";
   import { statusHint, statusLabel } from "$lib/format";
   import { tooltip } from "$lib/tooltip";
+  import { cn } from "$lib/utils";
+  // The hover hint keeps use:tooltip until the screens move to Tip (02 F11); Phase 1 changes
+  // nothing visible.
   let { status, size = 8 }: { status: Status; size?: number } = $props();
+
+  const look: Record<Status, string> = {
+    stopped: "bg-transparent shadow-[inset_0_0_0_1.5px_var(--off)]",
+    connected: "bg-ok shadow-[0_0_0_3px_color-mix(in_srgb,var(--ok)_18%,transparent)]",
+    degraded: "bg-degraded",
+    crashed: "bg-bad",
+    // Starting breathes; the only ambient motion in the app, and it stops once connected.
+    starting: "bg-starting after:absolute after:inset-0 after:animate-status-ping after:rounded-full after:bg-starting",
+  };
 </script>
 
-<span class="dot {status}" style="--size: {size}px" role="img" aria-label={statusLabel[status]} use:tooltip={statusHint[status]}></span>
-
-<style>
-  .dot {
-    position: relative;
-    display: inline-block;
-    flex: none;
-    width: var(--size);
-    height: var(--size);
-    border-radius: 50%;
-    background: var(--off);
-    transition: background-color 240ms ease, box-shadow 240ms ease, transform 240ms var(--ease-spring);
-  }
-  .stopped {
-    background: transparent;
-    box-shadow: inset 0 0 0 1.5px var(--off);
-  }
-  .connected {
-    background: var(--ok);
-    box-shadow: 0 0 0 3px color-mix(in srgb, var(--ok) 18%, transparent);
-  }
-  .degraded {
-    background: var(--degraded);
-  }
-  .crashed {
-    background: var(--bad);
-  }
-  .starting {
-    background: var(--starting);
-  }
-  /* Starting breathes; the only ambient motion in the app, and it stops once connected. */
-  .starting::after {
-    content: "";
-    position: absolute;
-    inset: 0;
-    border-radius: 50%;
-    background: var(--starting);
-    animation: ping 1.3s var(--ease-out) infinite;
-  }
-  @keyframes ping {
-    0% { transform: scale(1); opacity: 0.6; }
-    100% { transform: scale(2.6); opacity: 0; }
-  }
-</style>
+<span
+  class={cn(
+    "relative inline-block size-(--size) flex-none rounded-full bg-off",
+    // One-off: each property has its own easing.
+    "[transition:background-color_240ms_ease,box-shadow_240ms_ease,transform_240ms_var(--ease-spring)]",
+    look[status]
+  )}
+  style="--size: {size}px"
+  role="img"
+  aria-label={statusLabel[status]}
+  use:tooltip={statusHint[status]}
+></span>

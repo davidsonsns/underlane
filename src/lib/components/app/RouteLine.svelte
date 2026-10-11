@@ -1,7 +1,9 @@
 <script lang="ts">
   // hostname ⟶ local service, joined by a conduit. When a request flows through an inspected
   // route, a pulse travels along the conduit (motion that answers real activity).
+  // The popover's compact route line; leading-legacy keeps base.css's line height.
   import { shortService } from "$lib/format";
+  import { cn } from "$lib/utils";
   let {
     hostname,
     service,
@@ -12,82 +14,22 @@
   let key = $derived(pulse);
 </script>
 
-<span class="route" class:compact title="{hostname ?? 'any hostname'} → {service}">
-  <span class="host mono">{hostname ?? "*"}</span>
-  <span class="conduit" class:inspected aria-hidden="true">
+<span class={cn("flex min-w-0 items-center gap-1.5 leading-legacy", compact ? "text-xs" : "text-code")} title="{hostname ?? 'any hostname'} → {service}">
+  <span class="min-w-0 flex-[0_1_auto] cursor-text truncate font-mono text-foreground select-text">{hostname ?? "*"}</span>
+  <span
+    class={cn(
+      "relative h-px max-w-14 flex-[1_0_18px] overflow-visible",
+      // Arrowhead: a 4px-wide triangle at the end of the line.
+      "after:absolute after:-top-[2.5px] after:-right-px after:border-[3px] after:border-r-0 after:border-l-4 after:border-transparent after:border-l-(color:--line-strong)",
+      compact && "max-w-[26px] basis-3.5",
+      // Inspected: dashed conduit (3px dash, 2px gap) instead of the solid line.
+      inspected ? "bg-[repeating-linear-gradient(90deg,var(--text-3)_0_3px,transparent_3px_5px)]" : "bg-(color:--line-strong)"
+    )}
+    aria-hidden="true"
+  >
     {#key key}
-      {#if pulse > 0}<span class="pulse"></span>{/if}
+      {#if pulse > 0}<span class="absolute -top-0.5 left-0 size-[5px] animate-travel rounded-full bg-tint shadow-[0_0_6px_var(--tint)] motion-reduce:hidden"></span>{/if}
     {/key}
   </span>
-  <span class="svc mono">{shortService(service, compact)}</span>
+  <span class="flex-none cursor-text font-mono whitespace-nowrap text-muted-foreground select-text">{shortService(service, compact)}</span>
 </span>
-
-<style>
-  .route {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    min-width: 0;
-    font-size: 11.5px;
-  }
-  .host {
-    color: var(--text-1);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    min-width: 0;
-    flex: 0 1 auto;
-    font-size: inherit;
-  }
-  .svc {
-    color: var(--text-2);
-    white-space: nowrap;
-    flex: none;
-    font-size: inherit;
-  }
-  .conduit {
-    position: relative;
-    flex: 1 0 18px;
-    max-width: 56px;
-    height: 1px;
-    background: var(--line-strong);
-    overflow: visible;
-  }
-  .conduit::after {
-    content: "";
-    position: absolute;
-    right: -1px;
-    top: -2.5px;
-    border: 3px solid transparent;
-    border-left: 4px solid var(--line-strong);
-    border-right: 0;
-  }
-  .conduit.inspected {
-    background: repeating-linear-gradient(90deg, var(--text-3) 0 3px, transparent 3px 5px);
-  }
-  .pulse {
-    position: absolute;
-    top: -2px;
-    left: 0;
-    width: 5px;
-    height: 5px;
-    border-radius: 50%;
-    background: var(--tint);
-    box-shadow: 0 0 6px var(--tint);
-    animation: travel 650ms var(--ease-out) forwards;
-  }
-  @keyframes travel {
-    from { left: 0; opacity: 1; }
-    to { left: calc(100% - 5px); opacity: 0; }
-  }
-  .compact {
-    font-size: 11px;
-  }
-  .compact .conduit {
-    flex-basis: 14px;
-    max-width: 26px;
-  }
-  @media (prefers-reduced-motion: reduce) {
-    .pulse { display: none; }
-  }
-</style>
