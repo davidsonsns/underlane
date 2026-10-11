@@ -443,9 +443,20 @@ names to the dashboard).
 **Identifier fields skip the text system (Phase 2b).** In the real app, typing "zzz" into the
 rename field raised a spelling bubble whose dismissal swallowed the first Escape (the keydown
 never reached the page), and "alpha3" was saved as "Alpha3". The rename, Local address and token
-inputs set `autocorrect="off" autocapitalize="off" spellcheck="false" writingsuggestions="false"`.
+inputs set `autocorrect="off" autocapitalize="off" spellcheck="false" writingsuggestions="false"`,
+and so does the Combobox's search field (Bits already sets the first and third).
 Settings' path and redact fields and the Add sheet's fields are candidates for the same (their
 phases).
+
+**Combobox matching (Phase 2b).** The project picker filters by a case-insensitive substring of
+the trimmed search, not Bits' fuzzy scorer, which hid "Work" when the search was " Work" and
+let Enter pick "website" for "web". An exact match is listed and highlighted first, so Enter picks
+it; any other non-empty search lists `Create "<name>"` first and highlighted, with the matches
+after it. It opens with the current project highlighted, so Return alone changes nothing. The
+filtering and order are done in `comboRows` (`src/lib/combobox.ts`, unit-tested), and Bits runs
+with `shouldFilter={false}` rather than a custom `filter`: with a filter Bits reorders the rows by
+moving their DOM nodes, which is fragile under Svelte's keyed blocks and would leave the order
+to its score sort.
 
 **Alternatives rejected.** Bits UI alone with hand-written styles (an earlier spike: every
 component's look written from scratch, and its dark variant missed "System" in dark mode).
