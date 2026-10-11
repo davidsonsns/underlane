@@ -13,7 +13,7 @@
   import StatePanel from "$lib/components/app/StatePanel.svelte";
   import TunnelDetail from "./TunnelDetail.svelte";
 
-  let { focusId = null, onadd }: { focusId?: string | null; onadd: () => void } = $props();
+  let { focusId = null, onadd }: { focusId?: string | null; onadd: (e: MouseEvent) => void } = $props();
   let selected = $state<string | null>(null);
   $effect(() => {
     if (focusId) selected = focusId;
@@ -63,7 +63,7 @@
         <button class="btn" onclick={() => api.startAll()}><Icon name="play" size={11} /> Start all</button>
       {/if}
     {/if}
-    <button class="btn primary" onclick={onadd}><Icon name="plus" size={12} /> Add tunnel</button>
+    <button class="btn primary" data-add-tunnel onclick={onadd}><Icon name="plus" size={12} /> Add tunnel</button>
   </Toolbar>
 
   {#if store.loading}

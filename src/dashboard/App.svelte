@@ -11,6 +11,7 @@
   import Logs from "./Logs.svelte";
   import Settings from "./Settings.svelte";
   import AddSheet from "./AddSheet.svelte";
+  import type { AddTab } from "./AddSheetBody.svelte";
   import * as Tooltip from "$lib/components/ui/tooltip/index.js";
   import { Toaster } from "$lib/components/ui/sonner/index.js";
   import logo from "../../src-tauri/icons/64x64.png";
@@ -19,11 +20,17 @@
   let view = $state<View>("tunnels");
   let focusId = $state<string | null>(null);
   let adding = $state(false);
+  let addTab = $state<AddTab>("import");
+  // The button that opened the sheet, for return focus (02 R7). Null when the popover opened it.
+  let addTrigger = $state<HTMLElement | null>(null);
   let requestsRef = $state<{ selectFirst: (side?: "req" | "resp") => Promise<void> } | null>(null);
 
   function navigate(target: string) {
     const [v, id] = target.replace(/^#/, "").split(":");
     if (v === "add") {
+      // add:<tab> opens a given tab (O6), e.g. for screenshots.
+      addTab = id === "quick" || id === "token" ? id : "import";
+      addTrigger = null;
       view = "tunnels";
       adding = true;
       return;
@@ -49,6 +56,12 @@
     ];
     return () => subs.forEach((s) => s.then((f) => f()));
   });
+
+  function openAdd(e: MouseEvent) {
+    addTrigger = e.currentTarget as HTMLElement;
+    addTab = "import";
+    adding = true;
+  }
 
   const nav: { id: View; label: string; icon: string }[] = [
     { id: "tunnels", label: "Tunnels", icon: "tunnel" },
@@ -91,7 +104,7 @@
     {#key view}
       <div class="view" in:fade={{ duration: motion(140) }}>
         {#if view === "tunnels"}
-          <Tunnels {focusId} onadd={() => (adding = true)} />
+          <Tunnels {focusId} onadd={openAdd} />
         {:else if view === "requests"}
           <Requests bind:this={requestsRef} {focusId} />
         {:else if view === "logs"}
@@ -104,9 +117,14 @@
   </main>
 </div>
 
-{#if adding}
-  <AddSheet onclose={() => (adding = false)} onadded={(id) => { adding = false; focusId = id; view = "tunnels"; store.refresh(); }} />
-{/if}
+<!-- Without a live trigger (opened from the popover, or the empty state went away after an
+     add), focus goes to the Tunnels toolbar's Add tunnel. -->
+<AddSheet
+  bind:open={adding}
+  tab={addTab}
+  returnFocus={() => (addTrigger?.isConnected ? addTrigger : document.querySelector<HTMLElement>("[data-add-tunnel]"))}
+  onadded={(id) => { addTrigger = null; adding = false; focusId = id; view = "tunnels"; store.refresh(); }}
+/>
 
 <Toaster theme={store.overview?.settings.theme ?? "system"} position="bottom-right" visibleToasts={3} />
 </Tooltip.Provider>
