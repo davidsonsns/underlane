@@ -120,7 +120,8 @@
   <Dialog.Title>Add tunnel</Dialog.Title>
 </Dialog.Header>
 
-<Tabs.Root bind:value={() => tab, (v) => (tab = v as AddTab)}>
+<!-- min-w-0: the sheet is a grid, and the untruncated hostnames would otherwise widen its column. -->
+<Tabs.Root class="min-w-0" bind:value={() => tab, (v) => (tab = v as AddTab)}>
   <Tabs.List class="self-center">
     <Tabs.Trigger value="import"><FileText />Import config</Tabs.Trigger>
     <Tabs.Trigger value="quick"><Zap />Quick tunnel</Tabs.Trigger>
@@ -211,7 +212,7 @@
       <div class="grid grid-cols-[120px_1fr] items-center gap-x-3 gap-y-2.5">
         <Label for={id("t-token")} class="self-start justify-self-end pt-1">Token:</Label>
         <!-- break-all: a token is one long word. -->
-        <Textarea id={id("t-token")} {...plainText} class="max-h-28 font-mono break-all" rows={3} placeholder="eyJhIjoi…" bind:value={token.token} required />
+        <Textarea id={id("t-token")} {...plainText} class="max-h-28 resize-none font-mono break-all" rows={3} placeholder="eyJhIjoi…" bind:value={token.token} required />
         <Label for={id("t-name")} class="justify-self-end">Name:</Label>
         <Input id={id("t-name")} {...plainText} placeholder="Remote tunnel" bind:value={token.name} />
         <Label for={id("t-project")} class="justify-self-end">Project:</Label>
