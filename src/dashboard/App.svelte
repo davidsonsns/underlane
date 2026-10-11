@@ -4,6 +4,7 @@
   import { listen } from "@tauri-apps/api/event";
   import { store } from "../lib/store.svelte";
   import { api } from "../lib/api";
+  import { snapshot } from "../lib/snapshot.svelte";
   import { motion } from "../lib/theme";
   import Icon from "$lib/components/app/Icon.svelte";
   import Tunnels from "./Tunnels.svelte";
@@ -40,18 +41,32 @@
     focusId = id || null;
   }
 
+  // The e2e harness asks for the rendered text of a view. Lists render every row meanwhile
+  // (snapshot mode, 02 §4.3), so the text isn't windowed. The control server takes concurrent
+  // connections, so requests queue here: one snapshot's `finally` can't end snapshot mode while
+  // another is still reading.
+  type SnapshotRequest = { nonce: string; view: string; select?: string; tab?: string };
+  let snapshots = Promise.resolve();
+  async function e2eSnapshot(p: SnapshotRequest) {
+    snapshot.full = true;
+    try {
+      navigate(p.view);
+      await tick();
+      if (p.select === "first" && requestsRef) await requestsRef.selectFirst(p.tab === "req" ? "req" : "resp");
+      await new Promise((r) => setTimeout(r, 400));
+      await api.e2eReport(p.nonce, document.body.innerText);
+    } finally {
+      snapshot.full = false;
+    }
+  }
+
   onMount(() => {
     store.init();
     if (location.hash) navigate(location.hash);
     const subs = [
       listen<string>("navigate", (e) => navigate(e.payload)),
-      // The e2e harness asks for the rendered text of a view.
-      listen<{ nonce: string; view: string; select?: string; tab?: string }>("e2e-snapshot", async (e) => {
-        navigate(e.payload.view);
-        await tick();
-        if (e.payload.select === "first" && requestsRef) await requestsRef.selectFirst(e.payload.tab === "req" ? "req" : "resp");
-        await new Promise((r) => setTimeout(r, 400));
-        await api.e2eReport(e.payload.nonce, document.body.innerText);
+      listen<SnapshotRequest>("e2e-snapshot", (e) => {
+        snapshots = snapshots.then(() => e2eSnapshot(e.payload)).catch((err) => console.error("e2e snapshot", err));
       }),
     ];
     return () => subs.forEach((s) => s.then((f) => f()));

@@ -41,6 +41,7 @@
   import { applyTheme } from "$lib/theme";
   import type { Status } from "$lib/types";
   import VirtuaLab from "./VirtuaLab.svelte";
+  import RequestsLab from "./RequestsLab.svelte";
   import Play from "@lucide/svelte/icons/play";
   import Square from "@lucide/svelte/icons/square";
   import RotateCw from "@lucide/svelte/icons/rotate-cw";
@@ -416,6 +417,12 @@
         <section data-section="virtua">
           {@render section("virtua", "virtua VList", "3,000 variable-height rows and 500 fixed 28px rows; R-21/R-22 probes")}
           <VirtuaLab />
+        </section>
+
+        <!-- Requests list (03 R-49) --------------------------------------------------- -->
+        <section data-section="requests">
+          {@render section("requests", "Requests list", "the real RequestList at the 500 cap: listbox + VList, keys, by-id selection, anchoring under prepend + trim")}
+          <RequestsLab />
         </section>
       </div>
     </div>

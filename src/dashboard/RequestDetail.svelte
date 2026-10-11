@@ -1,248 +1,115 @@
 <script lang="ts">
-  import { writeText } from "@tauri-apps/plugin-clipboard-manager";
   import { base64ToBytes, formatBytes, formatClock, formatDuration, hexDump, prettyJson, statusClass, toCurl } from "../lib/format";
   import type { BodyView, RequestDetail } from "../lib/types";
-  import Icon from "$lib/components/app/Icon.svelte";
+  import * as Tabs from "$lib/components/ui/tabs/index.js";
+  import { Badge } from "$lib/components/ui/badge/index.js";
+  import CopyButton from "$lib/components/app/CopyButton.svelte";
+  import Segmented from "$lib/components/app/Segmented.svelte";
+  import Tip from "$lib/components/app/Tip.svelte";
 
-  let { detail, side: initial = "resp" }: { detail: RequestDetail; side?: "req" | "resp" } = $props();
-  // svelte-ignore state_referenced_locally
-  let side = $state<"req" | "resp">(initial);
-  let mode = $state<"pretty" | "raw" | "hex">("pretty");
-  let copied = $state(false);
+  type Side = "req" | "resp";
+  type Mode = "pretty" | "raw" | "hex";
+  let {
+    detail,
+    side = $bindable("resp"),
+    mode = $bindable("pretty"),
+  }: {
+    detail: RequestDetail;
+    /** The open tab; bound by Requests so it persists across selections. */
+    side?: Side;
+    /** The chosen body view. A body that can't show it uses `effectiveMode` and leaves it as is. */
+    mode?: Mode;
+  } = $props();
 
   const body = $derived<BodyView>(side === "req" ? detail.req : detail.resp);
   const headers = $derived(side === "req" ? detail.req_headers : detail.resp_headers);
   const pretty = $derived(body.text != null ? prettyJson(body.text) : null);
-  const effectiveMode = $derived(!body.is_text ? "hex" : mode === "pretty" && !pretty ? "raw" : mode);
-
-  async function copyCurl() {
-    await writeText(toCurl(detail));
-    copied = true;
-    setTimeout(() => (copied = false), 1400);
-  }
+  const effectiveMode = $derived<Mode>(!body.is_text ? "hex" : mode === "pretty" && !pretty ? "raw" : mode);
+  const modes = $derived(
+    body.is_text
+      ? [
+          { value: "pretty" as const, label: "Pretty", disabled: !pretty },
+          { value: "raw" as const, label: "Raw" },
+          { value: "hex" as const, label: "Hex" },
+        ]
+      : [{ value: "hex" as const, label: "Hex" }],
+  );
+  const statusText = { ok: "text-ok-text", redirect: "", client: "text-degraded-text", server: "text-bad-text", none: "" };
+  const code = "mt-2 rounded-lg bg-(--code-bg) px-3 py-2.5 font-mono text-code leading-normal";
 </script>
 
-<div class="wrap">
-  <div class="summary">
-    <div class="line1">
-      <span class="method">{detail.method}</span>
-      <span class="url mono selectable">{detail.path}</span>
+<div class="flex h-full min-h-0 flex-col">
+  <div class="border-b-[0.5px] border-border px-4 pt-3 pb-2.5">
+    <div class="flex items-baseline gap-2">
+      <span class="font-bold">{detail.method}</span>
+      <span class="font-mono text-callout break-all select-text">{detail.path}</span>
     </div>
-    <div class="line2">
-      <span class="status s-{statusClass(detail.status)}">{detail.status ?? "no response"}</span>
+    <div class="mt-1.5 flex flex-wrap items-center gap-2.5 text-callout">
+      <span class={["font-semibold", statusText[statusClass(detail.status)]]}>{detail.status ?? "no response"}</span>
       <span>{formatDuration(detail.duration_ms)}</span>
-      <span class="muted">{detail.host}</span>
-      <span class="faint">{formatClock(detail.ts)}</span>
-      {#if detail.kind !== "http"}<span class="pill">{detail.kind === "sse" ? "Server-sent events" : "WebSocket"}, body not stored</span>{/if}
-      <span class="spacer"></span>
-      <button class="btn" onclick={copyCurl} title={detail.req.truncated ? "The request body was truncated; the command includes only the stored part" : "Copy this request as a curl command"}><Icon name={copied ? "check" : "copy"} size={13} /> {copied ? "Copied" : "Copy as curl"}</button>
+      <span class="text-muted-foreground">{detail.host}</span>
+      <span class="text-muted-foreground">{formatClock(detail.ts)}</span>
+      {#if detail.kind !== "http"}<Badge>{detail.kind === "sse" ? "Server-sent events" : "WebSocket"}, body not stored</Badge>{/if}
+      <span class="flex-1"></span>
+      <!-- "Copy as curl" is read by the e2e (02 §0.3): it stays a text button with this label. -->
+      <CopyButton
+        value={() => toCurl(detail)}
+        what="curl command"
+        label="Copy as curl"
+        tip={detail.req.truncated ? "The request body was truncated; the command includes only the stored part" : "Copy this request as a curl command"}
+      />
     </div>
-    {#if detail.error}<div class="error selectable">{detail.error}</div>{/if}
+    {#if detail.error}<div class="mt-2 text-callout text-bad-text select-text">{detail.error}</div>{/if}
   </div>
 
-  <div class="tabs" role="tablist">
-    <button role="tab" aria-selected={side === "req"} class:active={side === "req"} onclick={() => (side = "req")}>Request</button>
-    <button role="tab" aria-selected={side === "resp"} class:active={side === "resp"} onclick={() => (side = "resp")}>Response</button>
-  </div>
-
-  <div class="scroll">
-    <h3>Headers <span class="faint">{headers.length}</span></h3>
-    <table class="headers">
-      <tbody>
-        {#each headers as [k, v], i (i)}
-          <tr><th class="mono">{k}</th><td class="mono selectable" class:redacted={v === "[redacted]"}>{v}</td></tr>
-        {:else}
-          <tr><td class="faint">No headers</td></tr>
-        {/each}
-      </tbody>
-    </table>
-
-    <div class="body-head">
-      <h3>Body</h3>
-      <span class="faint">{formatBytes(body.size)}{body.content_type ? `, ${body.content_type.split(";")[0]}` : ""}</span>
-      {#if body.truncated}<span class="pill warn" title="Only the first {formatBytes(body.stored)} were stored">Truncated at {formatBytes(body.stored)}</span>{/if}
-      {#if body.decoded_from}<span class="pill">Decoded {body.decoded_from}{body.decode_partial ? " (partial)" : ""}</span>{/if}
-      <span class="spacer"></span>
-      {#if body.stored > 0}
-        <div class="seg" role="group" aria-label="Body view">
-          {#if body.is_text}
-            <button class:active={effectiveMode === "pretty"} disabled={!pretty} onclick={() => (mode = "pretty")}>Pretty</button>
-            <button class:active={effectiveMode === "raw"} onclick={() => (mode = "raw")}>Raw</button>
-          {/if}
-          <button class:active={effectiveMode === "hex"} onclick={() => (mode = "hex")}>Hex</button>
-        </div>
-      {/if}
-    </div>
-    {#if body.stored === 0}
-      <div class="placeholder">{body.size > 0 ? `${formatBytes(body.size)} went through, but this body wasn't stored (capture limit is 0 or the stream isn't captured).` : "Empty body"}</div>
-    {:else if effectiveMode === "hex"}
-      <pre class="code hex">{hexDump(base64ToBytes(body.base64))}</pre>
-    {:else if effectiveMode === "pretty" && pretty}
-      <pre class="code">{pretty}</pre>
-    {:else}
-      <pre class="code">{body.text}</pre>
-    {/if}
-  </div>
+  <Tabs.Root class="flex min-h-0 flex-1 flex-col gap-0" bind:value={() => side, (v) => (side = v as Side)}>
+    <Tabs.List class="mx-4 mt-2">
+      <Tabs.Trigger value="req">Request</Tabs.Trigger>
+      <Tabs.Trigger value="resp">Response</Tabs.Trigger>
+    </Tabs.List>
+    <!-- Bits hides the inactive panel, and its body (or hex dump) isn't even computed. -->
+    <Tabs.Content value="req" tabindex={-1} class="min-h-0 overflow-auto px-4 pt-1.5 pb-5">{#if side === "req"}{@render panel()}{/if}</Tabs.Content>
+    <Tabs.Content value="resp" tabindex={-1} class="min-h-0 overflow-auto px-4 pt-1.5 pb-5">{#if side === "resp"}{@render panel()}{/if}</Tabs.Content>
+  </Tabs.Root>
 </div>
 
-<style>
-  .wrap {
-    display: flex;
-    flex-direction: column;
-    height: 100%;
-    min-height: 0;
-  }
-  .summary {
-    padding: 12px 16px 10px;
-    border-bottom: 0.5px solid var(--line);
-  }
-  .line1 {
-    display: flex;
-    gap: 8px;
-    align-items: baseline;
-  }
-  .method {
-    font-weight: 700;
-  }
-  .url {
-    font-size: 12px;
-    word-break: break-all;
-  }
-  .line2 {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    margin-top: 6px;
-    font-size: var(--text-callout);
-    flex-wrap: wrap;
-  }
-  .status { font-weight: 600; }
-  .s-ok { color: var(--ok); }
-  .s-client { color: var(--degraded); }
-  .s-server { color: var(--bad); }
-  .spacer { flex: 1; }
-  .error {
-    margin-top: 8px;
-    color: var(--bad);
-    font-size: var(--text-callout);
-  }
-  .tabs {
-    display: flex;
-    gap: 2px;
-    padding: 8px 14px 0;
-  }
-  .tabs button {
-    height: 26px;
-    padding: 0 12px;
-    border: 0;
-    border-radius: 6px;
-    background: transparent;
-    color: var(--text-2);
-  }
-  .tabs button.active {
-    background: var(--selected);
-    color: var(--text-1);
-  }
-  .scroll {
-    flex: 1;
-    overflow: auto;
-    padding: 6px 16px 20px;
-  }
-  h3 {
-    margin: 12px 0 6px;
-    font-size: var(--text-callout);
-    font-weight: 600;
-  }
-  .headers {
-    width: 100%;
-    border-collapse: collapse;
-    font-size: 11.5px;
-  }
-  .headers th {
-    width: 34%;
-    padding: 3px 10px 3px 0;
-    text-align: left;
-    vertical-align: top;
-    font-weight: 500;
-    color: var(--text-2);
-    font-size: inherit;
-    overflow-wrap: anywhere;
-  }
-  .headers td {
-    padding: 3px 0;
-    word-break: break-all;
-    font-size: inherit;
-  }
-  .redacted {
-    color: var(--text-3);
-    font-style: italic;
-  }
-  .body-head {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    margin-top: 12px;
-    font-size: var(--text-xs);
-  }
-  .body-head h3 {
-    margin: 0;
-  }
-  .pill {
-    padding: 1px 7px;
-    border-radius: 999px;
-    background: var(--hover);
-    font-size: var(--text-xs);
-    color: var(--text-2);
-  }
-  .pill.warn {
-    background: color-mix(in srgb, var(--starting) 18%, transparent);
-    color: color-mix(in srgb, var(--starting) 60%, var(--text-1));
-  }
-  .seg {
-    display: inline-flex;
-    padding: 2px;
-    border-radius: 7px;
-    background: var(--hover);
-  }
-  .seg button {
-    height: 20px;
-    padding: 0 9px;
-    border: 0;
-    border-radius: 5px;
-    background: transparent;
-    font-size: var(--text-xs);
-    color: var(--text-2);
-  }
-  .seg button.active {
-    background: var(--surface);
-    color: var(--text-1);
-    box-shadow: var(--shadow);
-  }
-  .seg button:disabled {
-    opacity: 0.4;
-  }
-  .code {
-    margin: 8px 0 0;
-    padding: 10px 12px;
-    border-radius: var(--radius);
-    background: var(--code-bg);
-    font-family: var(--font-mono);
-    font-size: 11.5px;
-    line-height: 1.5;
-    white-space: pre-wrap;
-    word-break: break-all;
-  }
-  .hex {
-    white-space: pre;
-    word-break: normal;
-    overflow-x: auto;
-  }
-  .placeholder {
-    margin-top: 8px;
-    padding: 14px;
-    border-radius: var(--radius);
-    background: var(--code-bg);
-    color: var(--text-2);
-    font-size: var(--text-callout);
-  }
-</style>
+{#snippet panel()}
+  <h3 class="mt-3 mb-1.5 text-callout font-semibold">Headers <span class="text-muted-foreground">{headers.length}</span></h3>
+  <table class="w-full border-collapse font-mono text-code">
+    <tbody>
+      {#each headers as [k, v], i (i)}
+        <tr>
+          <!-- Names get about a third of the width (wrapping anywhere) so long values keep most of it. -->
+          <th class="w-[34%] py-0.75 pe-2.5 text-left align-top font-medium wrap-anywhere text-muted-foreground">{k}</th>
+          <td class={["py-0.75 break-all select-text", v === "[redacted]" && "text-muted-foreground italic"]}>{v}</td>
+        </tr>
+      {:else}
+        <tr><td class="font-sans text-muted-foreground">No headers</td></tr>
+      {/each}
+    </tbody>
+  </table>
+
+  <div class="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1.5 text-xs">
+    <h3 class="text-callout font-semibold">Body</h3>
+    <span class="whitespace-nowrap text-muted-foreground">{formatBytes(body.size)}{body.content_type ? `, ${body.content_type.split(";")[0]}` : ""}</span>
+    {#if body.truncated}
+      <Tip text="Only the first {formatBytes(body.stored)} were stored">
+        {#snippet children({ props })}<Badge {...{ ...props, tabindex: undefined }} variant="warning">Truncated at {formatBytes(body.stored)}</Badge>{/snippet}
+      </Tip>
+    {/if}
+    {#if body.decoded_from}<Badge>Decoded {body.decoded_from}{body.decode_partial ? " (partial)" : ""}</Badge>{/if}
+    {#if body.stored > 0}
+      <!-- ms-auto keeps it on the right, also when it wraps under the badges in a narrow pane. -->
+      <Segmented class="ms-auto" label="Body view" items={modes} bind:value={() => effectiveMode, (v) => (mode = v)} />
+    {/if}
+  </div>
+  {#if body.stored === 0}
+    <div class="mt-2 rounded-lg bg-(--code-bg) p-3.5 text-callout text-muted-foreground">{body.size > 0 ? `${formatBytes(body.size)} went through, but this body wasn't stored (capture limit is 0 or the stream isn't captured).` : "Empty body"}</div>
+  {:else if effectiveMode === "hex"}
+    <pre class="{code} overflow-x-auto whitespace-pre">{hexDump(base64ToBytes(body.base64))}</pre>
+  {:else if effectiveMode === "pretty" && pretty}
+    <pre class="{code} break-all whitespace-pre-wrap">{pretty}</pre>
+  {:else}
+    <pre class="{code} break-all whitespace-pre-wrap">{body.text}</pre>
+  {/if}
+{/snippet}

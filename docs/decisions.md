@@ -396,6 +396,38 @@ variable-height lines: 8 rows in the DOM, `scrollToIndex(last, { align: "end" })
   (`keepMounted={[480]}` while at the top) is mounted too. So the active row can't be recycled
   under `aria-activedescendant` by pointer scrolling.
 
+**Requests list (Phase 2e).** No fallback was needed: Requests runs on virtua as planned
+(`src/dashboard/RequestList.svelte`). A `role=listbox` wrapper holds focus and points
+`aria-activedescendant` at the active row once it exists; rows are never focused; the active
+index is passed to `keepMounted`. Selection is by request id, falling back to the row now at the
+same index when its request is filtered out, cleared or trimmed. An empty list (a filter with no
+match, Clear) unmounts the list, so Requests itself clears the selection and the detail pane;
+clearing the filter selects nothing until the user picks a row. The detail's tab and
+Pretty/Raw/Hex choice live in Requests and persist across selections (a body that can't show the
+choice falls back for that request only); its scroll position starts at the top per request.
+
+New requests are queued and prepended in batches. The 500 cap holds **while the list is at the
+top**: there the new rows appear in view and the tail is trimmed. Scrolled down, the trim is
+**deferred**, as the Phase 1 measurement recommended: every prepend grows the list, so virtua's
+`shift` (which acts only on a length change) keeps the view, also when scrolled to the very end.
+The list trims back to 500 when the user returns to the top (scroll offset 0); an active row in
+the trimmed tail falls back to index 499. A hard ceiling of 1,000 rows bounds this: past it the
+list stays at 1,000 and the first visible row is re-anchored by hand on its id and offset,
+**reading and writing the viewport's `scrollTop`, not virtua's offset** (virtua's `scrollTo` is
+async and `getScrollOffset()` only catches up on the next scroll event, so in a burst every batch
+after the first anchored against a stale offset; found in the real app with 6 requests in
+flight). The limit of that path: when the view is within a batch of the end at the ceiling, the
+rows on screen are the ones trimmed. The anchor's untrimmed index then aims past the end, the
+scroll clamps, and the view shows the oldest rows kept; the same clamp moves the view by the
+overhang when the anchor survives but the rows below it don't. It takes more than 500 requests
+while the user sits scrolled down, at the bottom.
+
+Measured with 500 rows in the real app (outside snapshot mode): 30 `[role=option]` in the DOM at
+rest and at most 39 while wheel-scrolling, with no frame over 20 ms. In the ui-lab harness on the
+real component (`requests-r49.mjs`, Playwright WebKit) the first visible row stays put through
+bursts of 1 to 30 requests scrolled to the middle, bursts of 1, 5 and 12 scrolled to the very end,
+and batches into and past the 1,000 ceiling; the e2e debug build repeats the burst checks.
+
 **E2E snapshot mode.** The e2e harness asserts on `document.body.innerText`, which a virtualized
 list would truncate. A snapshot flag renders every row while the harness reads the text, so the
 assertions stay as they are.
