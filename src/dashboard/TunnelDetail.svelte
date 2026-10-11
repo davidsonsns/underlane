@@ -175,8 +175,9 @@
 
 <header class="mb-3.5 flex flex-col gap-1.5">
   <div class="flex items-center gap-2.5">
+    <!-- The status word follows in text, so the dot's hint is hover-only (no tab stop). -->
     <Tip text={statusHint[s.status]}>
-      {#snippet children({ props })}<StatusDot {...props} tabindex={undefined} legacyTip={false} status={s.status} size={10} />{/snippet}
+      {#snippet children({ props })}<span {...{ ...props, tabindex: undefined }} class="flex"><StatusDot status={s.status} size={10} hint={false} /></span>{/snippet}
     </Tip>
     {#if mode === "editing"}
       <Input
