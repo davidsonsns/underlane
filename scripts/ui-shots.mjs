@@ -24,6 +24,11 @@ const opt = (name, dflt) => {
 };
 const app = resolve(args.find((a, i) => !a.startsWith("--") && args[i - 1] !== "--label") ?? "target/debug/bundle/macos/Burrow.app");
 const label = opt("--label", "latest");
+// The label names one folder under e2e/out/ui, which is deleted and rewritten below.
+if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(label) || label.includes("..")) {
+  console.error(`bad --label "${label}": use letters, digits, ".", "_" or "-"`);
+  process.exit(2);
+}
 const offline = flag("--offline");
 const bin = join(app, "Contents/MacOS/Burrow");
 const out = resolve("e2e/out/ui", label);
@@ -72,10 +77,11 @@ async function capture(name, minW = 700, maxW = 4000) {
   const file = join(out, name);
   for (let attempt = 1; ; attempt++) {
     try {
-      execFileSync("swift", ["scripts/capture-window.swift", "Burrow", file, String(minW), String(maxW)], { stdio: "inherit" });
+      // Pass our child's PID so a running copy of the user's own Burrow is never captured.
+      execFileSync("swift", ["scripts/capture-window.swift", "Burrow", file, String(minW), String(maxW), String(child.pid)], { stdio: "inherit" });
       if (existsSync(file)) return file;
     } catch {}
-    if (attempt === 4) return note(`could not capture ${name}`);
+    if (attempt === 4) throw new Error(`could not capture ${name}`);
     await sleep(800);
   }
 }
@@ -130,18 +136,20 @@ try {
   note(`label=${label} offline=${offline} app=${app}`);
   note(`OS appearance: ${osAppearance()} (theme "system" shots follow it)`);
 
-  // Two quick tunnels to local echo servers; the first one is inspected.
+  // Three quick tunnels to local echo servers: "web" is inspected, "web" and "api" run,
+  // "db" stays stopped so the stopped states (dot, switch, detail) are in every shot.
   const ids = [];
-  for (const [name, inspect] of [["web", true], ["api", false]]) {
+  for (const [name, inspect] of [["web", true], ["api", false], ["db", false]]) {
     const s = await echoServer(name);
     servers.push(s);
     const r = await ctl("POST", `/quick?origin=${encodeURIComponent(`http://127.0.0.1:${s.address().port}`)}&name=${name}&inspect=${inspect ? 1 : 0}`);
     ids.push(r.id);
   }
   if (!offline) {
-    for (const id of ids) await ctl("POST", `/start?id=${id}`);
+    const running = ids.slice(0, 2);
+    for (const id of running) await ctl("POST", `/start?id=${id}`);
     const states = await waitFor("both tunnels connected", async () => {
-      const st = await Promise.all(ids.map((id) => ctl("GET", `/state?id=${id}`)));
+      const st = await Promise.all(running.map((id) => ctl("GET", `/state?id=${id}`)));
       return st.every((s) => s.status === "connected" && s.public_url) ? st : null;
     }, 120000);
     note(`running: ${states.map((s) => s.public_url).join(", ")}`);
@@ -180,6 +188,9 @@ try {
   await shoot("light", all);
   await shoot("dark", all);
   await shoot("system", ["tunnels", "popover"]);
+  const expected = [...["light", "dark"].flatMap((t) => all.map((v) => `${t}-${v}.png`)), "system-tunnels.png", "system-popover.png"];
+  const missing = expected.filter((f) => !existsSync(join(out, f)));
+  if (missing.length) throw new Error(`missing screenshots: ${missing.join(", ")}`);
   note(`wrote ${out}`);
 } catch (e) {
   failed = true;
@@ -192,5 +203,6 @@ try {
   if (child.exitCode == null) child.kill("SIGTERM");
   servers.forEach((s) => s.close());
   writeFileSync(join(out, "notes.txt"), notes.join("\n") + "\n");
+  rmSync(dataDir, { recursive: true, force: true });
   process.exit(failed ? 1 : 0);
 }

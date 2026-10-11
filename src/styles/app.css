@@ -216,7 +216,7 @@
       --starting-text: #f0b429;
       --degraded-text: #ff9f45;
       --bad-text: #ff6b6b;
-      --off: #6e6e73;
+      /* --off keeps #a1a1a6 in both themes, as before the migration (01 §3.3). */
     }
 
     /* shadcn aliases. menuAccent "bold" means accent == primary: the highlight is the
