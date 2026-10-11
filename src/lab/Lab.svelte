@@ -42,6 +42,7 @@
   import type { Status } from "$lib/types";
   import VirtuaLab from "./VirtuaLab.svelte";
   import RequestsLab from "./RequestsLab.svelte";
+  import LogsLab from "./LogsLab.svelte";
   import Play from "@lucide/svelte/icons/play";
   import Square from "@lucide/svelte/icons/square";
   import RotateCw from "@lucide/svelte/icons/rotate-cw";
@@ -423,6 +424,12 @@
         <section data-section="requests">
           {@render section("requests", "Requests list", "the real RequestList at the 500 cap: listbox + VList, keys, by-id selection, anchoring under prepend + trim")}
           <RequestsLab />
+        </section>
+
+        <!-- Logs list (03 R-49) ------------------------------------------------------- -->
+        <section data-section="logs">
+          {@render section("logs", "Logs list", "the real LogList at the 3,000 cap: treegrid + VList, variable heights, keys, expansion, follow, deferred head trim")}
+          <LogsLab />
         </section>
       </div>
     </div>
