@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { tick } from "svelte";
   import { flip } from "svelte/animate";
   import { fly, fade } from "svelte/transition";
   import { store } from "../lib/store.svelte";
@@ -33,6 +34,23 @@
   });
   const current = $derived(store.tunnels.find((t) => t.id === selected) ?? null);
   const anyOn = $derived(store.tunnels.some(isOn));
+  let list = $state<HTMLElement | null>(null);
+  let emptyAdd = $state<HTMLElement | null>(null);
+
+  // TunnelDetail's Remove: select the next tunnel in list order (else the previous one) and
+  // focus it in the list, since the detail that held focus unmounts (02 2b). Removing the last
+  // tunnel focuses the empty state's Add tunnel instead of leaving focus on <body>.
+  async function remove(id: string) {
+    const order = groups.flatMap((g) => g.tunnels);
+    const i = order.findIndex((t) => t.id === id);
+    const next = order[i + 1] ?? order[i - 1] ?? null;
+    await api.deleteTunnel(id);
+    selected = next?.id ?? null;
+    await store.refresh();
+    await tick();
+    if (next) list?.querySelector<HTMLElement>(`[data-tunnel-id="${next.id}"]`)?.focus();
+    else emptyAdd?.focus();
+  }
 </script>
 
 <div class="page">
@@ -57,18 +75,19 @@
   {:else if store.tunnels.length === 0}
     <div class="empty">
       <StatePanel kind="empty" title="Set up your first tunnel" message="Burrow runs cloudflared for you. Import the config files you already have, paste a token from the Cloudflare dashboard, or share a local port with a quick tunnel; no account needed for that one.">
-        <button class="btn primary" onclick={onadd}>Add tunnel</button>
+        <button class="btn primary" bind:this={emptyAdd} onclick={onadd}>Add tunnel</button>
       </StatePanel>
     </div>
   {:else}
     <div class="split">
-      <nav class="list" aria-label="Tunnels">
+      <nav class="list" aria-label="Tunnels" bind:this={list}>
         {#each groups as g (g.id)}
           <div class="group" animate:flip={{ duration: motion(200) }}>
             <div class="group-name">{g.name}</div>
             {#each g.tunnels as t (t.id)}
               <button
                 class="item"
+                data-tunnel-id={t.id}
                 class:sel={t.id === selected}
                 aria-current={t.id === selected ? "true" : undefined}
                 onclick={() => (selected = t.id)}
@@ -91,7 +110,7 @@
         {#if current}
           {#key current.id}
             <div class="detail-inner" in:fade={{ duration: motion(120) }}>
-              <TunnelDetail tunnel={current} />
+              <TunnelDetail tunnel={current} onremove={remove} />
             </div>
           {/key}
         {/if}

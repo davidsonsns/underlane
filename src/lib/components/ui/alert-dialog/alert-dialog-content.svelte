@@ -11,11 +11,25 @@
 		class: className,
 		size = "default",
 		portalProps,
+		onOpenAutoFocus,
 		...restProps
 	}: WithoutChild<AlertDialogPrimitive.ContentProps> & {
 		size?: "default" | "sm";
 		portalProps?: WithoutChildrenOrChild<ComponentProps<typeof AlertDialogPortal>>;
 	} = $props();
+
+	// burrow: open with focus on Cancel (Bits focuses the content itself). WebKit's plain Tab skips
+	// buttons, and Return must never hit the destructive action by default. Deferred like Bits'
+	// own initial focus, so the content is in the DOM.
+	function focusCancel(e: Event) {
+		onOpenAutoFocus?.(e);
+		if (e.defaultPrevented) return;
+		e.preventDefault();
+		setTimeout(() => {
+			const cancel = ref?.querySelector<HTMLElement>("[data-slot=alert-dialog-cancel]");
+			(cancel ?? ref)?.focus({ preventScroll: true });
+		});
+	}
 </script>
 
 <AlertDialogPortal {...portalProps}>
@@ -24,6 +38,7 @@
 		bind:ref
 		data-slot="alert-dialog-content"
 		data-size={size}
+		onOpenAutoFocus={focusCancel}
 		class={cn(
 			// NSAlert presented as a window sheet: the same geometry and motion as the dialog sheet
 			// (§5.6), narrower. No icon, no close button; Cancel is the Escape action.

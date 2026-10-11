@@ -3,9 +3,11 @@
   import { statusHint, statusLabel } from "$lib/format";
   import { tooltip } from "$lib/tooltip";
   import { cn } from "$lib/utils";
-  // The hover hint keeps use:tooltip until the screens move to Tip (02 F11); Phase 1 changes
-  // nothing visible.
-  let { status, size = 8 }: { status: Status; size?: number } = $props();
+  // Ported screens put the hint in a Tip around the dot and pass `hint={false}`:
+  //   <Tip text={statusHint[status]}>{#snippet children({ props })}<span {...{ ...props, tabindex: undefined }}><StatusDot {status} hint={false} /></span>{/snippet}</Tip>
+  // The popover and the Tunnels list keep use:tooltip until 2i/2g: Tip in here would put
+  // ui/tooltip (floating-ui, ~20 KB) into the popover, past its JS budget.
+  let { status, size = 8, hint = true }: { status: Status; size?: number; hint?: boolean } = $props();
 
   const look: Record<Status, string> = {
     stopped: "bg-transparent shadow-[inset_0_0_0_1.5px_var(--off)]",
@@ -27,5 +29,5 @@
   style="--size: {size}px"
   role="img"
   aria-label={statusLabel[status]}
-  use:tooltip={statusHint[status]}
+  use:tooltip={hint ? statusHint[status] : undefined}
 ></span>

@@ -21,8 +21,6 @@
   import * as Tooltip from "$lib/components/ui/tooltip/index.js";
   import * as Dialog from "$lib/components/ui/dialog/index.js";
   import * as AlertDialog from "$lib/components/ui/alert-dialog/index.js";
-  import * as Popover from "$lib/components/ui/popover/index.js";
-  import * as Command from "$lib/components/ui/command/index.js";
   import * as InputGroup from "$lib/components/ui/input-group/index.js";
   import * as Alert from "$lib/components/ui/alert/index.js";
   import * as Empty from "$lib/components/ui/empty/index.js";
@@ -39,6 +37,7 @@
   import Toolbar from "$lib/components/app/Toolbar.svelte";
   import { notify } from "$lib/toast";
   import { returnFocusTo } from "$lib/focus";
+  import Combobox from "$lib/components/app/Combobox.svelte";
   import { applyTheme } from "$lib/theme";
   import type { Status } from "$lib/types";
   import VirtuaLab from "./VirtuaLab.svelte";
@@ -56,8 +55,6 @@
   import TriangleAlert from "@lucide/svelte/icons/triangle-alert";
   import WrapText from "@lucide/svelte/icons/wrap-text";
   import X from "@lucide/svelte/icons/x";
-  import Check from "@lucide/svelte/icons/check";
-  import ChevronsUpDown from "@lucide/svelte/icons/chevrons-up-down";
 
   type Theme = "system" | "light" | "dark";
   const params = new URLSearchParams(location.search);
@@ -76,7 +73,6 @@
   let comboOpen = $state(params.get("open") === "combobox");
   let sheetTrigger = $state<HTMLElement | null>(null);
   let alertTrigger = $state<HTMLElement | null>(null);
-  let comboTrigger = $state<HTMLElement | null>(null);
 
   // Controls
   let appearance = $state<Theme>("system");
@@ -97,14 +93,9 @@
   // Combobox ("Move to project…", 02 F6)
   let projects = $state(["E2E", "Work", "Side projects"]);
   let project = $state("Work");
-  let query = $state("");
-  const trimmed = $derived(query.trim());
-  const canCreate = $derived(trimmed !== "" && !projects.some((x) => x.toLowerCase() === trimmed.toLowerCase()));
   function pick(name: string) {
     if (!projects.includes(name)) projects.push(name);
     project = name;
-    query = "";
-    comboOpen = false;
   }
 
   const statuses: Status[] = ["connected", "starting", "degraded", "crashed", "stopped"];
@@ -334,32 +325,7 @@
               </AlertDialog.Content>
             </AlertDialog.Root>
 
-            <Popover.Root bind:open={comboOpen}>
-              <Popover.Trigger bind:ref={comboTrigger}>
-                {#snippet child({ props })}
-                  <Button {...props} variant="outline" class="w-44 justify-between" data-testid="open-combobox">{project}<ChevronsUpDown class="size-3 text-muted-foreground" /></Button>
-                {/snippet}
-              </Popover.Trigger>
-              <Popover.Content class="w-56" onCloseAutoFocus={returnFocusTo(() => comboTrigger)} data-testid="combobox">
-                <Command.Root class="rounded-none bg-transparent p-0 backdrop-blur-none" shouldFilter={true}>
-                  <Command.Input placeholder="Move to project…" bind:value={query} />
-                  <Command.List>
-                    <Command.Group heading="Projects">
-                      {#each projects as name (name)}
-                        <Command.Item value={name} onSelect={() => pick(name)} class="relative h-[22px] rounded-sm ps-[22px] pe-3">
-                          {#if name === project}<Check class="absolute start-[6px] size-3 stroke-[2.5]" />{/if}{name}
-                        </Command.Item>
-                      {/each}
-                    </Command.Group>
-                    {#if canCreate}
-                      <Command.Separator />
-                      <Command.Item value={`create ${trimmed}`} forceMount onSelect={() => pick(trimmed)} class="h-[22px] rounded-sm ps-[22px] pe-3">Create “{trimmed}”</Command.Item>
-                    {/if}
-                    {#if !canCreate}<Command.Empty>Type a name to create a project</Command.Empty>{/if}
-                  </Command.List>
-                </Command.Root>
-              </Popover.Content>
-            </Popover.Root>
+            <span data-testid="combobox-wrap" class="contents"><Combobox bind:open={comboOpen} value={project} items={projects} heading="Projects" placeholder="Move to project…" onpick={pick} /></span>
 
             <Tip text="Restart the tunnel" shortcut="⌘R">
               {#snippet children({ props })}<Button {...props} variant="outline" data-testid="tip-button">Hover for a tooltip</Button>{/snippet}

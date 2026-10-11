@@ -431,6 +431,33 @@ popover 67.9 kB (3.4 entry + 64.5 shared), dashboard 116.6 kB. Phase 2i, which p
 popover, brings floating-ui back to it (about +20 kB), so 2i needs O10 (lazy sonner) or a lazy
 tooltip content to stay within 70 kB.
 
+**Status dot hint (Phase 2b).** 02 maps StatusDot to "utilities + `Tip` with `statusHint`", but
+StatusDot is also in the popover, and a Tip inside it would put `ui/tooltip` (floating-ui) into
+the popover's JS before 2i has made room for it. So StatusDot keeps its `use:tooltip` hint behind a
+`hint` prop (default on), and a ported screen wraps the dot in its own Tip with `hint={false}`
+(TunnelDetail does). The popover and the Tunnels list switch in 2i and 2g. The dot is not a tab
+stop: the status word sits next to it as text. Popover JS after 2b: 68.0 kB (3.4 + 64.6), up
+49 B on 2a, 27 B of which comes with main's StatusDot unchanged (the shared chunk exports more
+names to the dashboard).
+
+**Identifier fields skip the text system (Phase 2b).** In the real app, typing "zzz" into the
+rename field raised a spelling bubble whose dismissal swallowed the first Escape (the keydown
+never reached the page), and "alpha3" was saved as "Alpha3". The rename, Local address and token
+inputs set `autocorrect="off" autocapitalize="off" spellcheck="false" writingsuggestions="false"`,
+and so does the Combobox's search field (Bits already sets the first and third).
+Settings' path and redact fields and the Add sheet's fields are candidates for the same (their
+phases).
+
+**Combobox matching (Phase 2b).** The project picker filters by a case-insensitive substring of
+the trimmed search, not Bits' fuzzy scorer, which hid "Work" when the search was " Work" and
+let Enter pick "website" for "web". An exact match is listed and highlighted first, so Enter picks
+it; any other non-empty search lists `Create "<name>"` first and highlighted, with the matches
+after it. It opens with the current project highlighted, so Return alone changes nothing. The
+filtering and order are done in `comboRows` (`src/lib/combobox.ts`, unit-tested), and Bits runs
+with `shouldFilter={false}` rather than a custom `filter`: with a filter Bits reorders the rows by
+moving their DOM nodes, which is fragile under Svelte's keyed blocks and would leave the order
+to its score sort.
+
 **Alternatives rejected.** Bits UI alone with hand-written styles (an earlier spike: every
 component's look written from scratch, and its dark variant missed "System" in dark mode).
 Keeping scoped CSS (1,440 lines of duplicated per-component styles, no shared primitives, and the
