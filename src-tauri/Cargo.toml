@@ -41,9 +41,9 @@ uuid = { version = "1", features = ["v4"] }
 [target.'cfg(target_os = "macos")'.dependencies]
 keyring = { version = "3", features = ["apple-native"] }
 objc2 = "0.6"
-objc2-foundation = { version = "0.3", features = ["NSProcessInfo", "NSString", "NSError", "NSObject", "NSUserDefaults", "NSAppleEventManager", "NSAppleEventDescriptor", "objc2-core-services"] }
+objc2-foundation = { version = "0.3", features = ["NSProcessInfo", "NSString", "NSError", "NSObject", "NSUserDefaults", "NSAppleEventManager", "NSAppleEventDescriptor", "NSData", "objc2-core-services"] }
 objc2-service-management = { version = "0.3", features = ["SMAppService", "objc2-foundation"] }
-objc2-app-kit = { version = "0.3", features = ["NSStatusItem", "NSStatusBar", "NSStatusBarButton", "NSButton", "NSControl", "NSResponder", "NSView"] }
+objc2-app-kit = { version = "0.3", features = ["NSStatusItem", "NSStatusBar", "NSStatusBarButton", "NSButton", "NSControl", "NSResponder", "NSView", "NSApplication", "NSImage"] }
 
 [target.'cfg(not(target_os = "macos"))'.dependencies]
 keyring = "3"

@@ -11,6 +11,7 @@
   import Logs from "./Logs.svelte";
   import Settings from "./Settings.svelte";
   import AddSheet from "./AddSheet.svelte";
+  import logo from "../../src-tauri/icons/64x64.png";
 
   type View = "tunnels" | "requests" | "logs" | "settings";
   let view = $state<View>("tunnels");
@@ -58,6 +59,10 @@
 <div class="shell">
   <aside class="sidebar" data-tauri-drag-region>
     <div class="traffic-space" data-tauri-drag-region></div>
+    <div class="brand" data-tauri-drag-region>
+      <img src={logo} alt="" width="22" height="22" draggable="false" />
+      <span>Burrow</span>
+    </div>
     <nav aria-label="Sections">
       {#each nav as n}
         <button class="nav" class:active={view === n.id} aria-current={view === n.id ? "page" : undefined} onclick={() => { view = n.id; focusId = null; }}>
@@ -118,6 +123,19 @@
   .traffic-space {
     height: 46px;
     flex: none;
+  }
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    padding: 0 6px 10px;
+    font-size: var(--text-lg);
+    font-weight: 600;
+    color: var(--text-1);
+    user-select: none;
+  }
+  .brand img {
+    pointer-events: none;
   }
   nav {
     display: flex;

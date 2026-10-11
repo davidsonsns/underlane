@@ -121,6 +121,33 @@ body.theme-transition * {
   transition-timing-function: ease;
 }
 
+/* Shared tooltip element, driven by src/lib/tooltip.ts. */
+.tooltip {
+  position: fixed;
+  z-index: 1000;
+  max-width: 260px;
+  padding: 5px 8px;
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.18), 0 0 0 0.5px var(--line-strong);
+  color: var(--text-1);
+  font-size: var(--text-xs);
+  line-height: 1.35;
+  pointer-events: none;
+  opacity: 0;
+  transform: translateY(2px);
+  transition: opacity 120ms ease, transform 120ms var(--ease-out) !important;
+}
+.tooltip.visible {
+  opacity: 1;
+  transform: none;
+}
+@media (prefers-reduced-motion: reduce) {
+  .tooltip {
+    transform: none;
+  }
+}
+
 button {
   font: inherit;
   color: inherit;

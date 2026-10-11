@@ -1,7 +1,21 @@
 import { describe, expect, it } from "vitest";
-import { formatBytes, formatDuration, hexDump, prettyJson, publicUrl, shortService, toCurl } from "./format";
+import { formatBytes, formatDuration, hexDump, prettyJson, publicUrl, reachSummary, serviceLabel, shortService, toCurl } from "./format";
 
 describe("format", () => {
+  it("labels services", () => {
+    expect(serviceLabel("http_status:404")).toBe("Responds 404");
+    expect(serviceLabel("hello_world")).toBe("Hello world page");
+    expect(serviceLabel("http://localhost:4000/")).toBe("localhost:4000");
+  });
+  it("summarises local service reachability", () => {
+    expect(reachSummary(1, 1)).toBe("Local service running");
+    expect(reachSummary(0, 1)).toBe("Local service not running");
+    expect(reachSummary(3, 3)).toBe("All 3 routes reachable");
+    expect(reachSummary(0, 2)).toBe("None of 2 routes reachable");
+    expect(reachSummary(2, 3)).toBe("2 of 3 routes reachable");
+    expect(reachSummary(1, 4, false)).toBe("Local service running for 1 of 4 routes");
+    expect(reachSummary(1, 1, false)).toBe("Local service running");
+  });
   it("formats sizes", () => {
     expect(formatBytes(512)).toBe("512 B");
     expect(formatBytes(1536)).toBe("1.5 KB");

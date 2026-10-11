@@ -77,6 +77,7 @@ pub fn run() {
             commands::stop_all,
             commands::restart_all,
             commands::validate_tunnel,
+            commands::probe_services,
             commands::query_logs,
             commands::clear_logs,
             commands::list_requests,

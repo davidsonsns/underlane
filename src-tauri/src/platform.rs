@@ -43,6 +43,21 @@ mod imp {
         }
     }
 
+    /// A dev build runs unbundled, so the Dock shows a generic "exec" tile. Tauri sets the icon
+    /// once at startup, but macOS drops it when the activation policy turns Regular; call after that.
+    pub fn set_dock_icon() {
+        #[cfg(debug_assertions)]
+        {
+            use objc2::AllocAnyThread;
+            use objc2_app_kit::{NSApplication, NSImage};
+            let Some(mtm) = objc2::MainThreadMarker::new() else { return };
+            let data = objc2_foundation::NSData::with_bytes(include_bytes!("../icons/icon.png"));
+            if let Some(icon) = NSImage::initWithData(NSImage::alloc(), &data) {
+                unsafe { NSApplication::sharedApplication(mtm).setApplicationIconImage(Some(&icon)) };
+            }
+        }
+    }
+
     fn describe(status: SMAppServiceStatus) -> (&'static str, bool) {
         match status {
             SMAppServiceStatus::Enabled => ("enabled", true),
@@ -109,6 +124,8 @@ mod imp {
 
     pub fn disable_state_restoration() {}
 
+    pub fn set_dock_icon() {}
+
     pub fn launched_as_login_item() -> bool {
         false
     }
@@ -129,4 +146,4 @@ mod imp {
     }
 }
 
-pub use imp::{disable_state_restoration, launched_as_login_item, login_item, set_login_item, Activity};
+pub use imp::{disable_state_restoration, launched_as_login_item, login_item, set_dock_icon, set_login_item, Activity};

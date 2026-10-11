@@ -186,7 +186,8 @@
   .scroll {
     overflow-y: auto;
     padding: 8px 24px 32px;
-    max-width: 760px;
+    /* Full-width scroller (scrollbar at the edge), content capped at 760px and centred. */
+    padding-inline: max(24px, calc((100% - 760px) / 2));
   }
   h2 {
     margin: 20px 0 8px 2px;

@@ -48,6 +48,24 @@ export function shortService(service: string, compact = false): string {
   return s;
 }
 
+/** What a route's service does, in words for the non-address services cloudflared supports. */
+export function serviceLabel(service: string): string {
+  const status = service.match(/^http_status:(\d{3})$/);
+  if (status) return `Responds ${status[1]}`;
+  if (service === "hello_world") return "Hello world page";
+  return shortService(service);
+}
+
+/** Heading summary for the probe results of a tunnel's routes (one per probed route).
+ *  A stopped tunnel reaches nothing, so it only reports the local services. */
+export function reachSummary(up: number, total: number, live = true): string {
+  if (total === 1) return up ? "Local service running" : "Local service not running";
+  if (!live) return `Local service running for ${up} of ${total} routes`;
+  if (up === total) return `All ${total} routes reachable`;
+  if (up === 0) return `None of ${total} routes reachable`;
+  return `${up} of ${total} routes reachable`;
+}
+
 /** Public URL a user most likely wants: the quick-tunnel URL or the first concrete hostname. */
 /** The tunnel is under supervision: starting, up, or crashed-and-retrying (so Stop applies). */
 export function isOn(t: Pick<Tunnel, "state">): boolean {
@@ -134,4 +152,13 @@ export const statusLabel: Record<string, string> = {
   connected: "Connected",
   degraded: "Degraded",
   crashed: "Crashed",
+};
+
+/** What each tunnel status means, for the status dot's tooltip. */
+export const statusHint: Record<string, string> = {
+  stopped: "Stopped. cloudflared isn't running, so no traffic reaches these routes.",
+  starting: "Starting. cloudflared is connecting to Cloudflare.",
+  connected: "Connected. Cloudflare is routing traffic through this tunnel.",
+  degraded: "Degraded. Lost the connection to Cloudflare; cloudflared is reconnecting.",
+  crashed: "Crashed. cloudflared exited unexpectedly. Check Logs for the error.",
 };

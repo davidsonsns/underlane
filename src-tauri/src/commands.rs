@@ -259,6 +259,33 @@ pub async fn validate_tunnel(core: CoreState<'_>, id: String) -> Res<Validation>
     Ok(cloudflared::validate(std::path::Path::new(&bin.path), std::path::Path::new(&path)).await)
 }
 
+/// For each route service, whether something accepts TCP connections at its address. None
+/// when the service has no host:port to probe (`http_status:404`, `hello_world`, unix sockets).
+#[tauri::command]
+pub async fn probe_services(services: Vec<String>) -> Vec<Option<bool>> {
+    let probes: Vec<_> = services.into_iter().map(|s| tokio::spawn(probe_service(s))).collect();
+    let mut out = Vec::with_capacity(probes.len());
+    for p in probes {
+        out.push(p.await.ok().flatten());
+    }
+    out
+}
+
+async fn probe_service(service: String) -> Option<bool> {
+    let authority = match burrow_core::derived::split_service(&service) {
+        Some((_, a)) => a,
+        None => {
+            let (scheme, rest) = service.trim().split_once("://")?;
+            if !["tcp", "ssh", "rdp", "smb"].contains(&scheme.to_ascii_lowercase().as_str()) {
+                return None;
+            }
+            rest.trim_end_matches('/').to_string()
+        }
+    };
+    let connect = tokio::net::TcpStream::connect(authority);
+    Some(matches!(tokio::time::timeout(std::time::Duration::from_millis(400), connect).await, Ok(Ok(_))))
+}
+
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LogArgs {
@@ -437,4 +464,25 @@ pub fn quit(app: AppHandle) {
 #[tauri::command]
 pub fn e2e_report(nonce: String, text: String) {
     crate::e2e::report(nonce, text);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn probes_listening_and_closed_ports() {
+        let open = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let closed = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let closed_port = closed.local_addr().unwrap().port();
+        drop(closed);
+        let got = probe_services(vec![
+            format!("http://localhost:{}", open.local_addr().unwrap().port()),
+            format!("http://127.0.0.1:{closed_port}"),
+            "http_status:404".into(),
+            format!("tcp://127.0.0.1:{}", open.local_addr().unwrap().port()),
+        ])
+        .await;
+        assert_eq!(got, vec![Some(true), Some(false), None, Some(true)]);
+    }
 }

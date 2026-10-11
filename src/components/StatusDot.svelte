@@ -1,10 +1,11 @@
 <script lang="ts">
   import type { Status } from "../lib/types";
-  import { statusLabel } from "../lib/format";
+  import { statusHint, statusLabel } from "../lib/format";
+  import { tooltip } from "../lib/tooltip";
   let { status, size = 8 }: { status: Status; size?: number } = $props();
 </script>
 
-<span class="dot {status}" style="--size: {size}px" role="img" aria-label={statusLabel[status]} title={statusLabel[status]}></span>
+<span class="dot {status}" style="--size: {size}px" role="img" aria-label={statusLabel[status]} use:tooltip={statusHint[status]}></span>
 
 <style>
   .dot {

@@ -1,15 +1,14 @@
 <script lang="ts">
-  import { slide, fade } from "svelte/transition";
-  import { writeText } from "@tauri-apps/plugin-clipboard-manager";
-  import { openUrl, revealItemInDir } from "@tauri-apps/plugin-opener";
+  import { slide } from "svelte/transition";
+  import { revealItemInDir } from "@tauri-apps/plugin-opener";
   import { store } from "../lib/store.svelte";
   import { api, errorText } from "../lib/api";
   import { motion } from "../lib/theme";
-  import { formatUptime, isOn, publicUrl, statusLabel } from "../lib/format";
+  import { formatUptime, isOn, statusLabel } from "../lib/format";
   import type { Tunnel, Validation } from "../lib/types";
   import StatusDot from "../components/StatusDot.svelte";
   import Toggle from "../components/Toggle.svelte";
-  import Route from "../components/Route.svelte";
+  import Routes from "./Routes.svelte";
   import Icon from "../components/Icon.svelte";
 
   let { tunnel }: { tunnel: Tunnel } = $props();
@@ -31,14 +30,6 @@
 
   const s = $derived(tunnel.state);
   const on = $derived(isOn(tunnel));
-  const url = $derived(publicUrl(tunnel));
-  const routes = $derived(
-    s.mappings.length
-      ? s.mappings
-      : tunnel.kind === "quick" && tunnel.origin_url
-        ? [{ hostname: null, path: null, service: tunnel.origin_url, inspected: false, note: null }]
-        : [],
-  );
   const kindText = { config: "Named tunnel from a config file", token: "Remotely managed tunnel (token)", quick: "Quick tunnel on trycloudflare.com" };
 
   async function run(fn: () => Promise<unknown>) {
@@ -53,11 +44,15 @@
     }
   }
 
+  // Settings edits skip `busy`: disabling every control for each field change made the whole panel flash.
   async function patch(p: Parameters<typeof api.updateTunnel>[1]) {
-    await run(async () => {
+    error = null;
+    try {
       await api.updateTunnel(tunnel.id, p);
       await store.refresh();
-    });
+    } catch (e) {
+      error = errorText(e);
+    }
   }
 
   async function validate() {
@@ -108,10 +103,6 @@
         <Icon name="play" size={10} /> {s.status === "crashed" ? "Try again" : "Start"}
       </button>
     {/if}
-    {#if url && s.status === "connected"}
-      <button class="btn" onclick={() => writeText(url)}><Icon name="copy" size={13} /> Copy URL</button>
-      <button class="btn" onclick={() => openUrl(url)}><Icon name="open" size={13} /> Open</button>
-    {/if}
     {#if tunnel.kind === "config"}
       <button class="btn" disabled={busy} onclick={validate}><Icon name="check" size={13} /> Validate</button>
     {/if}
@@ -138,27 +129,7 @@
   </div>
 {/if}
 
-<section>
-  <h2>Routes</h2>
-  {#if routes.length === 0}
-    <p class="muted small">
-      {#if tunnel.kind === "token"}Routes for token tunnels are configured in the Cloudflare dashboard. They appear here once the tunnel connects.{:else}No routes.{/if}
-    </p>
-  {:else}
-    <ul class="routes">
-      {#each routes as m, i (i)}
-        <li transition:fade={{ duration: motion(120) }}>
-          <Route hostname={tunnel.kind === "quick" ? (s.public_url?.replace("https://", "") ?? "assigned when connected") : m.hostname} service={m.service} inspected={m.inspected} pulse={m.inspected ? (store.pulses[tunnel.id] ?? 0) : 0} />
-          {#if m.path}<span class="path mono">path {m.path}</span>{/if}
-          {#if m.hostname && !m.hostname.includes("*") && s.status === "connected"}
-            <button class="icon-btn" title="Copy https://{m.hostname}" aria-label="Copy URL" onclick={() => writeText(`https://${m.hostname}`)}><Icon name="copy" /></button>
-          {/if}
-          {#if m.note && tunnel.inspect}<span class="note">{m.note}</span>{/if}
-        </li>
-      {/each}
-    </ul>
-  {/if}
-</section>
+<Routes {tunnel} />
 
 <section>
   <h2>Behaviour</h2>
@@ -314,38 +285,6 @@
     margin: 0 0 8px;
     font-size: var(--text);
     font-weight: 600;
-  }
-  .routes {
-    list-style: none;
-    margin: 0;
-    padding: 4px 0;
-    background: var(--surface);
-    border-radius: var(--radius);
-    box-shadow: var(--shadow);
-  }
-  .routes li {
-    display: flex;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: 8px;
-    padding: 7px 12px;
-    min-height: 34px;
-  }
-  .routes li + li {
-    border-top: 0.5px solid var(--line);
-  }
-  .routes :global(.route) {
-    flex: 1;
-    font-size: 12px;
-  }
-  .path {
-    color: var(--text-3);
-    font-size: 11px;
-  }
-  .note {
-    width: 100%;
-    font-size: var(--text-xs);
-    color: var(--text-2);
   }
   .rows {
     background: var(--surface);

@@ -177,7 +177,10 @@ pub fn open_dashboard<R: Runtime>(app: &AppHandle<R>, view: Option<String>) {
         return;
     }
     #[cfg(target_os = "macos")]
-    let _ = app.set_activation_policy(tauri::ActivationPolicy::Regular);
+    {
+        let _ = app.set_activation_policy(tauri::ActivationPolicy::Regular);
+        crate::platform::set_dock_icon();
+    }
     let url = match &view {
         Some(v) => format!("index.html#{v}"),
         None => "index.html".into(),
@@ -185,7 +188,8 @@ pub fn open_dashboard<R: Runtime>(app: &AppHandle<R>, view: Option<String>) {
     let builder = WebviewWindowBuilder::new(app, DASHBOARD, WebviewUrl::App(url.into()))
         .title("Burrow")
         .inner_size(1080.0, 700.0)
-        .min_inner_size(820.0, 520.0)
+        .resizable(false)
+        .maximizable(false)
         .center()
         .theme(current_theme(app))
         .transparent(true)
