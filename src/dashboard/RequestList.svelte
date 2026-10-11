@@ -23,12 +23,16 @@
     rows = $bindable(),
     selected,
     cap = 500,
+    ceiling = cap * 2,
     onselect,
   }: {
     rows: RequestSummary[];
     /** The active request's id. */
     selected: string | null;
+    /** Rows kept while the list is at the top. */
     cap?: number;
+    /** Rows kept while the user is scrolled away from the top (the trim waits until they're back). */
+    ceiling?: number;
     /** A user move (click, keys) or a fallback after the active row went away. */
     onselect: (id: string | null) => void;
   } = $props();
@@ -87,7 +91,7 @@
 
   function move(i: number) {
     if (i < 0 || i >= rows.length) return;
-    onselect(rows[i].id);
+    if (i !== active) onselect(rows[i].id);
     list?.scrollToIndex(i, { align: "nearest" });
   }
 
@@ -138,35 +142,47 @@
     }
   }
 
+  // The VList's scrolling element. Anchoring reads and writes its scrollTop, not
+  // list.getScrollOffset(): virtua's offset only catches up on the next scroll event, so in a
+  // burst it would still hold the offset from before the previous batch's re-anchoring.
+  const viewport = () => (list ? (box?.firstElementChild as HTMLElement | null) : null);
+
   /**
-   * Put a batch (newest first) on top and keep at most `cap` rows. At the top of the list the new
-   * rows appear in view. Scrolled down, the rows in view stay put: below the cap virtua's `shift`
-   * keeps them (the length grows); once the cap trims the tail the length doesn't change and
-   * `shift` does nothing (decisions.md §17), so the first visible row is re-anchored by hand.
+   * Put a batch (newest first) on top (decisions.md §17). At the top of the list the new rows
+   * appear in view and the list keeps `cap` rows. Scrolled down, the rows in view stay put: the
+   * tail trim waits, so every prepend grows the list and virtua's `shift` keeps the view (it acts
+   * only on a length change). Back at the top, onscroll trims to `cap`. Past `ceiling` the trim
+   * can't wait: the list stays at `ceiling` and the first visible row is re-anchored by hand.
    */
   async function prepend(batch: RequestSummary[]) {
     const ids = new Set(batch.map((r) => r.id));
     const merged = [...batch, ...rows.filter((r) => !ids.has(r.id))];
-    // The DOM's scrollTop, not list.getScrollOffset(): virtua's offset only catches up on the
-    // next scroll event, so in a burst it would still hold the offset from before the previous
-    // batch's re-anchoring.
-    const viewport = list ? (box?.firstElementChild as HTMLElement | null) : null;
-    const top = viewport?.scrollTop ?? 0;
-    if (!viewport || snapshot.full || top <= 0) {
+    const vp = viewport();
+    const top = vp?.scrollTop ?? 0;
+    if (!vp || snapshot.full || top <= 0) {
       rows = merged.slice(0, cap);
-    } else if (merged.length <= cap) {
+    } else if (merged.length <= ceiling) {
       shift = true;
       rows = merged;
       await tick();
       shift = false;
     } else {
+      // Hold the first visible row at its offset. If the trim removed it (the view was within a
+      // batch of the end), its untrimmed index aims past the new end and the browser clamps the
+      // scroll: the view shows the oldest rows kept. Nothing that was on screen survived, so
+      // there's no row to hold still; the same clamp applies when the view was already at the end.
       const i = Math.floor(top / ROW);
-      const anchor = rows[i]?.id;
-      rows = merged.slice(0, cap);
+      const j = merged.findIndex((r) => r.id === rows[i]?.id);
+      rows = merged.slice(0, ceiling);
       await tick();
-      const j = anchor ? rows.findIndex((r) => r.id === anchor) : -1;
-      if (j >= 0) viewport.scrollTop = j * ROW + (top - i * ROW);
+      if (j >= 0) vp.scrollTop = j * ROW + (top - i * ROW);
     }
+  }
+
+  // Back at the top: drop the rows kept while the user was scrolled away. The trimmed rows are
+  // off screen, and an active row among them falls back like any other trimmed row.
+  function onscroll() {
+    if (rows.length > cap && (viewport()?.scrollTop ?? 1) <= 0) rows = rows.slice(0, cap);
   }
 
   export function focus() {
@@ -223,7 +239,7 @@
       {#each rows as r, i (r.id)}{@render row(r, i)}{/each}
     </div>
   {:else}
-    <VList bind:this={list} data={rows} getKey={(r) => r.id} itemSize={ROW} {shift} keepMounted={keep}>
+    <VList bind:this={list} data={rows} getKey={(r) => r.id} itemSize={ROW} {shift} keepMounted={keep} {onscroll}>
       {#snippet children(r, i)}{@render row(r, i)}{/snippet}
     </VList>
   {/if}
