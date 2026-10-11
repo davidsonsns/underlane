@@ -1,8 +1,9 @@
 <script lang="ts">
-  import { onDestroy, onMount } from "svelte";
+  import { onDestroy, onMount, untrack } from "svelte";
   import { listen } from "@tauri-apps/api/event";
   import { store } from "../lib/store.svelte";
   import { api, errorText } from "../lib/api";
+  import { latest } from "../lib/latest";
   import type { RequestSummary, RequestDetail as Detail } from "../lib/types";
   import SearchIcon from "@lucide/svelte/icons/search";
   import { Button } from "$lib/components/ui/button/index.js";
@@ -33,56 +34,63 @@
   });
   const tunnel = $derived(store.tunnels.find((t) => t.id === tunnelId) ?? null);
 
-  // Bumped on tunnel change, Clear and unmount, and by every select(): a getRequest answer
-  // (or error) that arrives after any of those is dropped (03 R-23).
-  let gen = 0;
-  let pending: ReturnType<typeof setTimeout> | undefined;
+  // The detail load: superseded by every select(), and cancelled on tunnel change, Clear and
+  // unmount. A getRequest answer (or error) that arrives after any of those is dropped (03 R-23),
+  // and a superseded select() still resolves.
+  const detailLoad = latest();
 
   /** Make `id` the active request and load its detail, debounced so a held arrow key
    *  doesn't flood IPC. */
   function select(id: string | null, delay = 100): Promise<void> {
-    const g = ++gen;
-    clearTimeout(pending);
     selected = id;
     if (id == null) {
+      detailLoad.cancel();
       detail = null;
       detailError = null;
       return Promise.resolve();
     }
-    return new Promise((done) => {
-      pending = setTimeout(async () => {
-        try {
-          const d = await api.getRequest(id);
-          if (g === gen) {
-            detail = d;
-            detailError = null;
-          }
-        } catch (e) {
-          if (g === gen) detailError = errorText(e);
+    return detailLoad.run(async (current) => {
+      try {
+        const d = await api.getRequest(id);
+        if (current()) {
+          detail = d;
+          detailError = null;
         }
-        done();
-      }, delay);
-    });
+      } catch (e) {
+        if (current()) detailError = errorText(e);
+      }
+    }, delay);
   }
 
+  // An empty list (a filter with no match, Clear) has no active request, and RequestList, which
+  // owns the fallback, isn't mounted to say so (02 §4.2). Clearing the filter doesn't bring the
+  // old selection back: nothing is selected until the user picks a row.
+  $effect(() => {
+    if (rows.length === 0 && selected != null) untrack(() => select(null));
+  });
+
   let loadedFor: string | null | undefined = undefined;
-  let loads = 0;
   async function load() {
     if (loadedFor !== tunnelId) {
       // Switching tunnels: don't keep showing another tunnel's request.
       select(null);
       loadedFor = tunnelId;
     }
-    const n = ++loads;
+    // A load answers for the tunnel and filter it asked about: if either changed meanwhile, a
+    // newer load is on its way and this result is dropped. Identical loads all apply, so the
+    // one selectFirst() awaits is never discarded by a concurrent twin.
+    const t = tunnelId;
+    const q = search;
+    const current = () => t === tunnelId && q === search;
     loading = true;
     error = null;
     try {
-      const r = await api.listRequests(tunnelId, search);
-      if (n === loads) rows = r;
+      const r = await api.listRequests(t, q);
+      if (current()) rows = r;
     } catch (e) {
-      if (n === loads) error = errorText(e);
+      if (current()) error = errorText(e);
     } finally {
-      if (n === loads) loading = false;
+      if (current()) loading = false;
     }
   }
 
@@ -93,10 +101,14 @@
     return () => clearTimeout(t);
   });
 
-  let initialSide = $state<"req" | "resp">("resp");
+  // The detail's tab and body view belong to the pane, not to one request: they persist while
+  // the selection moves. RequestDetail falls back (Pretty to Raw, anything to Hex for a binary
+  // body) for a request that can't show the chosen view, without changing the choice.
+  let side = $state<"req" | "resp">("resp");
+  let mode = $state<"pretty" | "raw" | "hex">("pretty");
   /** Used by the e2e check: open the newest request's detail on the given tab. */
-  export async function selectFirst(side: "req" | "resp" = "resp") {
-    initialSide = side;
+  export async function selectFirst(tab: "req" | "resp" = "resp") {
+    side = tab;
     await load();
     if (rows[0]) await select(rows[0].id, 0);
   }
@@ -115,13 +127,10 @@
     return () => un.then((f) => f());
   });
 
-  onDestroy(() => {
-    gen++;
-    clearTimeout(pending);
-  });
+  onDestroy(() => detailLoad.cancel());
 
   async function clear() {
-    gen++;
+    detailLoad.cancel();
     await api.clearRequests(tunnelId);
     rows = [];
     select(null);
@@ -168,7 +177,8 @@
         {#if detailError}
           <StatePanel kind="error" title="Couldn't load this request" message={detailError} />
         {:else if detail}
-          {#key `${detail.id}:${initialSide}`}<RequestDetail {detail} side={initialSide} />{/key}
+          <!-- Remounted per request so its panel starts scrolled to the top; tab and view persist. -->
+          {#key detail.id}<RequestDetail {detail} bind:side bind:mode />{/key}
         {:else}
           <StatePanel kind="empty" title="Select a request" message="Headers and bodies show here." />
         {/if}

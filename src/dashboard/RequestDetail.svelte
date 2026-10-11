@@ -9,10 +9,17 @@
 
   type Side = "req" | "resp";
   type Mode = "pretty" | "raw" | "hex";
-  let { detail, side: initial = "resp" }: { detail: RequestDetail; side?: Side } = $props();
-  // svelte-ignore state_referenced_locally
-  let side = $state<Side>(initial);
-  let mode = $state<Mode>("pretty");
+  let {
+    detail,
+    side = $bindable("resp"),
+    mode = $bindable("pretty"),
+  }: {
+    detail: RequestDetail;
+    /** The open tab; bound by Requests so it persists across selections. */
+    side?: Side;
+    /** The chosen body view. A body that can't show it uses `effectiveMode` and leaves it as is. */
+    mode?: Mode;
+  } = $props();
 
   const body = $derived<BodyView>(side === "req" ? detail.req : detail.resp);
   const headers = $derived(side === "req" ? detail.req_headers : detail.resp_headers);
@@ -72,6 +79,7 @@
     <tbody>
       {#each headers as [k, v], i (i)}
         <tr>
+          <!-- Names get about a third of the width (wrapping anywhere) so long values keep most of it. -->
           <th class="w-[34%] py-0.75 pe-2.5 text-left align-top font-medium wrap-anywhere text-muted-foreground">{k}</th>
           <td class={["py-0.75 break-all select-text", v === "[redacted]" && "text-muted-foreground italic"]}>{v}</td>
         </tr>
