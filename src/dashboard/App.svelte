@@ -123,7 +123,7 @@
   bind:open={adding}
   tab={addTab}
   returnFocus={() => (addTrigger?.isConnected ? addTrigger : document.querySelector<HTMLElement>("[data-add-tunnel]"))}
-  onadded={(id) => { adding = false; focusId = id; view = "tunnels"; store.refresh(); }}
+  onadded={(id) => { addTrigger = null; adding = false; focusId = id; view = "tunnels"; store.refresh(); }}
 />
 
 <Toaster theme={store.overview?.settings.theme ?? "system"} position="bottom-right" visibleToasts={3} />

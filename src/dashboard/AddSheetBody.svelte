@@ -130,7 +130,7 @@
 
   <!-- tabindex -1: every panel starts with controls, so Tab goes from the tabs straight to them. -->
   <Tabs.Content value="import" tabindex={-1}>
-    <!-- A form, so Return activates the default button (01 §5.6). -->
+    <!-- A form for the submit button; it has no text field, so Return doesn't import (as before). -->
     <form class="flex flex-col gap-3" onsubmit={(e) => { e.preventDefault(); importPaths(selectedPaths); }}>
       <p class="text-callout text-muted-foreground">Burrow reads existing cloudflared config files and never modifies them.</p>
       <div class="rounded-lg bg-card shadow-(--shadow)">
@@ -146,11 +146,11 @@
             {#each candidates as c, i (c.path)}
               <li class="not-first:border-t-[0.5px] not-first:border-border">
                 <!-- The whole row toggles the checkbox it contains. -->
-                <Label for={id(`cand-${i}`)} class="gap-2.5 px-3 py-2 {c.imported ? 'opacity-55' : ''}">
+                <Label for={id(`cand-${i}`)} class="gap-2.5 px-3 py-2 {c.imported ? 'text-muted-foreground' : ''}">
                   <Checkbox id={id(`cand-${i}`)} disabled={c.imported} bind:checked={() => picked[c.path] ?? false, (v) => (picked[c.path] = v)} />
                   <span class="flex min-w-0 flex-1 flex-col">
                     <span class="font-medium">{c.name} <span class="font-normal text-muted-foreground">{c.path.split("/").pop()}</span></span>
-                    <span class="truncate font-mono text-code text-muted-foreground">{hosts(c)}</span>
+                    <span class="truncate font-mono text-code text-muted-foreground" title={c.hostnames.join(", ")}>{hosts(c)}</span>
                   </span>
                   <span class="text-xs text-muted-foreground">{c.imported ? "Imported" : c.project}</span>
                 </Label>
@@ -181,6 +181,7 @@
   <Tabs.Content value="quick" tabindex={-1}>
     <form class="flex flex-col gap-3" onsubmit={(e) => { e.preventDefault(); addQuick(); }}>
       <p class="text-callout text-muted-foreground">Share a local server at a random <span class="font-mono">trycloudflare.com</span> address. No Cloudflare account needed.</p>
+      <!-- 120px: the right-aligned label column of an AppKit form ("Local address:" fits). -->
       <div class="grid grid-cols-[120px_1fr] items-center gap-x-3 gap-y-2.5">
         <Label for={id("q-origin")} class="justify-self-end">Local address:</Label>
         <Input id={id("q-origin")} {...plainText} class="font-mono" placeholder="localhost:3000" bind:value={quick.origin} required />
@@ -209,6 +210,7 @@
   <Tabs.Content value="token" tabindex={-1}>
     <form class="flex flex-col gap-3" onsubmit={(e) => { e.preventDefault(); addToken(); }}>
       <p class="text-callout text-muted-foreground">For tunnels created in the Cloudflare dashboard. Copy the token from the tunnel's install command; Burrow keeps it in your keychain.</p>
+      <!-- 120px: the right-aligned label column of an AppKit form ("Local address:" fits). -->
       <div class="grid grid-cols-[120px_1fr] items-center gap-x-3 gap-y-2.5">
         <Label for={id("t-token")} class="self-start justify-self-end pt-1">Token:</Label>
         <!-- break-all: a token is one long word. -->
