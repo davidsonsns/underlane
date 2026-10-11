@@ -1,9 +1,10 @@
 <script lang="ts">
   // The real Requests list (src/dashboard/RequestList.svelte: listbox, VList, rows, keys,
   // anchoring) on 500 fake requests, for 03 R-49. The parent part mirrors Requests.svelte:
-  // selection by id, a "detail" line that follows it, and new requests prepended through
-  // RequestList.prepend(). window.__reqlab lets Playwright drive it.
-  import { tick } from "svelte";
+  // selection by id, a "detail" line that follows it, the list unmounted (and the selection
+  // cleared) when it's empty, the detail's tab and body view kept across selections, and new
+  // requests queued through RequestList.add(). window.__reqlab lets Playwright drive it.
+  import { tick, untrack } from "svelte";
   import { Button } from "$lib/components/ui/button/index.js";
   import RequestList, { columns } from "../dashboard/RequestList.svelte";
   import RequestDetail from "../dashboard/RequestDetail.svelte";
@@ -34,9 +35,15 @@
   let selected = $state<string | null>(null);
   let list = $state<RequestList>();
   const detail = $derived(rows.find((r) => r.id === selected) ?? null);
+  let side = $state<"req" | "resp">("resp");
+  let mode = $state<"pretty" | "raw" | "hex">("pretty");
+  $effect(() => {
+    if (rows.length === 0 && selected != null) untrack(() => (selected = null));
+  });
 
   // A fake detail for the selected row: a long JSON response (scrolls inside its tab panel), a
-  // truncated request body (warning badge + the curl Tip), and redacted / long headers.
+  // truncated request body (warning badge + the curl Tip), and redacted / long headers. Request
+  // n % 5 == 1 answers plain text (no Pretty) and n % 5 == 2 a binary body (Hex only).
   const view = (text: string, extra: Partial<BodyView> = {}): BodyView => ({
     size: text.length, stored: text.length, truncated: false, content_type: "application/json", decoded_from: null,
     decode_partial: false, is_text: true, text, base64: btoa(text), ...extra,
@@ -47,9 +54,16 @@
       req_headers: [["host", detail.host], ["authorization", "[redacted]"], ["content-type", "application/json"], ["x-a-very-long-header-name-that-wraps", "a-very-long-value-".repeat(4)]],
       resp_headers: [["content-type", "application/json"], ["content-length", "2048"]],
       req: view(JSON.stringify({ id: detail.id, note: "only part of this body was stored" }), { size: 4 << 20, truncated: true, decoded_from: "gzip" }),
-      resp: view(JSON.stringify({ id: detail.id, items: Array.from({ length: 40 }, (_, i) => ({ i, path: detail.path })) })),
+      resp: respFor(detail),
     },
   );
+
+  function respFor(r: RequestSummary): BodyView {
+    const n = +r.id.slice(1);
+    if (n % 5 === 1) return view(Array.from({ length: 60 }, (_, i) => `line ${i} of ${r.path}`).join("\n"), { content_type: "text/plain" });
+    if (n % 5 === 2) return view("\u0000\u0001binary\u00ff".repeat(64), { content_type: "application/octet-stream", is_text: false, text: null });
+    return view(JSON.stringify({ id: r.id, items: Array.from({ length: 40 }, (_, i) => ({ i, path: r.path })) }));
+  }
 
   /** n requests arriving as separate events in the same task, like a burst of real ones. */
   async function add(n: number) {
@@ -90,10 +104,14 @@
     <div class="{columns} h-7 flex-none border-b-[0.5px] border-border text-xs text-muted-foreground" aria-hidden="true">
       <span>Method</span><span>Path</span><span class="text-right">Status</span><span class="text-right">Time</span><span class="text-right">Size</span><span class="text-right">At</span>
     </div>
-    <RequestList bind:this={list} bind:rows {selected} cap={CAP} onselect={(id) => (selected = id)} />
+    {#if rows.length}
+      <RequestList bind:this={list} bind:rows {selected} cap={CAP} onselect={(id) => (selected = id)} />
+    {:else}
+      <div class="grid flex-1 place-items-center text-callout text-muted-foreground">No matching requests</div>
+    {/if}
   </div>
   <div class="flex h-[420px] w-[480px] flex-col overflow-hidden rounded-lg bg-card shadow-(--shadow)" data-testid="reqlab-detail-pane">
-    {#if full}{#key full.id}<RequestDetail detail={full} />{/key}{/if}
+    {#if full}{#key full.id}<RequestDetail detail={full} bind:side bind:mode />{/key}{:else}<div class="grid flex-1 place-items-center text-callout text-muted-foreground">Select a request</div>{/if}
   </div>
   <div class="flex flex-wrap items-center gap-2">
     <Button variant="outline" size="sm" onclick={() => add(1)}>New request</Button>
