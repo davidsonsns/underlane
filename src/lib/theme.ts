@@ -13,7 +13,7 @@ export function applyTheme(theme: Settings["theme"], animate = true) {
   else root.dataset.theme = theme;
 }
 
-export const reducedMotion = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
+const reducedMotion = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
 
 /** Duration helper for Svelte transitions that respects reduce motion. */
 export const motion = (ms: number) => (reducedMotion() ? 0 : ms);

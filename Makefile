@@ -5,7 +5,7 @@ export PATH := $(dir $(CARGO)):$(PATH)
 APP_RELEASE := target/release/bundle/macos/Burrow.app
 APP_E2E := target/debug/bundle/macos/Burrow.app
 
-.PHONY: build dev test e2e install icons clean check
+.PHONY: build dev test e2e install icons clean
 
 ## Build the release app bundle from a clean checkout -> target/release/bundle/macos/Burrow.app
 build:

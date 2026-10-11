@@ -1,5 +1,4 @@
 //! Test origin server and helpers shared by the integration tests.
-#![allow(dead_code)]
 
 use std::convert::Infallible;
 use std::io::Write;

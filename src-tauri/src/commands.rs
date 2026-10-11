@@ -187,16 +187,6 @@ pub async fn delete_tunnel(core: CoreState<'_>, id: String) -> Res<()> {
 }
 
 #[tauri::command]
-pub fn rename_project(core: CoreState<'_>, id: String, name: String) -> Res<()> {
-    if name.trim().is_empty() {
-        return Err("A project needs a name.".into());
-    }
-    core.db.rename_project(&id, name.trim()).map_err(err)?;
-    core.notify_changed();
-    Ok(())
-}
-
-#[tauri::command]
 pub async fn start_tunnel(core: CoreState<'_>, id: String) -> Res<()> {
     blocking(&core, move |c| c.start(&id).map_err(err)).await
 }
@@ -448,11 +438,6 @@ pub fn set_launch_at_login(enabled: bool) -> LoginItem {
 #[tauri::command]
 pub fn open_dashboard(app: AppHandle, view: Option<String>) {
     tray::open_dashboard(&app, view);
-}
-
-#[tauri::command]
-pub fn hide_popover(app: AppHandle) {
-    tray::hide_popover(&app);
 }
 
 #[tauri::command]

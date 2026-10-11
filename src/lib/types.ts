@@ -1,5 +1,5 @@
 export type Status = "stopped" | "starting" | "connected" | "degraded" | "crashed";
-export type TunnelKind = "config" | "token" | "quick";
+type TunnelKind = "config" | "token" | "quick";
 
 export interface RouteMapping {
   hostname: string | null;
@@ -43,7 +43,7 @@ export interface Tunnel {
   has_token: boolean;
 }
 
-export interface Project {
+interface Project {
   id: string;
   name: string;
   sort: number;

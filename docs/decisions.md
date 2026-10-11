@@ -184,7 +184,7 @@ rebuild may make the Keychain ask once for access again.
 
 On import, a tunnel is grouped by its config's folder. A file at `<dir>/.cloudflared/x.yml` or
 `<dir>/x.yml` goes to the project named `<dir>`'s folder name, and files directly in
-`~/.cloudflared` go to **Personal**. Projects can be renamed, and tunnels can be moved between them.
+`~/.cloudflared` go to **Personal**. Tunnels can be moved between projects.
 
 ## 11. cloudflared discovery
 
@@ -278,10 +278,11 @@ The finished code was reviewed by opus-5.5 and gpt-6-astra (Codex). Accepted fin
 
 ## 16. Verifying launch at login: simulation instead of a log-out/log-in
 
-goal.md item 5 accepts either path: "log out and back in, **or simulate it**". A real log-out
-wasn't possible here. The work ran unattended in this user's GUI session, and logging out
-terminates every process in it, including the agent doing the verification. That made the
-simulation the closest workable path, and it is the one the goal names.
+The original brief's acceptance criterion for launch at login allowed either path: "log out and
+back in, **or simulate it**". A real log-out wasn't possible here. The work ran unattended in
+this user's GUI session, and logging out terminates every process in it, including the agent
+doing the verification. That made the simulation the closest workable path, and it is the one
+the brief allows.
 
 How the simulation was made faithful, rather than just "the app was opened":
 

@@ -27,41 +27,6 @@ pub struct IngressRule {
     pub service: String,
 }
 
-impl IngressRule {
-    /// What the service points at, classified for display and for inspection eligibility.
-    pub fn service_kind(&self) -> ServiceKind {
-        ServiceKind::of(&self.service)
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ServiceKind {
-    /// `http://` or `ws://`
-    Http,
-    /// `https://` or `wss://`
-    Https,
-    /// `http_status:`, `hello_world`, `bastion`, `unix:`, `ssh://`, `tcp://`, `rdp://`, ...
-    Other,
-}
-
-impl ServiceKind {
-    pub fn of(service: &str) -> Self {
-        let s = service.trim().to_ascii_lowercase();
-        if s.starts_with("http://") || s.starts_with("ws://") {
-            ServiceKind::Http
-        } else if s.starts_with("https://") || s.starts_with("wss://") {
-            ServiceKind::Https
-        } else {
-            ServiceKind::Other
-        }
-    }
-
-    pub fn is_inspectable(self) -> bool {
-        matches!(self, ServiceKind::Http | ServiceKind::Https)
-    }
-}
-
 /// A parsed config file.
 #[derive(Debug, Clone)]
 pub struct TunnelConfig {

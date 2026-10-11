@@ -205,11 +205,6 @@ impl Db {
         Ok(p)
     }
 
-    pub fn rename_project(&self, id: &str, name: &str) -> anyhow::Result<()> {
-        self.with(|c| c.execute("UPDATE projects SET name = ?2 WHERE id = ?1", params![id, name]))?;
-        Ok(())
-    }
-
     /// Delete projects that no longer have tunnels.
     pub fn prune_empty_projects(&self) -> anyhow::Result<()> {
         self.with(|c| c.execute("DELETE FROM projects WHERE id NOT IN (SELECT project_id FROM tunnels)", []))?;

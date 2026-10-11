@@ -69,7 +69,6 @@ pub fn run() {
             commands::add_token_tunnel,
             commands::update_tunnel,
             commands::delete_tunnel,
-            commands::rename_project,
             commands::start_tunnel,
             commands::stop_tunnel,
             commands::restart_tunnel,
@@ -88,7 +87,6 @@ pub fn run() {
             commands::login_item_status,
             commands::set_launch_at_login,
             commands::open_dashboard,
-            commands::hide_popover,
             commands::quit,
             commands::e2e_report,
         ])

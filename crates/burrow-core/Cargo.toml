@@ -9,7 +9,6 @@ description = "Platform-independent core of Burrow: cloudflared supervision, con
 anyhow = "1"
 bytes = "1"
 flate2 = "1"
-futures-util = { version = "0.3", default-features = false, features = ["std"] }
 brotli-decompressor = "6"
 http-body-util = "0.1"
 hyper = { version = "1", features = ["server", "client", "http1", "http2"] }

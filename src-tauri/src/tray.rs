@@ -65,7 +65,6 @@ pub fn set_count<R: Runtime>(app: &AppHandle<R>, count: usize) {
         };
         let _ = tray.set_tooltip(Some(tip));
     }
-    let _ = app.emit("active-count", count);
 }
 
 /// Read the title straight from the `NSStatusItem` button (used by the e2e check).

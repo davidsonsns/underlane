@@ -15,16 +15,16 @@ tauri-build = { version = "2", features = [] }
 [features]
 default = []
 # Loopback control server used by the end-to-end check. Never in `make build`.
-e2e = []
+e2e = ["dep:bytes", "dep:http-body-util", "dep:hyper", "dep:hyper-util", "dep:uuid"]
 
 [dependencies]
 burrow-core = { path = "../crates/burrow-core" }
 anyhow = "1"
 base64 = "0.22"
-bytes = "1"
-http-body-util = "0.1"
-hyper = { version = "1", features = ["server", "http1"] }
-hyper-util = { version = "0.1", features = ["tokio", "server"] }
+bytes = { version = "1", optional = true }
+http-body-util = { version = "0.1", optional = true }
+hyper = { version = "1", features = ["server", "http1"], optional = true }
+hyper-util = { version = "0.1", features = ["tokio", "server"], optional = true }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tauri = { version = "2", features = ["tray-icon", "image-png", "macos-private-api"] }
@@ -36,7 +36,7 @@ tauri-plugin-single-instance = "2"
 tokio = { version = "1", features = ["full"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-uuid = { version = "1", features = ["v4"] }
+uuid = { version = "1", features = ["v4"], optional = true }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 keyring = { version = "3", features = ["apple-native"] }

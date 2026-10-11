@@ -13,7 +13,6 @@ export const api = {
   updateTunnel: (id: string, patch: Partial<{ name: string; project: string; inspect: boolean; autostart: boolean; loglevel: string; originUrl: string; token: string }>) =>
     invoke<void>("update_tunnel", { id, patch }),
   deleteTunnel: (id: string) => invoke<void>("delete_tunnel", { id }),
-  renameProject: (id: string, name: string) => invoke<void>("rename_project", { id, name }),
   start: (id: string) => invoke<void>("start_tunnel", { id }),
   stop: (id: string) => invoke<void>("stop_tunnel", { id }),
   restart: (id: string) => invoke<void>("restart_tunnel", { id }),
@@ -34,7 +33,6 @@ export const api = {
   loginItem: () => invoke<LoginItem>("login_item_status"),
   setLaunchAtLogin: (enabled: boolean) => invoke<LoginItem>("set_launch_at_login", { enabled }),
   openDashboard: (view?: string) => invoke<void>("open_dashboard", { view: view ?? null }),
-  hidePopover: () => invoke<void>("hide_popover"),
   quit: () => invoke<void>("quit"),
   e2eReport: (nonce: string, text: string) => invoke<void>("e2e_report", { nonce, text }),
 };

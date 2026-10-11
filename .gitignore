@@ -5,4 +5,6 @@ target/
 *.log
 /e2e/out/
 .scratch/
-.claude/worktree/
+.claude/worktrees/
+/src-tauri/gen/schemas/
+/docs/screenshots/session-notes.txt

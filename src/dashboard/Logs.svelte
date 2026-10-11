@@ -125,7 +125,7 @@
     {:else}
       <div class="log" bind:this={scroller} onscroll={onScroll} role="log" aria-live="off">
         {#each lines as l (l.id)}
-          <button class="line {l.level}" class:open={expanded === l.id} onclick={() => (expanded = expanded === l.id ? null : l.id)}>
+          <button class="line {l.level}" onclick={() => (expanded = expanded === l.id ? null : l.id)}>
             <span class="ts">{formatClock(l.ts)}</span>
             <span class="lvl">{l.level === "fatal" ? "FTL" : l.level.slice(0, 3).toUpperCase()}</span>
             {#if !tunnelId}<span class="tn">{names[l.tunnel_id] ?? "removed"}</span>{/if}

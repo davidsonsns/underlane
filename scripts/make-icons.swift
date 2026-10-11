@@ -34,8 +34,8 @@ func archPath(in r: CGRect, stroke: CGFloat) -> CGPath {
     return p.copy(strokingWithWidth: stroke, lineCap: .round, lineJoin: .round, miterLimit: 4)
 }
 
-// Tray template: black on transparent; macOS tints it. 18pt -> 36px @2x, 18px @1x.
-for (px, name) in [(36, "tray-template@2x.png"), (18, "tray-template.png")] {
+// Tray template: black on transparent; macOS tints it. 18pt -> 36px @2x (the only size tray.rs loads).
+for (px, name) in [(36, "tray-template@2x.png")] {
     png(px, "\(out)/\(name)") { ctx, s in
         ctx.setFillColor(NSColor.black.cgColor)
         ctx.addPath(archPath(in: CGRect(x: 0, y: 0, width: s, height: s), stroke: s * 0.11))

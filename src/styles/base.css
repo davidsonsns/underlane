@@ -11,7 +11,6 @@
   --text-xl: 20px;
 
   --accent: AccentColor;
-  --accent-fallback: #0a84ff;
 
   /* Status colours carry meaning; nothing else is green/amber/red. */
   --ok: #2fb35a;

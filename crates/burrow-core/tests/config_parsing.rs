@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use burrow_core::config::{scan_dir, ServiceKind, TunnelConfig};
+use burrow_core::config::{scan_dir, TunnelConfig};
 
 const NAMED: &str = r#"
 tunnel: 00000000-0000-4000-8000-000000000101
@@ -34,9 +34,6 @@ fn parses_named_tunnel_with_ingress() {
     assert_eq!(c.ingress[0].hostname.as_deref(), Some("app.example.com"));
     assert_eq!(c.ingress[0].service, "http://localhost:4000");
     assert_eq!(c.ingress[1].path.as_deref(), Some("/v1/.*"));
-    assert_eq!(c.ingress[1].service_kind(), ServiceKind::Https);
-    assert_eq!(c.ingress[2].service_kind(), ServiceKind::Http, "ws:// is HTTP");
-    assert_eq!(c.ingress[3].service_kind(), ServiceKind::Other);
     assert_eq!(c.ingress[4].hostname, None);
     assert_eq!(c.ingress[4].index, 4);
     assert!(!c.is_single_origin());

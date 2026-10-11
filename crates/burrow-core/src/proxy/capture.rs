@@ -211,12 +211,8 @@ pub struct BodyCapture {
 }
 
 impl BodyCapture {
-    /// Append a chunk, keeping at most `cap` bytes. Returns the bytes newly stored.
-    pub fn push(&mut self, chunk: &[u8], cap: usize) -> usize {
-        self.push_limited(chunk, cap, usize::MAX)
-    }
-
-    /// Like [`push`](Self::push) but also bounded by `allowance` (the global budget grant).
+    /// Append a chunk, keeping at most `cap` bytes in total and at most `allowance` new ones
+    /// (the global budget grant). Returns the bytes newly stored.
     pub fn push_limited(&mut self, chunk: &[u8], cap: usize, allowance: usize) -> usize {
         self.size += chunk.len() as u64;
         // Once anything was skipped, stop storing: the capture must stay a faithful prefix.

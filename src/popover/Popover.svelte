@@ -119,7 +119,6 @@
             {@const url = publicUrl(t)}
             <div
               class="row"
-              class:on={isOn(t)}
               animate:flip={{ duration: motion(220) }}
               in:fly={{ y: -6, duration: motion(200) }}
               out:fade={{ duration: motion(120) }}
