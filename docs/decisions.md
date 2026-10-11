@@ -309,3 +309,73 @@ How the simulation was made faithful, rather than just "the app was opened":
 Item 5's launch-at-login requirement is therefore met through the permitted simulation, and no
 further step is required. A user who wants extra assurance can turn the setting on and log out
 and back in. That is optional confirmation, not missing verification.
+
+## 17. UI stack: Tailwind v4 + shadcn-svelte (Luma)
+
+**Decision (owner).** The UI moves from per-component scoped CSS to Tailwind v4 and shadcn-svelte
+with the **Luma** style (preset `b1VlIttQ`: lucide icons, neutral base, `menuAccent: bold`),
+tuned to AppKit metrics: system font at 13px, 22px controls and menu rows, sheets that drop from
+under the toolbar, keyboard-only focus rings. The port runs one screen per phase, and the app
+ships after each phase. The full plan lives outside the repo; this entry records what was decided.
+
+**Layers during the migration.** `src/styles/app.css` is the only global stylesheet and declares
+`@layer theme, base, legacy, components, utilities`. The old `base.css` is imported into
+`legacy`: it beats Tailwind's preflight, so unported screens keep their look, and loses to
+utilities, so new code wins. Svelte `<style>` blocks are unlayered and beat everything, so a
+component moves to utilities in one go. Tailwind only scans `src/` (`source(none)` +
+`@source "../"`), so the HTML files carry no utility classes. Two preflight compat rules
+(placeholder colour, checkbox margin) sit at the bottom of base.css and go with it.
+
+**Why the tokens moved first (Phase 0).** Any token left in base.css's `:root` would override
+Tailwind's and app.css's tokens from inside the `legacy` layer (`text-sm` came out 12px,
+`rounded-lg` 12px). And base.css's `html { font-size: 13px }` shrank every rem-based utility by
+19% (`h-9` = 29.25px). So app.css owns every token from Phase 0, the root font size stays 16px
+(13px is set on `body`), and five same-pixel renames free the names Tailwind uses:
+`--text-sm→--text-callout`, `--text→--text-sm`, `--accent→--tint`, `--radius-lg→--radius-xl`,
+`--font/--mono→--font-sans/--font-mono`. Burrow's names are the source of truth and shadcn's
+names alias them. The only intended visual changes were `--text-3` (contrast fix) and `--hover`
+(+0.5–1%). Measured in WebKit after the change: html 16px, body 13px, `text-sm` 13px, `h-9`
+36px, `rounded-lg` 8px, a `bg-primary` button white on the selected-content blue with its
+transition intact, and a legacy `.btn.primary` still 24px on `AccentColor`.
+
+**Accent.** `--tint` is the raw `AccentColor` (rings, switches, icons). Filled surfaces use
+`-apple-system-selected-content-background` with white text (AA), behind `@supports` with hex
+fallbacks. `AccentColorText` is never used: WKWebView resolves it to black.
+
+**Dark mode.** One `@custom-variant dark` that matches `html[data-theme=dark]`, or the system
+setting when the theme is "system" (no `data-theme`). The Rust `set_theme` and vibrancy sync is
+unchanged. No `mode-watcher`: the toast component gets the theme setting as a prop.
+
+**No theme cross-fade.** Theme switches snap. The native vibrancy material flips instantly on
+`set_theme`, so a CSS fade disagreed with it for 240ms, and the fade's `!important` would have
+beaten every `!` utility once inside a cascade layer.
+
+**Selects.** A plain native `<select>` everywhere, with Tailwind's reset undone by
+`select { all: revert }`, so WebKit draws the real AppKit pop-up and opens a real NSMenu that
+matches the running macOS. Rejected: Bits UI `Select` (a custom trigger can't match each macOS
+version's pop-up) and shadcn's `native-select` (it sets `appearance: none` and draws its own
+chevron).
+
+**Tooltips at 250ms.** AppKit waits about a second; the owner chose fast tooltips (`c3a3775`).
+
+**Long lists: virtua.** Requests (500 rows) and Logs (3,000 variable-height lines) render through
+`virtua`'s `VList`: measured heights, prepend anchoring and stick-to-bottom are where hand-written
+windowing goes wrong. Rejected: `@tanstack/svelte-virtual` (store-based adapter in a runes
+codebase).
+
+**E2E snapshot mode.** The e2e harness asserts on `document.body.innerText`, which a virtualized
+list would truncate. A snapshot flag renders every row while the harness reads the text, so the
+assertions stay as they are.
+
+**Browser floor: macOS 13.3.** Tailwind v4's output needs WebKit 16.4 (`@property`, cascade
+layers, `color-mix`), which macOS 13.3 ships. `minimumSystemVersion` is 13.3 and Vite's
+`build.target` is `safari16.4` (owner decision, 2026-10-11).
+
+**Cost.** Phase 0 (tooling and tokens, no components) grew the shared CSS chunk from 2.4 to
+5.5 kB gzip and left JS unchanged. Budgets for the finished port: popover JS ≤ 70 kB gzip,
+dashboard JS ≤ 150 kB, CSS ≤ 20 kB per page.
+
+**Alternatives rejected.** Bits UI alone with hand-written styles (an earlier spike: every
+component's look written from scratch, and its dark variant missed "System" in dark mode).
+Keeping scoped CSS (1,440 lines of duplicated per-component styles, no shared primitives, and the
+accessibility fixes the port brings would have to be hand-built).

@@ -155,7 +155,7 @@
     text-align: left;
   }
   .nav :global(svg) {
-    color: var(--accent);
+    color: var(--tint);
   }
   .nav:hover {
     background: var(--hover);

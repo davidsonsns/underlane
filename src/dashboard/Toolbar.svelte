@@ -37,7 +37,7 @@
   }
   .sub {
     color: var(--text-2);
-    font-size: var(--text-sm);
+    font-size: var(--text-callout);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;

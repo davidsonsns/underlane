@@ -226,7 +226,7 @@
     border: 0;
     background: transparent;
     text-align: left;
-    font-size: var(--text-sm);
+    font-size: var(--text-callout);
     font-variant-numeric: tabular-nums;
   }
   .tr:nth-child(even) {
@@ -242,7 +242,7 @@
     animation: arrive 1.2s ease-out;
   }
   @keyframes arrive {
-    from { box-shadow: inset 3px 0 0 var(--accent); }
+    from { box-shadow: inset 3px 0 0 var(--tint); }
     to { box-shadow: inset 3px 0 0 transparent; }
   }
   .num {
@@ -259,7 +259,7 @@
     font-size: var(--text-xs);
     color: var(--text-2);
   }
-  .m-post, .m-put, .m-patch { color: color-mix(in srgb, var(--accent) 80%, var(--text-1)); }
+  .m-post, .m-put, .m-patch { color: color-mix(in srgb, var(--tint) 80%, var(--text-1)); }
   .m-delete { color: var(--bad); }
   .status { font-weight: 600; }
   .s-ok { color: var(--ok); }

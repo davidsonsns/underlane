@@ -40,7 +40,7 @@
     transition: background-color var(--dur) ease;
   }
   .toggle.on {
-    background: var(--accent);
+    background: var(--tint);
   }
   .knob {
     position: absolute;

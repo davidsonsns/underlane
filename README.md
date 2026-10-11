@@ -24,7 +24,7 @@ affiliated with Cloudflare.
 
 ## Setup
 
-Requirements: macOS 13 or later (built and tested on macOS 27, Apple Silicon), plus:
+Requirements: macOS 13.3 or later (built and tested on macOS 27, Apple Silicon), plus:
 
 ```sh
 brew install cloudflared   # Burrow finds it on PATH or in Homebrew's folders

@@ -191,7 +191,7 @@
   }
   h2 {
     margin: 20px 0 8px 2px;
-    font-size: var(--text);
+    font-size: var(--text-sm);
     font-weight: 600;
   }
   .group {

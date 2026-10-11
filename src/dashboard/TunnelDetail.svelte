@@ -245,7 +245,7 @@
   .sub {
     display: flex;
     gap: 12px;
-    font-size: var(--text-sm);
+    font-size: var(--text-callout);
     padding-left: 20px;
   }
   .status-text.connected { color: var(--ok); }
@@ -266,7 +266,7 @@
     background: var(--surface);
     box-shadow: var(--shadow);
     border-left: 3px solid var(--off);
-    font-size: var(--text-sm);
+    font-size: var(--text-callout);
     line-height: 1.45;
     white-space: pre-wrap;
   }
@@ -283,7 +283,7 @@
   }
   h2 {
     margin: 0 0 8px;
-    font-size: var(--text);
+    font-size: var(--text-sm);
     font-weight: 600;
   }
   .rows {

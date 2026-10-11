@@ -1,0 +1,366 @@
+/* Burrow design system: Tailwind v4 + shadcn-svelte (Luma), tuned to macOS.
+   One file is the source of truth for tokens; both windows (dashboard, popover) import it.
+
+   Theme model (unchanged from today, see src/lib/theme.ts and src-tauri tray.rs):
+     settings.theme = "system" -> no data-theme attribute; prefers-color-scheme decides.
+     settings.theme = "light" | "dark" -> <html data-theme="…">, and Rust set_theme() flips the
+     NSWindow appearance, which also flips WKWebView's prefers-color-scheme. CSS never needs JS
+     to know the system theme, and the native vibrancy material always matches. */
+
+/* Migration head (Phases 0-2i): base.css is imported into the `legacy` layer, which sits
+   after Tailwind's preflight (so today's screens keep their look) and before utilities (so
+   new code wins). Phase 3 deletes base.css and the `legacy` entry. */
+@layer theme, base, legacy, components, utilities;
+@import "tailwindcss" source(none);
+@source "../"; /* src/ only: skips src-tauri/, target/ and crates/. No utilities in the HTML files. */
+@import "tw-animate-css";
+@import "shadcn-svelte/tailwind.css";
+@import "./base.css" layer(legacy);
+
+/* ---------------------------------------------------------------------------------------------
+   1. Dark variant: data-theme wins, otherwise the system. Replaces shadcn's `.dark` class.
+   Usable in markup (dark:bg-…) and in CSS via `@variant dark { … }` (used for the tokens below,
+   so every dark value is written exactly once). */
+@custom-variant dark {
+  &:where([data-theme="dark"], [data-theme="dark"] *) {
+    @slot;
+  }
+  @media (prefers-color-scheme: dark) {
+    &:where(:root:not([data-theme="light"]), :root:not([data-theme="light"]) *) {
+      @slot;
+    }
+  }
+}
+
+/* Keyboard-navigation focus: rings on buttons, pop-ups, switches and segments only after the
+   user has pressed Tab since their last pointer interaction (html[data-kb-nav], set by
+   installFocusModality() in src/lib/theme.ts). macOS never rings a clicked button. Text
+   fields use plain focus-visible, because NSTextField always shows its ring when focused. */
+@custom-variant kb-focus (&:where(:root[data-kb-nav] *):focus-visible);
+
+/* ---------------------------------------------------------------------------------------------
+   2. Static theme tokens (emitted as real :root variables so Svelte <style> blocks can use
+   var(--text-sm) etc. as well as the utilities). */
+@theme static {
+  /* "Segoe UI" and Consolas are for the later Windows build. */
+  --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", system-ui, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+
+  /* macOS text styles. text-sm is the 13px body/control size, so every stock shadcn
+     `text-sm` lands on the native size. Line heights follow AppKit's (13/16 is NSFont's
+     default; 18px keeps Burrow's current 1.38 rhythm for running text). */
+  --text-2xs: 10px;
+  --text-2xs--line-height: 13px;
+  --text-xs: 11px;
+  --text-xs--line-height: 14px;
+  --text-callout: 12px;
+  --text-callout--line-height: 16px;
+  --text-code: 11.5px; /* log lines and bodies (replaces the 11.5px literals) */
+  --text-code--line-height: 16px;
+  --text-sm: 13px;
+  --text-sm--line-height: 18px;
+  --text-base: 13px;
+  --text-base--line-height: 18px;
+  --text-lg: 15px;
+  --text-lg--line-height: 20px;
+  --text-xl: 20px;
+  --text-xl--line-height: 25px;
+
+  /* Radius: Burrow's existing scale. 2xl-4xl are clamped so Luma classes that slip
+     through a future `shadcn-svelte add` come out as 12px corners, not pills. */
+  --radius-xs: 3px;
+  --radius-sm: 5px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-xl: 12px;
+  --radius-2xl: 12px;
+  --radius-3xl: 12px;
+  --radius-4xl: 12px;
+
+  --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-spring: cubic-bezier(0.34, 1.4, 0.64, 1);
+
+  --shadow-control: 0 0 0 0.5px var(--line-strong), 0 0.5px 1px rgb(0 0 0 / 0.12);
+  --shadow-segment: 0 0 0 0.5px rgb(0 0 0 / 0.06), 0 1px 2px rgb(0 0 0 / 0.14);
+  --shadow-menu: 0 0 0 0.5px var(--line-strong), 0 10px 30px rgb(0 0 0 / 0.2);
+  --shadow-sheet: 0 0 0 0.5px var(--line-strong), 0 20px 50px rgb(0 0 0 / 0.28);
+}
+
+/* ---------------------------------------------------------------------------------------------
+   3. Colour utilities. `inline` because the values are variables that change per theme. */
+@theme inline {
+  /* shadcn contract */
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+
+  /* Burrow / macOS additions */
+  --color-tint: var(--tint);
+  --color-control: var(--control);
+  --color-segment: var(--segment);
+  --color-fill: var(--fill);
+  --color-fill-strong: var(--fill-strong);
+  --color-faint: var(--text-3);
+  --color-link: var(--link);
+  --color-ok: var(--ok);
+  --color-ok-text: var(--ok-text);
+  --color-starting: var(--starting);
+  --color-starting-text: var(--starting-text);
+  --color-degraded: var(--degraded);
+  --color-degraded-text: var(--degraded-text);
+  --color-bad: var(--bad);
+  --color-bad-text: var(--bad-text);
+  --color-off: var(--off);
+}
+
+/* ---------------------------------------------------------------------------------------------
+   4. Tokens. Burrow names are the source of truth; shadcn names alias them. */
+@layer base {
+  :root {
+    color-scheme: light dark;
+
+    /* System accent. AccentColor needs WebKit 16.4 (macOS 13.3); older WebKit gets
+       -apple-system-control-accent, anything else the fallback (see @supports below). */
+    --accent-fallback: #007aff;
+    --tint: var(--accent-fallback);
+    /* Fill behind text that must be readable: the menu highlight, the default button, the
+       selected row. AppKit's selectedContentBackgroundColor is accent-derived but darker,
+       so white text on it passes AA (5.4:1) where white on AccentColor fails (4.0:1).
+       AccentColorText is not used: WebKit resolves it to black (checked in system
+       WKWebView, macOS 27), which is not what any native control does. */
+    --selection-fill: #0064e1;
+    --on-selection: #ffffff;
+
+    --bg: #f5f5f7;
+    --surface: #ffffff;
+    --surface-2: #fafafa;
+    --control: #ffffff;
+    --segment: #ffffff;
+    --sidebar-tint: rgb(240 240 243 / 0.55);
+    --popover-tint: rgb(250 250 252 / 0.55);
+    --menu: rgb(246 246 246 / 0.82);
+    --text-1: #1d1d1f;
+    --text-2: #6e6e73; /* AA on every surface (4.66:1 on --bg) */
+    --text-3: #8a8a8e; /* placeholder / disabled / decoration only: 3.2:1, not for content */
+    --line: rgb(0 0 0 / 0.085);
+    --line-strong: rgb(0 0 0 / 0.14);
+    --fill: rgb(0 0 0 / 0.05);
+    --fill-strong: rgb(0 0 0 / 0.09);
+    --hover: var(--fill);
+    --selected: color-mix(in srgb, var(--tint) 14%, transparent);
+    --code-bg: #f3f3f5;
+    --shadow: 0 1px 2px rgb(0 0 0 / 0.06), 0 0 0 0.5px rgb(0 0 0 / 0.08);
+    --link: #0068da;
+    --scrim: rgb(0 0 0 / 0.15);
+
+    /* Status: the plain token is for dots, badges and fills; -text is for words (AA). */
+    --ok: #2fb35a;
+    --ok-text: #1d7a3a;
+    --starting: #e0a000;
+    --starting-text: #8a5f00;
+    --degraded: #ee7a1a;
+    --degraded-text: #b04a00;
+    --bad: #e5484d;
+    --bad-text: #c4262e;
+    --off: #a1a1a6;
+
+    @variant dark {
+      --accent-fallback: #0a84ff;
+      --selection-fill: #0058d0;
+
+      --bg: #1c1c1e;
+      --surface: #232325;
+      --surface-2: #2a2a2d;
+      --control: rgb(255 255 255 / 0.1);
+      --segment: rgb(255 255 255 / 0.2);
+      --sidebar-tint: rgb(36 36 40 / 0.45);
+      --popover-tint: rgb(30 30 34 / 0.45);
+      --menu: rgb(40 40 42 / 0.82);
+      --text-1: #f5f5f7;
+      --text-2: #a1a1a6;
+      --text-3: #7c7c82;
+      --line: rgb(255 255 255 / 0.08);
+      --line-strong: rgb(255 255 255 / 0.14);
+      --fill: rgb(255 255 255 / 0.07);
+      --fill-strong: rgb(255 255 255 / 0.12);
+      --selected: color-mix(in srgb, var(--tint) 26%, transparent);
+      --code-bg: #1a1a1c;
+      --shadow: 0 1px 2px rgb(0 0 0 / 0.4), 0 0 0 0.5px rgb(255 255 255 / 0.08);
+      --link: #419cff;
+      --scrim: rgb(0 0 0 / 0.3);
+
+      --ok-text: #4cc76a;
+      --starting-text: #f0b429;
+      --degraded-text: #ff9f45;
+      --bad-text: #ff6b6b;
+      /* --off keeps #a1a1a6 in both themes, as before the migration (01 §3.3). */
+    }
+
+    /* shadcn aliases. menuAccent "bold" means accent == primary: the highlight is the
+       accent fill with white text, exactly like an NSMenu. */
+    --background: var(--bg);
+    --foreground: var(--text-1);
+    --card: var(--surface);
+    --card-foreground: var(--text-1);
+    --popover: var(--menu);
+    --popover-foreground: var(--text-1);
+    --primary: var(--selection-fill);
+    --primary-foreground: var(--on-selection);
+    --secondary: var(--control);
+    --secondary-foreground: var(--text-1);
+    --muted: var(--fill);
+    --muted-foreground: var(--text-2);
+    --accent: var(--selection-fill);
+    --accent-foreground: var(--on-selection);
+    --destructive: var(--bad-text);
+    --border: var(--line);
+    --input: var(--line-strong);
+    --ring: var(--tint);
+    /* One meaning for "sidebar": the translucent tint over the native Sidebar material. */
+    --sidebar: var(--sidebar-tint);
+    --sidebar-foreground: var(--text-1);
+    --sidebar-primary: var(--selection-fill);
+    --sidebar-primary-foreground: var(--on-selection);
+    --sidebar-accent: var(--selected);
+    --sidebar-accent-foreground: var(--text-1);
+    --sidebar-border: var(--line);
+    --sidebar-ring: var(--tint);
+    --radius: 8px;
+
+    /* Layout constants */
+    --toolbar-h: 52px;
+    --sheet-top: var(--toolbar-h);
+    --dur: 180ms;
+  }
+
+  :root[data-theme="light"] {
+    color-scheme: light;
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+  }
+}
+
+/* Real system colours where the engine has them. Outside @layer so the upgrade always wins.
+   They resolve per color-scheme, so dark mode needs no second copy. */
+@supports (color: -apple-system-control-accent) {
+  :root {
+    --tint: -apple-system-control-accent;
+  }
+}
+@supports (color: AccentColor) {
+  :root {
+    --tint: AccentColor;
+  }
+}
+@supports (color: -apple-system-selected-content-background) {
+  :root {
+    --selection-fill: -apple-system-selected-content-background;
+    --on-selection: -apple-system-alternate-selected-text;
+  }
+}
+
+/* ---------------------------------------------------------------------------------------------
+   5. Base. Everything is layered so Tailwind utilities can override it; nothing here uses
+   !important except the reduced-motion override. */
+@layer base {
+  html {
+    /* Leave the root font size at 16px: Tailwind's spacing scale is rem-based. Burrow's
+       13px goes on body. */
+    height: 100%;
+    overflow: hidden; /* no rubber-band scrolling of the whole page */
+    background: transparent; /* both windows are transparent over NSVisualEffectView */
+  }
+  body {
+    margin: 0;
+    height: 100%;
+    font-family: var(--font-sans);
+    font-size: var(--text-sm);
+    line-height: var(--text-sm--line-height);
+    color: var(--foreground);
+    background: transparent;
+    -webkit-font-smoothing: antialiased;
+    /* Labels and headings aren't selectable, as in AppKit; content opts in with select-text,
+       and inputs/pre/code below. */
+    -webkit-user-select: none;
+    user-select: none;
+    cursor: default;
+    overflow: hidden;
+  }
+  /* lucide draws 24px at stroke 2, heavier than SF Symbols at 13-15px.
+     A CSS stroke-width beats the presentation attribute; utilities still win. */
+  svg.lucide {
+    stroke-width: 1.75;
+  }
+  * {
+    border-color: var(--border);
+    outline-color: color-mix(in srgb, var(--ring) 50%, transparent);
+  }
+  /* App chrome is not selectable (like AppKit labels); content opts back in. */
+  button,
+  label,
+  [role="menuitem"],
+  [role="menuitemcheckbox"],
+  [role="menuitemradio"],
+  [role="option"],
+  [role="tab"],
+  [data-tauri-drag-region] {
+    -webkit-user-select: none;
+    user-select: none;
+  }
+  input,
+  textarea,
+  pre,
+  code,
+  .selectable {
+    -webkit-user-select: text;
+    user-select: text;
+  }
+  input,
+  textarea {
+    cursor: text;
+  }
+  /* Native <select>: Tailwind preflight gives it a background and radius, which makes WebKit
+     drop the AppKit bezel. Revert to the UA style so WebKit draws the real pop-up button and
+     opens a real NSMenu; 13px selects the regular control size. Utilities still win. */
+  select {
+    all: revert;
+    font-family: inherit;
+    font-size: var(--text-sm);
+  }
+  /* No ::-webkit-scrollbar rules: WKWebView then draws native overlay scrollbars that follow
+     System Settings > Appearance > Show scroll bars. */
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}

@@ -188,7 +188,7 @@
     overflow: auto;
     z-index: 11;
     background: var(--bg);
-    border-radius: var(--radius-lg);
+    border-radius: var(--radius-xl);
     box-shadow: 0 20px 50px rgba(0, 0, 0, 0.28), 0 0 0 0.5px var(--line-strong);
   }
   .tabs {
@@ -217,7 +217,7 @@
   .lead {
     margin: 0 0 12px;
     color: var(--text-2);
-    font-size: var(--text-sm);
+    font-size: var(--text-callout);
     line-height: 1.45;
   }
   .box {
@@ -280,13 +280,13 @@
   }
   .report {
     margin-top: 12px;
-    font-size: var(--text-sm);
+    font-size: var(--text-callout);
     line-height: 1.5;
   }
   .fail {
     margin-top: 8px;
     color: var(--bad);
-    font-size: var(--text-sm);
+    font-size: var(--text-callout);
     -webkit-user-select: text;
     user-select: text;
   }
@@ -300,7 +300,7 @@
     grid-template-columns: 120px 1fr;
     align-items: center;
     gap: 10px;
-    font-size: var(--text);
+    font-size: var(--text-sm);
   }
   .form label:has(textarea) {
     align-items: start;

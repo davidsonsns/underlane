@@ -72,8 +72,8 @@
     width: 5px;
     height: 5px;
     border-radius: 50%;
-    background: var(--accent);
-    box-shadow: 0 0 6px var(--accent);
+    background: var(--tint);
+    box-shadow: 0 0 6px var(--tint);
     animation: travel 650ms var(--ease-out) forwards;
   }
   @keyframes travel {
