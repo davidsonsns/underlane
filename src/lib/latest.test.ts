@@ -64,4 +64,24 @@ describe("latest", () => {
     await Promise.all(ps);
     expect(applied).toEqual([3]);
   });
+
+  it("rejects with the current job's error, and drops a superseded job's", async () => {
+    const l = latest();
+    const p1 = l.run(async () => {
+      throw new Error("current failed");
+    });
+    const caught = p1.catch((e: Error) => e.message);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(await caught).toBe("current failed");
+
+    let release!: () => void;
+    const p2 = l.run(async () => {
+      await new Promise<void>((r) => (release = r));
+      throw new Error("stale failure");
+    });
+    await vi.advanceTimersByTimeAsync(0);
+    l.cancel();
+    release();
+    await expect(p2).resolves.toBeUndefined();
+  });
 });

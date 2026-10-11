@@ -70,28 +70,45 @@
   });
 
   let loadedFor: string | null | undefined = undefined;
-  async function load() {
+  let loadGen = 0;
+  let loadKey: string | undefined;
+  let inflight: Promise<void> | null = null;
+  function load(): Promise<void> {
     if (loadedFor !== tunnelId) {
       // Switching tunnels: don't keep showing another tunnel's request.
       select(null);
       loadedFor = tunnelId;
     }
-    // A load answers for the tunnel and filter it asked about: if either changed meanwhile, a
-    // newer load is on its way and this result is dropped. Identical loads all apply, so the
-    // one selectFirst() awaits is never discarded by a concurrent twin.
+    // Each change of tunnel or filter starts a new generation, so a slow answer for an older one
+    // never lands, even after A -> B -> A. A load for the same generation while one is in flight
+    // shares it, so the one selectFirst() awaits is never discarded by a concurrent twin.
+    const key = `${tunnelId}\u0000${search}`;
+    if (key === loadKey && inflight) return inflight;
+    if (key !== loadKey) {
+      loadGen++;
+      loadKey = key;
+    }
+    const g = loadGen;
+    const current = () => g === loadGen;
     const t = tunnelId;
     const q = search;
-    const current = () => t === tunnelId && q === search;
     loading = true;
     error = null;
-    try {
-      const r = await api.listRequests(t, q);
-      if (current()) rows = r;
-    } catch (e) {
-      if (current()) error = errorText(e);
-    } finally {
-      if (current()) loading = false;
-    }
+    const run = (async () => {
+      try {
+        const r = await api.listRequests(t, q);
+        if (current()) rows = r;
+      } catch (e) {
+        if (current()) error = errorText(e);
+      } finally {
+        if (current()) loading = false;
+      }
+    })();
+    inflight = run;
+    run.finally(() => {
+      if (inflight === run) inflight = null;
+    });
+    return run;
   }
 
   $effect(() => {
@@ -131,6 +148,10 @@
 
   async function clear() {
     detailLoad.cancel();
+    // A list load still in flight answers from before the Clear: drop it.
+    loadGen++;
+    loadKey = undefined;
+    inflight = null;
     await api.clearRequests(tunnelId);
     rows = [];
     select(null);
