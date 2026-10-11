@@ -363,6 +363,39 @@ chevron).
 windowing goes wrong. Rejected: `@tanstack/svelte-virtual` (store-based adapter in a runes
 codebase).
 
+**virtua 0.53.3, measured (Phase 1, ui-lab in Playwright WebKit).** The `VList` API the port
+relies on exists and behaves: props `data`, `getKey`, `itemSize`, `shift`, `onscroll`,
+`keepMounted`; methods `scrollToIndex`, `getScrollOffset`, `getScrollSize`, `getViewportSize`
+(plus `scrollTo`, `scrollBy`, `findItemIndex`, `getItemOffset`, `getItemSize`). With 500 fixed
+28px rows in a 280px viewport: `getScrollSize()` 14000, `getViewportSize()` 280, 18 rows in the
+DOM at rest and 25 after a 600px wheel scroll; `onscroll` fired with offset 600. 3,000
+variable-height lines: 8 rows in the DOM, `scrollToIndex(last, { align: "end" })` lands at the end
+(offset + viewport = scroll size) with the last line mounted.
+- **`shift` needs a length change** (confirms 03-review R-21). Prepending 1 or 3 rows with
+  `shift: true` while scrolled down keeps the first visible row in place (offset 2810 → 2838 →
+  2922). At the 500-row cap (prepend + tail trim, length unchanged) `shift` does nothing: the offset
+  stays 2810 and the content moves by the number of prepended rows (first visible id 398 → 399,
+  399 → 402). Same at the 3,000-line cap for Logs (append 5 + head trim: 1500 → 1505, with or
+  without `shift`). Virtualizer.svelte only calls its length-change update when `data.length`
+  changes, which is where `shift` is read.
+- **What works at the cap.** Requests (fixed height): anchoring by hand keeps the view exactly
+  (3/3 rounds: record the first visible row's id and `offset − getItemOffset(index)`, update,
+  then `scrollTo(getItemOffset(newIndex) + delta)`). Logs (variable height): index-based anchoring
+  fails, because virtua's measured-size cache is per index and a head trim shifts every index.
+  What keeps the view in both lists is **deferring the trim while the user is scrolled away**: an
+  append without trim keeps the view (4/4 rounds), and a prepend without trim plus `shift: true`
+  keeps it (3/3). Trim once the user is back at the live edge (Logs following at the bottom,
+  Requests at the top), where the trimmed rows are off screen. Recommended for 2e/2f: the cap
+  becomes "at most N while following", with a hard ceiling for safety.
+- **`scrollToIndex` does not mount synchronously** (confirms R-22). After `scrollToIndex(400)` the
+  offset is 11200 immediately, but row 400 is in the DOM neither synchronously nor after a
+  microtask (so not after `await tick()` alone); it is there after one `requestAnimationFrame`.
+  Set `aria-activedescendant` only once `#req-<id>` exists (wait a frame, then check).
+- **`keepMounted` works.** Row 5 is unmounted after `scrollToIndex(450)` without it and stays
+  mounted with `keepMounted={[5]}` (27 rows in the DOM). An index that was never rendered
+  (`keepMounted={[480]}` while at the top) is mounted too. So the active row can't be recycled
+  under `aria-activedescendant` by pointer scrolling.
+
 **E2E snapshot mode.** The e2e harness asserts on `document.body.innerText`, which a virtualized
 list would truncate. A snapshot flag renders every row while the harness reads the text, so the
 assertions stay as they are.
@@ -371,8 +404,22 @@ assertions stay as they are.
 layers, `color-mix`), which macOS 13.3 ships. `minimumSystemVersion` is 13.3 and Vite's
 `build.target` is `safari16.4` (owner decision, 2026-10-11).
 
+**Class merging (Phase 1).** `cn` is `createCn` with Burrow's `text-2xs`/`text-callout`/`text-code`
+in the font-size group: unconfigured, it read them as colours and dropped them next to one
+(`cn("text-callout text-muted-foreground")` → `text-muted-foreground`). `tv` is
+tailwind-variants' lite build, which never merges; `cn(variants(…), className)` merges once.
+`src/lib/utils.test.ts` pins this.
+
+**Placeholder contrast (Phase 1).** Placeholders use `--text-placeholder` (light `#6e6e73`, dark
+`#aeaeb2`, ≥ 4.5:1 on every field background), not `--text-3`, which stays for disabled text and
+decoration. WCAG 1.4.3 covers placeholder text.
+
 **Cost.** Phase 0 (tooling and tokens, no components) grew the shared CSS chunk from 2.4 to
-5.5 kB gzip and left JS unchanged. Budgets for the finished port: popover JS ≤ 70 kB gzip,
+5.5 kB gzip and left JS unchanged. Phase 1 (all components installed, Toaster and Tooltip
+provider mounted in both windows, nothing using them yet): popover JS 61.5 kB gzip (3.5 entry +
+58.0 shared), dashboard JS 80.8 kB, CSS 16.3 kB (popover) and 19.5 kB (dashboard), the shared
+chunk carrying every installed component's utilities and sonner's stylesheet. Under the popover
+budget, so sonner stays statically imported (no lazy load). Budgets for the finished port: popover JS ≤ 70 kB gzip,
 dashboard JS ≤ 150 kB, CSS ≤ 20 kB per page.
 
 **Alternatives rejected.** Bits UI alone with hand-written styles (an earlier spike: every
