@@ -15,7 +15,9 @@
   import RouteLine from "$lib/components/app/RouteLine.svelte";
   import Icon from "$lib/components/app/Icon.svelte";
   import StatePanel from "$lib/components/app/StatePanel.svelte";
-  import * as Tooltip from "$lib/components/ui/tooltip/index.js";
+  // The provider alone, not the ui/tooltip barrel: the barrel puts Tooltip.Content and
+  // floating-ui (used by the dashboard) in the shared chunk, about +20 kB gzip for the popover.
+  import TooltipProvider from "$lib/components/ui/tooltip/tooltip-provider.svelte";
   import { Toaster } from "$lib/components/ui/sonner/index.js";
   import { notify } from "$lib/toast";
 
@@ -83,7 +85,7 @@
 <!-- The popover hides on blur (tray.rs); drop toasts so a stale one doesn't reappear. -->
 <svelte:window onblur={() => notify.dismiss()} />
 
-<Tooltip.Provider delayDuration={250} ignoreNonKeyboardFocus>
+<TooltipProvider delayDuration={250} ignoreNonKeyboardFocus>
 <main class="popover">
   <header>
     <div class="title">
@@ -175,7 +177,7 @@
   offset={{ bottom: 52 }}
   mobileOffset={{ bottom: 52, left: 20, right: 20 }}
 />
-</Tooltip.Provider>
+</TooltipProvider>
 
 <style>
   :global(.popover-body) {
