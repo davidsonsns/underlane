@@ -1,14 +1,15 @@
 <script lang="ts">
   // A tunnel's ingress rules as an aligned table: public hostname, then the local service.
   // Each service is probed while the window is visible so it's obvious which ones are running.
-  import { writeText } from "@tauri-apps/plugin-clipboard-manager";
   import { openUrl } from "@tauri-apps/plugin-opener";
   import { store } from "../lib/store.svelte";
   import { api } from "../lib/api";
   import { reachSummary, serviceLabel, shortService } from "../lib/format";
   import type { Tunnel } from "../lib/types";
-  import { tooltip } from "../lib/tooltip";
-  import Icon from "$lib/components/app/Icon.svelte";
+  import { mergeProps } from "bits-ui";
+  import CopyButton from "$lib/components/app/CopyButton.svelte";
+  import Tip from "$lib/components/app/Tip.svelte";
+  import { kbRing } from "$lib/components/ui/mac";
 
   let { tunnel }: { tunnel: Tunnel } = $props();
   const PROBE_EVERY_MS = 3000;
@@ -82,217 +83,93 @@
     openUrl(url);
   }
 
+  const dot: Record<Reach, string> = {
+    up: "bg-ok",
+    ready: "bg-off",
+    down: "bg-bad",
+    idle: "shadow-[inset_0_0_0_1.5px_var(--off)]",
+    none: "invisible", // keeps the column width so services stay aligned
+  };
+  const link = `cursor-pointer select-none rounded-xs hover:underline ${kbRing}`;
+  const headingId = $props.id();
+
   function hostOf(m: (typeof routes)[number]): string | null {
     if (tunnel.kind === "quick") return s.public_url?.replace("https://", "") ?? null;
     return m.hostname;
   }
 </script>
 
-<section>
-  <div class="heading">
-    <h2>Routes</h2>
+<section class="mt-5.5" aria-labelledby={headingId}>
+  <div class="mb-2 ms-0.5 flex items-baseline justify-between gap-3">
+    <h2 id={headingId} class="text-sm font-semibold">Routes</h2>
     {#if summary}
-      <span class="summary" class:alert={live && upCount < probed.length} role="status">{summary}</span>
+      <span class="text-xs {live && upCount < probed.length ? 'text-bad-text' : 'text-muted-foreground'}" role="status">{summary}</span>
     {/if}
   </div>
 
   {#if routes.length === 0}
-    <p class="empty">
+    <p class="mx-0.5 text-xs text-muted-foreground">
       {#if tunnel.kind === "token"}Routes for token tunnels are configured in the Cloudflare dashboard. They appear here once the tunnel connects.{:else}This tunnel has no routes.{/if}
     </p>
   {:else}
-    <ul class="routes">
+    <!-- routes-grid / routes-row (app.css): rows are subgrids, so every service sits in one right-hand column. -->
+    <ul class="routes-grid rounded-lg bg-card shadow-(--shadow)">
       {#each routes as m, i (i)}
         {@const host = hostOf(m)}
         {@const r = reachOf(m.service)}
+        {@const tip = reachTip(m.service, r)}
         {@const linkable = live && host && !host.includes("*")}
-        <li>
-          <span class="host">
+        <li class="group/route routes-row min-h-9 items-center px-3 py-1.5 not-first:border-t-[0.5px] not-first:border-border">
+          <span class="flex min-w-0 items-center gap-1">
             {#if linkable}
               <!-- The path is a regex in cloudflared, so the link opens the hostname alone. -->
-              <a class="name link" href="https://{host}" title="Open https://{host}" onclick={(e) => open(e, `https://${host}`)}>
-                {host}{#if m.path}<span class="path">{m.path}</span>{/if}
-              </a>
+              <Tip text="Open https://{host}">
+                {#snippet children({ props })}
+                  <a {...mergeProps(props, { onclick: (e: MouseEvent) => open(e, `https://${host}`) })} href="https://{host}" class="truncate text-foreground {link}">
+                    {host}{#if m.path}<span class="text-muted-foreground">{m.path}</span>{/if}
+                  </a>
+                {/snippet}
+              </Tip>
+              <CopyButton
+                value="https://{host}"
+                what="URL"
+                tip="Copy https://{host}"
+                size="icon-sm"
+                class="opacity-0 transition-opacity duration-(--dur) group-hover/route:opacity-100 focus-visible:opacity-100"
+              />
             {:else}
-              <span class="name" class:other={!host} title={host ? `${host}${m.path ?? ""}` : undefined}>
-                {#if host}{host}{:else if tunnel.kind === "quick"}Assigned when connected{:else}Any other hostname{/if}{#if m.path}<span class="path">{m.path}</span>{/if}
+              <!-- Truncated, so the native title reveals the whole string (02 §2 Tip exception). -->
+              <span class="truncate select-text {host ? 'text-foreground' : 'text-muted-foreground'}" title={host ? `${host}${m.path ?? ""}` : undefined}>
+                {#if host}{host}{:else if tunnel.kind === "quick"}Assigned when connected{:else}Any other hostname{/if}{#if m.path}<span class="text-muted-foreground">{m.path}</span>{/if}
               </span>
             {/if}
-            {#if linkable}
-              <button class="icon-btn copy" title="Copy https://{host}" aria-label="Copy https://{host}" onclick={() => writeText(`https://${host}`)}><Icon name="copy" size={13} /></button>
-            {/if}
           </span>
-          <span class="svc" class:other={r === "none"} use:tooltip={reachTip(m.service, r)}>
-            <span class="reach {r}" role={r === "none" ? undefined : "img"} aria-label={r === "none" ? undefined : reachTip(m.service, r)}>
-              <!-- Requests through an inspected route flash the dot, like a network activity light. -->
-              {#key store.pulses[tunnel.id]}
-                {#if m.inspected && store.pulses[tunnel.id]}<span class="ping"></span>{/if}
-              {/key}
-            </span>
+          <span class="flex items-center gap-1.75 justify-self-end text-callout whitespace-nowrap text-muted-foreground">
+            <Tip text={tip ?? ""} disabled={!tip}>
+              {#snippet children({ props })}
+                <!-- The dot itself is the trigger (no extra button); ::before widens the 7px hover target. -->
+                <span
+                  {...{ ...props, tabindex: undefined }}
+                  role={tip ? "img" : undefined}
+                  aria-label={tip}
+                  class="relative size-1.75 flex-none rounded-full transition-[background-color,box-shadow] duration-240 before:absolute before:-inset-1 {dot[r]}"
+                >
+                  <!-- Requests through an inspected route flash the dot, like a network activity light. -->
+                  {#key store.pulses[tunnel.id]}
+                    {#if m.inspected && store.pulses[tunnel.id]}<span class="absolute inset-0 animate-route-ping rounded-full bg-tint motion-reduce:hidden"></span>{/if}
+                  {/key}
+                </span>
+              {/snippet}
+            </Tip>
             {#if /^https?:\/\//.test(m.service)}
-              <a class="link mono" href={m.service} onclick={(e) => open(e, m.service)}>{shortService(m.service)}</a>
+              <a href={m.service} class="font-mono {link}" onclick={(e) => open(e, m.service)}>{shortService(m.service)}</a>
             {:else}
-              <span class:mono={serviceLabel(m.service) === shortService(m.service)}>{serviceLabel(m.service)}</span>
+              <span class={serviceLabel(m.service) === shortService(m.service) ? "font-mono select-text" : undefined}>{serviceLabel(m.service)}</span>
             {/if}
           </span>
-          {#if m.note && tunnel.inspect}<span class="note">{m.note}</span>{/if}
+          {#if m.note && tunnel.inspect}<span class="col-span-full mt-0.5 text-xs text-muted-foreground">{m.note}</span>{/if}
         </li>
       {/each}
     </ul>
   {/if}
 </section>
-
-<style>
-  section {
-    margin-top: 22px;
-  }
-  .heading {
-    display: flex;
-    align-items: baseline;
-    justify-content: space-between;
-    gap: 12px;
-    margin-bottom: 8px;
-  }
-  h2 {
-    margin: 0;
-    font-size: var(--text-sm);
-    font-weight: 600;
-  }
-  .summary {
-    font-size: var(--text-xs);
-    color: var(--text-2);
-  }
-  .summary.alert {
-    color: var(--bad);
-  }
-  .empty {
-    margin: 0 2px;
-    font-size: var(--text-xs);
-    color: var(--text-2);
-  }
-
-  /* One grid for the whole list (rows are subgrids), so every service lines up in one column
-     flush with the right edge, however long the hostname in front of it is. */
-  .routes {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) max-content;
-    column-gap: 16px;
-    list-style: none;
-    margin: 0;
-    padding: 0;
-    background: var(--surface);
-    border-radius: var(--radius);
-    box-shadow: var(--shadow);
-  }
-  .routes li {
-    display: grid;
-    grid-column: 1 / -1;
-    grid-template-columns: subgrid;
-    align-items: center;
-    min-height: 36px;
-    padding: 6px 12px;
-  }
-  .routes li + li {
-    border-top: 0.5px solid var(--line);
-  }
-
-  .host {
-    display: flex;
-    align-items: center;
-    gap: 4px;
-    min-width: 0;
-  }
-  .name {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    color: var(--text-1);
-    user-select: text;
-  }
-  .link {
-    color: inherit;
-    text-decoration: none;
-    cursor: pointer;
-    user-select: none;
-  }
-  .link:hover {
-    text-decoration: underline;
-  }
-  .link:focus-visible {
-    outline: 2px solid var(--tint);
-    outline-offset: 2px;
-    border-radius: 3px;
-  }
-  .path {
-    color: var(--text-2);
-  }
-  .other {
-    color: var(--text-2);
-  }
-
-  .svc {
-    justify-self: end;
-    display: flex;
-    align-items: center;
-    gap: 7px;
-    font-size: var(--text-callout);
-    color: var(--text-2);
-    white-space: nowrap;
-  }
-  .reach {
-    position: relative;
-    flex: none;
-    width: 7px;
-    height: 7px;
-    border-radius: 50%;
-    transition: background-color 240ms ease, box-shadow 240ms ease;
-  }
-  .reach.up {
-    background: var(--ok);
-  }
-  .reach.ready {
-    background: var(--off);
-  }
-  .reach.down {
-    background: var(--bad);
-  }
-  .reach.idle {
-    box-shadow: inset 0 0 0 1.5px var(--off);
-  }
-  .ping {
-    position: absolute;
-    inset: 0;
-    border-radius: 50%;
-    background: var(--tint);
-    animation: ping 650ms var(--ease-out) forwards;
-  }
-  @keyframes ping {
-    from { transform: scale(1); opacity: 0.9; }
-    to { transform: scale(3); opacity: 0; }
-  }
-  @media (prefers-reduced-motion: reduce) {
-    .ping { display: none; }
-  }
-  .svc.other .reach {
-    visibility: hidden;
-  }
-
-  .copy {
-    flex: none;
-    width: 20px;
-    height: 20px;
-    opacity: 0;
-    transition: opacity var(--dur) ease;
-  }
-  li:hover .copy,
-  .copy:focus-visible {
-    opacity: 1;
-  }
-
-  .note {
-    grid-column: 1 / -1;
-    margin-top: 2px;
-    font-size: var(--text-xs);
-    color: var(--text-2);
-  }
-</style>
