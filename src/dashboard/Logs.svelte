@@ -192,7 +192,7 @@
     flex: 1;
     overflow: auto;
     padding: 6px 0 12px;
-    font-family: var(--mono);
+    font-family: var(--font-mono);
     font-size: 11.5px;
   }
   .line {

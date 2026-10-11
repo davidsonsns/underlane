@@ -155,7 +155,7 @@
   }
   h2 {
     margin: 0;
-    font-size: var(--text);
+    font-size: var(--text-sm);
     font-weight: 600;
   }
   .summary {
@@ -219,7 +219,7 @@
     text-decoration: underline;
   }
   .link:focus-visible {
-    outline: 2px solid var(--accent);
+    outline: 2px solid var(--tint);
     outline-offset: 2px;
     border-radius: 3px;
   }
@@ -235,7 +235,7 @@
     display: flex;
     align-items: center;
     gap: 7px;
-    font-size: var(--text-sm);
+    font-size: var(--text-callout);
     color: var(--text-2);
     white-space: nowrap;
   }
@@ -263,7 +263,7 @@
     position: absolute;
     inset: 0;
     border-radius: 50%;
-    background: var(--accent);
+    background: var(--tint);
     animation: ping 650ms var(--ease-out) forwards;
   }
   @keyframes ping {

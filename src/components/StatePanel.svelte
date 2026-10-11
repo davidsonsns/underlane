@@ -37,11 +37,11 @@
   .title {
     color: var(--text-1);
     font-weight: 600;
-    font-size: var(--text);
+    font-size: var(--text-sm);
   }
   .msg {
     max-width: 320px;
-    font-size: var(--text-sm);
+    font-size: var(--text-callout);
     line-height: 1.45;
   }
   .actions {

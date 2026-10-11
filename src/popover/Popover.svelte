@@ -184,7 +184,7 @@
     flex-direction: column;
   }
   .title strong {
-    font-size: var(--text);
+    font-size: var(--text-sm);
     font-weight: 600;
   }
   .summary {
@@ -193,7 +193,7 @@
   }
   .small {
     height: 22px;
-    font-size: var(--text-sm);
+    font-size: var(--text-callout);
   }
   .banner {
     display: flex;
@@ -203,11 +203,11 @@
     padding: 8px 10px;
     border-radius: var(--radius);
     background: color-mix(in srgb, var(--degraded) 14%, transparent);
-    font-size: var(--text-sm);
+    font-size: var(--text-callout);
     line-height: 1.35;
   }
   .banner code {
-    font-family: var(--mono);
+    font-family: var(--font-mono);
     font-size: 11px;
   }
   .list {
@@ -287,7 +287,7 @@
     border-radius: 999px;
     background: var(--text-1);
     color: var(--bg);
-    font-size: var(--text-sm);
+    font-size: var(--text-callout);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;

@@ -113,7 +113,7 @@
     align-items: center;
     gap: 10px;
     margin-top: 6px;
-    font-size: var(--text-sm);
+    font-size: var(--text-callout);
     flex-wrap: wrap;
   }
   .status { font-weight: 600; }
@@ -124,7 +124,7 @@
   .error {
     margin-top: 8px;
     color: var(--bad);
-    font-size: var(--text-sm);
+    font-size: var(--text-callout);
   }
   .tabs {
     display: flex;
@@ -150,7 +150,7 @@
   }
   h3 {
     margin: 12px 0 6px;
-    font-size: var(--text-sm);
+    font-size: var(--text-callout);
     font-weight: 600;
   }
   .headers {
@@ -226,7 +226,7 @@
     padding: 10px 12px;
     border-radius: var(--radius);
     background: var(--code-bg);
-    font-family: var(--mono);
+    font-family: var(--font-mono);
     font-size: 11.5px;
     line-height: 1.5;
     white-space: pre-wrap;
@@ -243,6 +243,6 @@
     border-radius: var(--radius);
     background: var(--code-bg);
     color: var(--text-2);
-    font-size: var(--text-sm);
+    font-size: var(--text-callout);
   }
 </style>
