@@ -35,9 +35,11 @@
   const current = $derived(store.tunnels.find((t) => t.id === selected) ?? null);
   const anyOn = $derived(store.tunnels.some(isOn));
   let list = $state<HTMLElement | null>(null);
+  let emptyAdd = $state<HTMLElement | null>(null);
 
   // TunnelDetail's Remove: select the next tunnel in list order (else the previous one) and
-  // focus it in the list, since the detail that held focus unmounts (02 2b).
+  // focus it in the list, since the detail that held focus unmounts (02 2b). Removing the last
+  // tunnel focuses the empty state's Add tunnel instead of leaving focus on <body>.
   async function remove(id: string) {
     const order = groups.flatMap((g) => g.tunnels);
     const i = order.findIndex((t) => t.id === id);
@@ -47,6 +49,7 @@
     await store.refresh();
     await tick();
     if (next) list?.querySelector<HTMLElement>(`[data-tunnel-id="${next.id}"]`)?.focus();
+    else emptyAdd?.focus();
   }
 </script>
 
@@ -72,7 +75,7 @@
   {:else if store.tunnels.length === 0}
     <div class="empty">
       <StatePanel kind="empty" title="Set up your first tunnel" message="Burrow runs cloudflared for you. Import the config files you already have, paste a token from the Cloudflare dashboard, or share a local port with a quick tunnel; no account needed for that one.">
-        <button class="btn primary" onclick={onadd}>Add tunnel</button>
+        <button class="btn primary" bind:this={emptyAdd} onclick={onadd}>Add tunnel</button>
       </StatePanel>
     </div>
   {:else}

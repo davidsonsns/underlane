@@ -100,10 +100,14 @@
   // Rename (02 F7). Enter commits once, Escape never saves, and a blur commits only while still
   // editing (so the Enter/Escape that closed the field can't save again). Focus goes back to
   // the name only after Enter or Escape; a blur leaves it where the user clicked or tabbed.
+  // Only an edit saves: comparing with the name at edit start (not the live one) keeps a rename
+  // made elsewhere meanwhile from being overwritten by an untouched field.
   let mode = $state<"idle" | "editing" | "done">("idle");
+  let nameAtStart = "";
+  const renameHintId = $props.id();
 
   async function startRename() {
-    nameDraft = tunnel.name;
+    nameDraft = nameAtStart = tunnel.name;
     mode = "editing";
     await tick();
     nameInput?.focus();
@@ -114,7 +118,7 @@
     if (mode !== "editing") return;
     mode = "done";
     const name = nameDraft.trim();
-    if (name && name !== tunnel.name) patch({ name });
+    if (name && name !== nameAtStart) patch({ name });
   }
 
   async function close(refocus: boolean) {
@@ -195,15 +199,18 @@
         }}
       />
     {:else}
+      <!-- A permanent "Rename" description: the Tip's aria-describedby exists only while it's open.
+           -0.01em: the title's tighter tracking, a one-off. -->
       <Tip text="Rename">
         {#snippet children({ props })}
           <button
-            {...mergeProps(props, { onclick: startRename })}
+            {...mergeProps(props, { onclick: startRename, "aria-describedby": renameHintId })}
             bind:this={nameButton}
             class="cursor-text rounded-sm text-left text-xl font-semibold tracking-[-0.01em] {kbRing}">{tunnel.name}</button
           >
         {/snippet}
       </Tip>
+      <span id={renameHintId} class="sr-only">Rename</span>
     {/if}
   </div>
   <div class="flex gap-3 ps-5 text-callout">
@@ -303,7 +310,8 @@
   <SettingsRow label="Type"><span class="text-muted-foreground">{kindText[tunnel.kind]}</span></SettingsRow>
   {#if tunnel.kind === "config" && tunnel.config_path}
     <SettingsRow label="Config file">
-      <!-- Truncated, so the native title reveals the whole path (02 §2 Tip exception). -->
+      <!-- Truncated, so the native title reveals the whole path (02 §2 Tip exception). 55%: leaves
+           the label and the Show in Finder button their room, a one-off. -->
       <span class="max-w-[55%] truncate font-mono text-callout text-muted-foreground select-text" title={tunnel.config_path}>{tunnel.config_path}</span>
       <IconAction label="Show in Finder" onclick={() => revealItemInDir(tunnel.config_path!).catch((e) => notify.error(e, "Couldn't show the config file"))}><FolderOpen /></IconAction>
     </SettingsRow>
