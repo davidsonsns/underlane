@@ -284,6 +284,10 @@
     {/if}
   </div>
   {#if !follow}
-    <Button variant="outline" class="absolute right-[18px] bottom-3.5 z-20 shadow-(--shadow)" onclick={jump}>Jump to latest</Button>
+    <!-- An opaque base under the push button: its dark-mode fill is translucent, and the lines
+         scroll underneath. -->
+    <div class="absolute right-[18px] bottom-3.5 z-20 rounded-md bg-background shadow-(--shadow)">
+      <Button variant="outline" onclick={jump}>Jump to latest</Button>
+    </div>
   {/if}
 </div>
