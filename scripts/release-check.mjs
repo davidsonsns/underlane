@@ -19,7 +19,8 @@ const DB = join(homedir(), "Library/Application Support/com.davidsonsns.burrow/b
 const OUT = "docs/screenshots";
 const log = (m) => console.log(`[release-check] ${m}`);
 const sh = (cmd, args) => execFileSync(cmd, args).toString().trim();
-const sql = (q) => sh("sqlite3", [DB, q]);
+// .timeout: wait up to 5s for Burrow's write lock instead of failing with "database is locked".
+const sql = (q) => sh("sqlite3", ["-cmd", ".timeout 5000", DB, q]);
 const extras = (app) => sh("swift", ["scripts/menubar-extras.swift", app]).split("\n")
   .map((l) => l.match(/^(\d+) x=(-?\d+) w=(\d+)/)).filter(Boolean).map((m) => ({ x: +m[2], w: +m[3] }));
 const click = (x, y) => execFileSync("swift", ["scripts/click.swift", String(Math.round(x)), String(Math.round(y))]);
@@ -39,9 +40,9 @@ const theme = () => sql("SELECT json_extract(value,'$.theme') FROM settings WHER
 //   off on the Phase 0 baseline: they hit Logs and the brand.)
 // - Appearance (Settings, General group, 4th row): segment centres at y=368; System 864,
 //   Light 922, Dark 973 (the old 770/832/886,327 land on the "This launch" row).
-//   The control is right-aligned in the 760px column centred in the 880px content pane, so a
-//   different scroll-bar setting moves it by half the scroll bar's width at most, still inside
-//   each 48-65px segment.
+//   The control is right-aligned in the 760px column centred in the 880px content pane. The
+//   pane's scroll bar (base.css still draws a fixed 10px one) can move it left by about its
+//   width; that stays inside each 48-65px segment (half-widths of 24px or more).
 // The screen layouts change in Phases 2h (shell) and 2i (popover); re-measure then.
 const AT = { tunnels: [60, 92], settings: [60, 179], system: [864, 368], light: [922, 368], dark: [973, 368] };
 
@@ -59,8 +60,9 @@ log(`seeded tunnel: ${sql(`SELECT name, kind, inspect, autostart FROM tunnels WH
 
 let expanded = false;
 const themeBefore = theme();
+const loginBefore = JSON.parse(sh(BIN, ["--login-item", "status"]));
 try {
-  log(`login item before: ${sh(BIN, ["--login-item", "status"])}`);
+  log(`login item before: ${JSON.stringify(loginBefore)}`);
   log(`login item enable: ${sh(BIN, ["--login-item", "enable"])}`);
 
   // Login-style launch: LaunchServices, no arguments, no terminal.
@@ -127,18 +129,43 @@ try {
   capture("23-release-settings-dark.png", 700);
   await pickTheme("system"); // back to System
 } finally {
-  execFileSync("osascript", ["-e", 'quit app "Burrow"']);
-  await sleep(5000);
-  log(`after quit, Burrow/cloudflared processes left: ${execFileSync("sh", ["-c", "ps -axo command | grep -cE '[B]urrow.app/Contents/MacOS|[c]om.davidsonsns.burrow/neutral' || true"]).toString().trim()}`);
-  // After a failed theme check the owner's settings may be left on Light or Dark. Burrow has
-  // quit, so the row can be put back directly.
-  if (themeBefore && theme() !== themeBefore) {
-    sql(`UPDATE settings SET value=json_set(value,'$.theme','${themeBefore}') WHERE key='settings'`);
-    log(`theme put back to ${themeBefore}`);
+  // Every restore step runs even if an earlier one throws; failures are reported at the end.
+  const failed = [];
+  const step = async (name, fn) => {
+    try {
+      await fn();
+    } catch (e) {
+      failed.push(`${name}: ${e.message}`);
+      log(`CLEANUP FAILED (${name}): ${e.message}`);
+    }
+  };
+  await step("quit Burrow", async () => {
+    execFileSync("osascript", ["-e", 'quit app "Burrow"']);
+    await sleep(5000);
+    log(`after quit, Burrow/cloudflared processes left: ${execFileSync("sh", ["-c", "ps -axo command | grep -cE '[B]urrow.app/Contents/MacOS|[c]om.davidsonsns.burrow/neutral' || true"]).toString().trim()}`);
+  });
+  await step("stop the origin server", () => {
+    try { process.kill(-origin.pid); } catch { origin.kill(); }
+  });
+  await step("restore the login item", () => {
+    log(`login item ${loginBefore.enabled ? "re-enable" : "disable"}: ${sh(BIN, ["--login-item", loginBefore.enabled ? "enable" : "disable"])}`);
+  });
+  await step("remove the seeded tunnel", () => {
+    sql(`DELETE FROM tunnels WHERE id='${TID}'; DELETE FROM logs WHERE tunnel_id='${TID}'; DELETE FROM requests WHERE tunnel_id='${TID}'; DELETE FROM projects WHERE id NOT IN (SELECT project_id FROM tunnels);`);
+    log(`tunnels left in the real data folder: ${sql("SELECT name, autostart FROM tunnels")}`);
+  });
+  // The run ends on System; put the owner's theme back (Burrow has quit, so write the row).
+  await step("restore the theme", () => {
+    if (themeBefore && theme() !== themeBefore) {
+      sql(`UPDATE settings SET value=json_set(value,'$.theme','${themeBefore}') WHERE key='settings'`);
+    }
+    log(`theme now: ${theme()} (before the run: ${themeBefore})`);
+  });
+  await step("collapse Hidden Bar", () => {
+    if (expanded) { const c = extras("Hidden Bar")[0]; click(c.x + c.w / 2, 12); }
+  });
+  if (failed.length) {
+    process.exitCode = 1;
+    log(`cleanup incomplete, check by hand: ${failed.join("; ")}`);
   }
-  log(`login item disable: ${sh(BIN, ["--login-item", "disable"])}`);
-  sql(`DELETE FROM tunnels WHERE id='${TID}'; DELETE FROM logs WHERE tunnel_id='${TID}'; DELETE FROM requests WHERE tunnel_id='${TID}'; DELETE FROM projects WHERE id NOT IN (SELECT project_id FROM tunnels);`);
-  log(`tunnels left in the real data folder: ${sql("SELECT name, autostart FROM tunnels")}`);
-  try { process.kill(-origin.pid); } catch { origin.kill(); }
-  if (expanded) { const c = extras("Hidden Bar")[0]; click(c.x + c.w / 2, 12); }
 }

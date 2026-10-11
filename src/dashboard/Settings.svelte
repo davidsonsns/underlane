@@ -25,6 +25,9 @@
   let redactText = $state("");
   let redactQueryText = $state("");
 
+  // data-field → the draft key it edits; a focused field keeps its typed value (see below).
+  const KEEP: Record<string, keyof Settings> = { path: "cloudflared_path", ttl: "log_ttl_days", "max-db": "max_db_mb", "max-body": "max_body_kb" };
+
   // Follow changes made elsewhere (another window, the tray) as well as the initial load.
   $effect(() => {
     const s = store.overview?.settings;
@@ -33,7 +36,8 @@
     untrack(() => {
       // Don't clobber a field the user is typing in.
       const focused = document.activeElement?.getAttribute("data-field");
-      if (draft && focused === "path") snap.cloudflared_path = draft.cloudflared_path;
+      const key = focused && KEEP[focused];
+      if (draft && key) (snap as Record<string, unknown>)[key] = draft[key];
       draft = snap;
       if (focused !== "redact") redactText = snap.redact_headers.join(", ");
       if (focused !== "redact-query") redactQueryText = (snap.redact_query ?? []).join(", ");
@@ -154,7 +158,7 @@
         <SettingsRow label="Keep logs and requests for" help="Older entries are deleted automatically.">
           {#snippet control({ id, describedBy })}
             <InputGroup.Root class="w-28">
-              <InputGroup.Input {id} aria-describedby={describedBy} type="number" min="1" max="365" class="text-right" value={draft!.log_ttl_days} onchange={(e) => save({ log_ttl_days: num(e) })} />
+              <InputGroup.Input {id} aria-describedby={describedBy} data-field="ttl" type="number" min="1" max="365" class="text-right" bind:value={draft!.log_ttl_days} onchange={(e) => save({ log_ttl_days: num(e) })} />
               <InputGroup.Addon align="inline-end">days</InputGroup.Addon>
             </InputGroup.Root>
           {/snippet}
@@ -162,14 +166,14 @@
         <SettingsRow label="Maximum database size" help="The oldest entries go first when this is reached.">
           {#snippet control({ id, describedBy })}
             <InputGroup.Root class="w-28">
-              <InputGroup.Input {id} aria-describedby={describedBy} type="number" min="16" step="16" class="text-right" value={draft!.max_db_mb} onchange={(e) => save({ max_db_mb: num(e) })} />
+              <InputGroup.Input {id} aria-describedby={describedBy} data-field="max-db" type="number" min="16" step="16" class="text-right" bind:value={draft!.max_db_mb} onchange={(e) => save({ max_db_mb: num(e) })} />
               <InputGroup.Addon align="inline-end">MB</InputGroup.Addon>
             </InputGroup.Root>
           {/snippet}
         </SettingsRow>
         <SettingsRow label="Data folder">
           {@render path(store.overview?.data_dir)}
-          <IconAction label="Show in Finder" onclick={() => store.overview && revealItemInDir(store.overview.data_dir + "/burrow.db")}><FolderOpen /></IconAction>
+          <IconAction label="Show in Finder" onclick={() => store.overview && revealItemInDir(store.overview.data_dir + "/burrow.db").catch((e) => notify.error(e, "Couldn't show the data folder"))}><FolderOpen /></IconAction>
         </SettingsRow>
       </SettingsGroup>
 
@@ -177,7 +181,7 @@
         <SettingsRow label="Body capture limit" help="Bodies larger than this are stored truncated. 0 keeps headers only.">
           {#snippet control({ id, describedBy })}
             <InputGroup.Root class="w-28">
-              <InputGroup.Input {id} aria-describedby={describedBy} type="number" min="0" max="16384" class="text-right" value={draft!.max_body_kb} onchange={(e) => save({ max_body_kb: num(e) })} />
+              <InputGroup.Input {id} aria-describedby={describedBy} data-field="max-body" type="number" min="0" max="16384" class="text-right" bind:value={draft!.max_body_kb} onchange={(e) => save({ max_body_kb: num(e) })} />
               <InputGroup.Addon align="inline-end">KB</InputGroup.Addon>
             </InputGroup.Root>
           {/snippet}
