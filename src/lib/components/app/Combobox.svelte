@@ -1,18 +1,20 @@
 <script lang="ts">
   // Pick one of `items` or create a new one (02 F6, NSComboBox-like): a pop-up Button opens a
-  // filterable list (ui/popover + ui/command). Text that matches no item offers
-  // `Create "<text>"`. Enter commits the highlighted row, Escape closes, and focus goes back to
-  // the trigger explicitly (02 R7: WebKit doesn't focus a button on click), unless an outside
-  // click put it in another field.
+  // filterable list (ui/popover + ui/command). It opens on the current value. Typed text filters
+  // by substring and offers `Create "<text>"` first unless it names an item (comboRows). Enter
+  // commits the highlighted row, Escape closes, and focus goes back to the trigger explicitly
+  // (02 R7: WebKit doesn't focus a button on click), unless an outside click put it in another field.
   //   <Combobox value={project} items={names} placeholder="Move to project…" onpick={(name) => …} />
   import Check from "@lucide/svelte/icons/check";
   import ChevronsUpDown from "@lucide/svelte/icons/chevrons-up-down";
   import * as Popover from "$lib/components/ui/popover/index.js";
+  import { Command as CommandPrimitive } from "bits-ui";
   import * as Command from "$lib/components/ui/command/index.js";
   import { Button } from "$lib/components/ui/button/index.js";
   import { returnFocusOnClose } from "$lib/focus";
   import { menuIndicator } from "$lib/components/ui/mac";
   import { cn } from "$lib/utils";
+  import { comboRows } from "$lib/combobox";
 
   let {
     value,
@@ -42,8 +44,9 @@
 
   let trigger = $state<HTMLElement | null>(null);
   let query = $state("");
-  const typed = $derived(query.trim());
-  const canCreate = $derived(typed !== "" && !items.some((x) => x.toLowerCase() === typed.toLowerCase()));
+  const rows = $derived(comboRows(items, query));
+  // The Create row's Bits value: leading whitespace, so it can't equal a (trimmed) item name.
+  const CREATE = " create";
   // Back to the trigger on Escape or a pick; to the field an outside click went to (02 R7).
   const focusOnClose = returnFocusOnClose(() => trigger);
   // menuItem geometry (01 §5.18): 22px rows, check column on the left.
@@ -65,22 +68,28 @@
     {/snippet}
   </Popover.Trigger>
   <Popover.Content class="w-56" {...focusOnClose}>
-    <Command.Root class="rounded-none bg-transparent p-0 backdrop-blur-none">
-      <Command.Input {placeholder} bind:value={query} />
+    <!-- Filtering and order are ours (comboRows), so Bits neither scores nor reorders rows; it
+         highlights the first row after each keystroke, and `value` on open. The Viewport gives
+         the input aria-controls and aria-activedescendant (Bits reads both from it). -->
+    <Command.Root {value} shouldFilter={false} class="rounded-none bg-transparent p-0 backdrop-blur-none">
+      <Command.Input {placeholder} bind:value={query} autocapitalize="off" writingsuggestions="false" />
       <Command.List>
-        <Command.Group {heading}>
-          {#each items as name (name)}
-            <Command.Item value={name} onSelect={() => pick(name)} class={row}>
-              {#if name === value}<span class={menuIndicator}><Check /></span>{/if}<span class="truncate">{name}</span>
-            </Command.Item>
-          {/each}
-        </Command.Group>
-        {#if canCreate}
-          <Command.Separator />
-          <Command.Item value={`create ${typed}`} forceMount onSelect={() => pick(typed)} class={row}><span class="truncate">Create “{typed}”</span></Command.Item>
-        {:else}
-          <Command.Empty>Type a name to create one</Command.Empty>
-        {/if}
+        <CommandPrimitive.Viewport>
+          {#if rows.create}
+            <Command.Item value={CREATE} onSelect={() => pick(rows.create!)} class={row}><span class="truncate">Create “{rows.create}”</span></Command.Item>
+          {/if}
+          {#if rows.matches.length}
+            <Command.Group {heading}>
+              {#each rows.matches as name (name)}
+                <Command.Item value={name} onSelect={() => pick(name)} class={row}>
+                  {#if name === value}<span class={menuIndicator}><Check /></span>{/if}<span class="truncate">{name}</span>
+                </Command.Item>
+              {/each}
+            </Command.Group>
+          {:else if !rows.create}
+            <Command.Empty forceMount>Type a name to create one</Command.Empty>
+          {/if}
+        </CommandPrimitive.Viewport>
       </Command.List>
     </Command.Root>
   </Popover.Content>
