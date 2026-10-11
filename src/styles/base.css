@@ -108,18 +108,6 @@ body {
   overflow: hidden;
 }
 
-/* Theme switches cross-fade instead of snapping. */
-body,
-body * {
-  transition-property: background-color, border-color, color, fill;
-  transition-duration: 0s;
-}
-body.theme-transition,
-body.theme-transition * {
-  transition-duration: 240ms !important;
-  transition-timing-function: ease;
-}
-
 /* Shared tooltip element, driven by src/lib/tooltip.ts. */
 .tooltip {
   position: fixed;

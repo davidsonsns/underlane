@@ -23,7 +23,7 @@ class AppStore {
       const o = await api.overview();
       this.overview = o;
       this.error = null;
-      applyTheme(o.settings.theme, false);
+      applyTheme(o.settings.theme);
     } catch (e) {
       this.error = errorText(e);
     } finally {
