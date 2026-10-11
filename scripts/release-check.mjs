@@ -25,6 +25,25 @@ const extras = (app) => sh("swift", ["scripts/menubar-extras.swift", app]).split
 const click = (x, y) => execFileSync("swift", ["scripts/click.swift", String(Math.round(x)), String(Math.round(y))]);
 const windows = () => sh("swift", ["scripts/window-bounds.swift", "Burrow"]).split("\n").filter(Boolean).map((l) => JSON.parse(l));
 const capture = (name, min = 300, max = 4000) => execFileSync("swift", ["scripts/capture-window.swift", "Burrow", join(OUT, name), String(min), String(max)], { stdio: "inherit" });
+const theme = () => sql("SELECT json_extract(value,'$.theme') FROM settings WHERE key='settings'");
+
+// Click targets in the dashboard, in points relative to the window's top-left corner. The
+// window is a fixed 1080x700 with an overlay title bar, so the webview fills it and these are
+// also CSS pixels. Measured on the e2e debug build (Phase 2a) from the elements' bounding boxes
+// (Playwright WebKit at a 1080x700 viewport, same numbers as the real window's screenshot),
+// then checked by clicking them with click.swift and reading the theme back from the control
+// server. They assume cloudflared is found (no "Install it with Homebrew" row above
+// Appearance) and a "This launch" row (always there after a launch).
+// - Sidebar: 28px nav items every 29px from y=78 (centres: Tunnels 92, Requests 121, Logs 150,
+//   Settings 179); x=60 is inside the 179px-wide items. (The old 60,147 and 60,60 were already
+//   off on the Phase 0 baseline: they hit Logs and the brand.)
+// - Appearance (Settings, General group, 4th row): segment centres at y=368; System 864,
+//   Light 922, Dark 973 (the old 770/832/886,327 land on the "This launch" row).
+//   The control is right-aligned in the 760px column centred in the 880px content pane, so a
+//   different scroll-bar setting moves it by half the scroll bar's width at most, still inside
+//   each 48-65px segment.
+// The screen layouts change in Phases 2h (shell) and 2i (popover); re-measure then.
+const AT = { tunnels: [60, 92], settings: [60, 179], system: [864, 368], light: [922, 368], dark: [973, 368] };
 
 if (execFileSync("sh", ["-c", "pgrep -f 'MacOS/Burrow$' || true"]).toString().trim()) {
   throw new Error("quit Burrow first");
@@ -39,6 +58,7 @@ sql(`INSERT OR IGNORE INTO projects(id,name,sort) VALUES ('release-check','Relea
 log(`seeded tunnel: ${sql(`SELECT name, kind, inspect, autostart FROM tunnels WHERE id='${TID}'`)}`);
 
 let expanded = false;
+const themeBefore = theme();
 try {
   log(`login item before: ${sh(BIN, ["--login-item", "status"])}`);
   log(`login item enable: ${sh(BIN, ["--login-item", "enable"])}`);
@@ -85,28 +105,37 @@ try {
   await sleep(2500);
   const dash = windows().find((w) => w.w > 700);
   capture("20-release-dashboard.png", 700);
-  click(dash.x + 60, dash.y + 147); // sidebar: Settings
+  const tap = (k) => click(dash.x + AT[k][0], dash.y + AT[k][1]);
+  // Fail on a miss: a stale coordinate would otherwise "pass" and leave the real settings on Dark.
+  const pickTheme = async (want) => {
+    tap(want);
+    await sleep(1200);
+    const got = theme();
+    log(`theme after clicking ${want[0].toUpperCase() + want.slice(1)}: ${got}`);
+    if (got !== want) throw new Error(`theme after clicking ${want} is "${got}", expected "${want}": the Appearance coordinates (AT) in release-check.mjs are probably stale`);
+  };
+  tap("settings");
   await sleep(1200);
-  click(dash.x + 832, dash.y + 327); // Appearance: Light
-  await sleep(1200);
+  await pickTheme("light");
   capture("21-release-settings-light.png", 700);
-  log(`theme after clicking Light: ${sql("SELECT json_extract(value,'$.theme') FROM settings WHERE key='settings'")}`);
-  click(dash.x + 60, dash.y + 60); // sidebar: Tunnels
+  tap("tunnels");
   await sleep(1200);
   capture("22-release-dashboard-light.png", 700);
-  click(dash.x + 60, dash.y + 147);
+  tap("settings");
   await sleep(1000);
-  click(dash.x + 886, dash.y + 327); // Appearance: Dark
-  await sleep(1200);
+  await pickTheme("dark");
   capture("23-release-settings-dark.png", 700);
-  log(`theme after clicking Dark: ${sql("SELECT json_extract(value,'$.theme') FROM settings WHERE key='settings'")}`);
-  click(dash.x + 770, dash.y + 327); // back to System
-  await sleep(800);
-  log(`theme restored: ${sql("SELECT json_extract(value,'$.theme') FROM settings WHERE key='settings'")}`);
+  await pickTheme("system"); // back to System
 } finally {
   execFileSync("osascript", ["-e", 'quit app "Burrow"']);
   await sleep(5000);
   log(`after quit, Burrow/cloudflared processes left: ${execFileSync("sh", ["-c", "ps -axo command | grep -cE '[B]urrow.app/Contents/MacOS|[c]om.davidsonsns.burrow/neutral' || true"]).toString().trim()}`);
+  // After a failed theme check the owner's settings may be left on Light or Dark. Burrow has
+  // quit, so the row can be put back directly.
+  if (themeBefore && theme() !== themeBefore) {
+    sql(`UPDATE settings SET value=json_set(value,'$.theme','${themeBefore}') WHERE key='settings'`);
+    log(`theme put back to ${themeBefore}`);
+  }
   log(`login item disable: ${sh(BIN, ["--login-item", "disable"])}`);
   sql(`DELETE FROM tunnels WHERE id='${TID}'; DELETE FROM logs WHERE tunnel_id='${TID}'; DELETE FROM requests WHERE tunnel_id='${TID}'; DELETE FROM projects WHERE id NOT IN (SELECT project_id FROM tunnels);`);
   log(`tunnels left in the real data folder: ${sql("SELECT name, autostart FROM tunnels")}`);
