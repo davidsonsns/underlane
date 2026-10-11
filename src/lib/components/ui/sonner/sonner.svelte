@@ -1,6 +1,6 @@
 <script lang="ts">
 	// burrow: macOS overrides, see .scratch/shadcn-luma/01-theming.md §5 (stock Luma: commit 9f0aa7b).
-	// Burrow: no mode-watcher. The caller passes settings.theme ("system" | "light" | "dark");
+	// Burrow: no theme-watcher package (it fights data-theme). The caller passes settings.theme ("system" | "light" | "dark");
 	// "system" makes sonner follow prefers-color-scheme, which Rust's set_theme keeps in sync.
 	// Styled as an in-window notification banner: menu material, 12px corners, 13px text.
 	import { Toaster as Sonner, type ToasterProps as SonnerProps } from "svelte-sonner";
