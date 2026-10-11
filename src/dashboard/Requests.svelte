@@ -1,28 +1,31 @@
 <script lang="ts">
-  import { onMount } from "svelte";
-  import { fly } from "svelte/transition";
+  import { onDestroy, onMount } from "svelte";
   import { listen } from "@tauri-apps/api/event";
   import { store } from "../lib/store.svelte";
   import { api, errorText } from "../lib/api";
-  import { motion } from "../lib/theme";
-  import { formatBytes, formatClock, formatDuration, statusClass } from "../lib/format";
   import type { RequestSummary, RequestDetail as Detail } from "../lib/types";
+  import SearchIcon from "@lucide/svelte/icons/search";
+  import { Button } from "$lib/components/ui/button/index.js";
+  import * as InputGroup from "$lib/components/ui/input-group/index.js";
   import Toolbar from "$lib/components/app/Toolbar.svelte";
-  import TunnelPicker from "./TunnelPicker.svelte";
   import StatePanel from "$lib/components/app/StatePanel.svelte";
-  import Icon from "$lib/components/app/Icon.svelte";
+  import TunnelPicker from "./TunnelPicker.svelte";
+  import RequestList, { columns } from "./RequestList.svelte";
   import RequestDetail from "./RequestDetail.svelte";
 
+  const CAP = 500;
   let { focusId = null }: { focusId?: string | null } = $props();
   let tunnelId = $state<string | null>(null);
   let rows = $state<RequestSummary[]>([]);
   let loading = $state(true);
   let error = $state<string | null>(null);
   let search = $state("");
+  /** The active request, by id (02 §4.2): the list derives its index from `rows`. */
   let selected = $state<string | null>(null);
   let detail = $state<Detail | null>(null);
   let detailError = $state<string | null>(null);
   let fresh = $state<Record<string, boolean>>({});
+  let list = $state<RequestList>();
 
   const inspectable = (t: { kind: string }) => t.kind !== "token";
   $effect(() => {
@@ -31,23 +34,56 @@
   });
   const tunnel = $derived(store.tunnels.find((t) => t.id === tunnelId) ?? null);
 
+  // Bumped on tunnel change, Clear and unmount, and by every select(): a getRequest answer
+  // (or error) that arrives after any of those is dropped (03 R-23).
+  let gen = 0;
+  let pending: ReturnType<typeof setTimeout> | undefined;
+
+  /** Make `id` the active request and load its detail, debounced so a held arrow key
+   *  doesn't flood IPC. */
+  function select(id: string | null, delay = 100): Promise<void> {
+    const g = ++gen;
+    clearTimeout(pending);
+    selected = id;
+    if (id == null) {
+      detail = null;
+      detailError = null;
+      return Promise.resolve();
+    }
+    return new Promise((done) => {
+      pending = setTimeout(async () => {
+        try {
+          const d = await api.getRequest(id);
+          if (g === gen) {
+            detail = d;
+            detailError = null;
+          }
+        } catch (e) {
+          if (g === gen) detailError = errorText(e);
+        }
+        done();
+      }, delay);
+    });
+  }
+
   let loadedFor: string | null | undefined = undefined;
+  let loads = 0;
   async function load() {
     if (loadedFor !== tunnelId) {
       // Switching tunnels: don't keep showing another tunnel's request.
-      selected = null;
-      detail = null;
-      detailError = null;
+      select(null);
       loadedFor = tunnelId;
     }
+    const n = ++loads;
     loading = true;
     error = null;
     try {
-      rows = await api.listRequests(tunnelId, search);
+      const r = await api.listRequests(tunnelId, search);
+      if (n === loads) rows = r;
     } catch (e) {
-      error = errorText(e);
+      if (n === loads) error = errorText(e);
     } finally {
-      loading = false;
+      if (n === loads) loading = false;
     }
   }
 
@@ -58,22 +94,35 @@
     return () => clearTimeout(t);
   });
 
-  async function select(id: string) {
-    selected = id;
-    detailError = null;
-    try {
-      detail = await api.getRequest(id);
-    } catch (e) {
-      detailError = errorText(e);
-    }
-  }
-
   let initialSide = $state<"req" | "resp">("resp");
   /** Used by the e2e check: open the newest request's detail on the given tab. */
   export async function selectFirst(side: "req" | "resp" = "resp") {
     initialSide = side;
     await load();
-    if (rows[0]) await select(rows[0].id);
+    if (rows[0]) await select(rows[0].id, 0);
+  }
+
+  // New requests arrive as events, sometimes in bursts: queue them and put each batch on top
+  // in one update, so the scroll anchoring runs once per batch and never interleaves.
+  let incoming: RequestSummary[] = [];
+  let flushing = false;
+  async function flush() {
+    if (flushing) return;
+    flushing = true;
+    try {
+      while (incoming.length) {
+        const batch = incoming.reverse(); // newest first
+        incoming = [];
+        if (list) await list.prepend(batch);
+        else rows = [...batch, ...rows].slice(0, CAP);
+        for (const r of batch) {
+          fresh[r.id] = true;
+          setTimeout(() => delete fresh[r.id], 1200);
+        }
+      }
+    } finally {
+      flushing = false;
+    }
   }
 
   onMount(() => {
@@ -84,79 +133,66 @@
       const i = rows.findIndex((x) => x.id === r.id);
       if (i >= 0) rows[i] = r;
       else {
-        rows = [r, ...rows].slice(0, 500);
-        fresh[r.id] = true;
-        setTimeout(() => delete fresh[r.id], 1200);
+        const q = incoming.findIndex((x) => x.id === r.id);
+        if (q >= 0) incoming[q] = r;
+        else incoming.push(r);
+        flush();
       }
       if (selected === r.id) select(r.id);
     });
     return () => un.then((f) => f());
   });
 
+  onDestroy(() => {
+    gen++;
+    clearTimeout(pending);
+  });
+
   async function clear() {
+    gen++;
     await api.clearRequests(tunnelId);
     rows = [];
-    detail = null;
-    selected = null;
+    select(null);
   }
 </script>
 
-<div class="page">
+<div class="flex h-full flex-col">
   <Toolbar title="Requests" subtitle={tunnel ? (tunnel.inspect ? (tunnel.state.inspecting ? "Inspecting" : "Inspection on, starts with the tunnel") : "Inspection is off for this tunnel") : ""}>
     <TunnelPicker bind:value={tunnelId} filter={inspectable} />
-    <div class="search">
-      <Icon name="search" size={13} />
-      <input class="field" placeholder="Filter path, method, status" bind:value={search} aria-label="Filter requests" />
-    </div>
-    <button class="btn" onclick={clear} disabled={!rows.length}>Clear</button>
+    <InputGroup.Root class="w-50">
+      <InputGroup.Addon><SearchIcon /></InputGroup.Addon>
+      <InputGroup.Input placeholder="Filter path, method, status" bind:value={search} aria-label="Filter requests" autocorrect="off" autocapitalize="off" spellcheck="false" />
+    </InputGroup.Root>
+    <Button variant="outline" onclick={clear} disabled={!rows.length}>Clear</Button>
   </Toolbar>
 
   {#if !tunnel && !store.loading}
-    <div class="center">
+    <div class="grid flex-1 place-items-center">
       <StatePanel kind="empty" title="No tunnels to inspect" message="Add a config-file or quick tunnel, then turn on request inspection." />
     </div>
   {:else if tunnel && !tunnel.inspect}
-    <div class="center">
+    <div class="grid flex-1 place-items-center">
       <StatePanel kind="empty" title="Inspection is off" message="Turn it on to capture each request's headers and bodies through Burrow's local proxy. The tunnel restarts to apply it.">
-        <button class="btn primary" onclick={async () => { await api.updateTunnel(tunnel.id, { inspect: true }); await store.refresh(); }}>Turn on inspection</button>
+        <Button onclick={async () => { await api.updateTunnel(tunnel.id, { inspect: true }); await store.refresh(); }}>Turn on inspection</Button>
       </StatePanel>
     </div>
   {:else}
-    <div class="split">
-      <div class="table-wrap">
-        <div class="thead" aria-hidden="true">
-          <span>Method</span><span>Path</span><span class="num">Status</span><span class="num">Time</span><span class="num">Size</span><span class="num">At</span>
+    <div class="grid min-h-0 flex-1 grid-cols-[minmax(420px,1.25fr)_minmax(340px,1fr)]">
+      <div class="flex min-h-0 flex-col border-r-[0.5px] border-border">
+        <div class="{columns} h-7 flex-none border-b-[0.5px] border-border text-xs text-muted-foreground" aria-hidden="true">
+          <span>Method</span><span>Path</span><span class="text-right">Status</span><span class="text-right">Time</span><span class="text-right">Size</span><span class="text-right">At</span>
         </div>
         {#if loading && rows.length === 0}
           <StatePanel kind="loading" title="Loading requests…" />
         {:else if error}
-          <StatePanel kind="error" title="Couldn't load requests" message={error}><button class="btn" onclick={load}>Try again</button></StatePanel>
+          <StatePanel kind="error" title="Couldn't load requests" message={error}><Button variant="outline" onclick={load}>Try again</Button></StatePanel>
         {:else if rows.length === 0}
           <StatePanel kind="empty" title={search ? "No matching requests" : "Waiting for requests"} message={search ? "Try a different filter." : tunnel?.state.status === "connected" ? `Requests to ${tunnel.state.public_url ?? "this tunnel"} will appear here as they happen.` : "Start the tunnel, then send it some traffic."} />
         {:else}
-          <div class="rows" aria-label="Requests">
-            {#each rows as r (r.id)}
-              <button
-                class="tr"
-                class:sel={r.id === selected}
-                class:fresh={fresh[r.id]}
-                aria-current={r.id === selected ? "true" : undefined}
-                aria-label="{r.method} {r.path}, status {r.status ?? 'none'}"
-                onclick={() => select(r.id)}
-                in:fly={{ y: -4, duration: motion(160) }}
-              >
-                <span class="method m-{r.method.toLowerCase()}">{r.kind === "websocket" ? "WS" : r.method}</span>
-                <span class="path mono" title={r.path}>{r.path}</span>
-                <span class="num status s-{statusClass(r.status)}">{r.status ?? "—"}</span>
-                <span class="num">{formatDuration(r.duration_ms)}</span>
-                <span class="num">{formatBytes(r.resp_size)}</span>
-                <span class="num faint">{formatClock(r.ts).slice(0, 8)}</span>
-              </button>
-            {/each}
-          </div>
+          <RequestList bind:this={list} bind:rows {selected} {fresh} cap={CAP} onselect={(id) => select(id)} />
         {/if}
       </div>
-      <div class="detail">
+      <div class="flex min-w-0 flex-col overflow-hidden">
         {#if detailError}
           <StatePanel kind="error" title="Couldn't load this request" message={detailError} />
         {:else if detail}
@@ -168,108 +204,3 @@
     </div>
   {/if}
 </div>
-
-<style>
-  .page {
-    display: flex;
-    flex-direction: column;
-    height: 100%;
-  }
-  .center {
-    flex: 1;
-    display: grid;
-    place-items: center;
-  }
-  .search {
-    display: flex;
-    align-items: center;
-    gap: 4px;
-    color: var(--text-3);
-  }
-  .search .field {
-    width: 200px;
-  }
-  .split {
-    flex: 1;
-    display: grid;
-    grid-template-columns: minmax(420px, 1.25fr) minmax(340px, 1fr);
-    min-height: 0;
-  }
-  .table-wrap {
-    display: flex;
-    flex-direction: column;
-    min-height: 0;
-    border-right: 0.5px solid var(--line);
-  }
-  .thead,
-  .tr {
-    display: grid;
-    grid-template-columns: 46px minmax(90px, 1fr) 44px 56px 56px 54px;
-    gap: 6px;
-    align-items: center;
-    padding: 0 12px;
-  }
-  .thead {
-    height: 28px;
-    font-size: var(--text-xs);
-    color: var(--text-2);
-    border-bottom: 0.5px solid var(--line);
-    flex: none;
-  }
-  .rows {
-    overflow-y: auto;
-    flex: 1;
-  }
-  .tr {
-    width: 100%;
-    height: 28px;
-    border: 0;
-    background: transparent;
-    text-align: left;
-    font-size: var(--text-callout);
-    font-variant-numeric: tabular-nums;
-  }
-  .tr:nth-child(even) {
-    background: color-mix(in srgb, var(--hover) 50%, transparent);
-  }
-  .tr:hover {
-    background: var(--hover);
-  }
-  .tr.sel {
-    background: var(--selected);
-  }
-  .tr.fresh {
-    animation: arrive 1.2s ease-out;
-  }
-  @keyframes arrive {
-    from { box-shadow: inset 3px 0 0 var(--tint); }
-    to { box-shadow: inset 3px 0 0 transparent; }
-  }
-  .num {
-    text-align: right;
-  }
-  .path {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    font-size: 11.5px;
-  }
-  .method {
-    font-weight: 600;
-    font-size: var(--text-xs);
-    color: var(--text-2);
-  }
-  .m-post, .m-put, .m-patch { color: color-mix(in srgb, var(--tint) 80%, var(--text-1)); }
-  .m-delete { color: var(--bad); }
-  .status { font-weight: 600; }
-  .s-ok { color: var(--ok); }
-  .s-redirect { color: var(--text-2); }
-  .s-client { color: var(--degraded); }
-  .s-server { color: var(--bad); }
-  .detail {
-    min-width: 0;
-    overflow: hidden;
-    display: flex;
-    flex-direction: column;
-  }
-</style>
