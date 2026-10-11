@@ -4,6 +4,7 @@
   import { listen } from "@tauri-apps/api/event";
   import { store } from "../lib/store.svelte";
   import { api } from "../lib/api";
+  import { snapshot } from "../lib/snapshot.svelte";
   import { motion } from "../lib/theme";
   import Icon from "$lib/components/app/Icon.svelte";
   import Tunnels from "./Tunnels.svelte";
@@ -46,12 +47,18 @@
     const subs = [
       listen<string>("navigate", (e) => navigate(e.payload)),
       // The e2e harness asks for the rendered text of a view.
+      // Lists render every row meanwhile (snapshot mode, 02 §4.3), so the text isn't windowed.
       listen<{ nonce: string; view: string; select?: string; tab?: string }>("e2e-snapshot", async (e) => {
-        navigate(e.payload.view);
-        await tick();
-        if (e.payload.select === "first" && requestsRef) await requestsRef.selectFirst(e.payload.tab === "req" ? "req" : "resp");
-        await new Promise((r) => setTimeout(r, 400));
-        await api.e2eReport(e.payload.nonce, document.body.innerText);
+        snapshot.full = true;
+        try {
+          navigate(e.payload.view);
+          await tick();
+          if (e.payload.select === "first" && requestsRef) await requestsRef.selectFirst(e.payload.tab === "req" ? "req" : "resp");
+          await new Promise((r) => setTimeout(r, 400));
+          await api.e2eReport(e.payload.nonce, document.body.innerText);
+        } finally {
+          snapshot.full = false;
+        }
       }),
     ];
     return () => subs.forEach((s) => s.then((f) => f()));
