@@ -15,6 +15,7 @@
   import { menuIndicator } from "$lib/components/ui/mac";
   import { cn } from "$lib/utils";
   import { comboRows } from "$lib/combobox";
+  import { tick } from "svelte";
 
   let {
     value,
@@ -52,6 +53,17 @@
   // menuItem geometry (01 §5.18): 22px rows, check column on the left.
   const row = "relative h-[22px] rounded-sm ps-[22px] pe-3";
 
+  // Bits highlights the first row one tick after every search change. When the search is blank
+  // again (cleared, or only spaces), put the highlight back on the current value, so Enter can't
+  // move the tunnel to whatever project happens to be first.
+  let cmd = $state<CommandPrimitive.Root | null>(null);
+  async function restoreHighlight() {
+    await tick();
+    await tick();
+    const i = items.indexOf(value);
+    if (!query.trim() && cmd && i >= 0) cmd.updateSelectedToIndex(i);
+  }
+
   function pick(name: string) {
     open = false;
     query = "";
@@ -71,8 +83,8 @@
     <!-- Filtering and order are ours (comboRows), so Bits neither scores nor reorders rows; it
          highlights the first row after each keystroke, and `value` on open. The Viewport gives
          the input aria-controls and aria-activedescendant (Bits reads both from it). -->
-    <Command.Root {value} shouldFilter={false} class="rounded-none bg-transparent p-0 backdrop-blur-none">
-      <Command.Input {placeholder} bind:value={query} autocapitalize="off" writingsuggestions="false" />
+    <Command.Root bind:api={cmd} {value} shouldFilter={false} class="rounded-none bg-transparent p-0 backdrop-blur-none">
+      <Command.Input {placeholder} bind:value={query} oninput={restoreHighlight} autocapitalize="off" writingsuggestions="false" />
       <Command.List>
         <CommandPrimitive.Viewport>
           {#if rows.create}
