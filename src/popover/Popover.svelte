@@ -83,7 +83,7 @@
 <!-- The popover hides on blur (tray.rs); drop toasts so a stale one doesn't reappear. -->
 <svelte:window onblur={() => notify.dismiss()} />
 
-<Tooltip.Provider delayDuration={250}>
+<Tooltip.Provider delayDuration={250} ignoreNonKeyboardFocus>
 <main class="popover">
   <header>
     <div class="title">

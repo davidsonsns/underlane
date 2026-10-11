@@ -12,6 +12,7 @@
     label,
     onchange,
     class: className,
+    ...rest
   }: {
     value: T;
     items: readonly { value: T; label: string; disabled?: boolean }[];
@@ -20,12 +21,17 @@
     /** Called with the new value after a user selection (not for "" or a no-op). */
     onchange?: (value: T) => void;
     class?: string;
+    /** Wiring from SettingsRow: id, aria-labelledby, aria-describedby. */
+    id?: string;
+    "aria-labelledby"?: string;
+    "aria-describedby"?: string;
   } = $props();
 </script>
 
 <ToggleGroup.Root
+  {...rest}
   type="single"
-  aria-label={label}
+  aria-label={rest["aria-labelledby"] ? undefined : label}
   class={className}
   bind:value={
     () => value,

@@ -12,7 +12,11 @@
    new code wins). Phase 3 deletes base.css and the `legacy` entry. */
 @layer theme, base, legacy, components, utilities;
 @import "tailwindcss" source(none);
-@source "../"; /* src/ only: skips src-tauri/, target/ and crates/. No utilities in the HTML files. */
+/* The shipped code in src/ only (skips src-tauri/, target/, crates/ and the dev-only ui-lab,
+   whose src/lab/lab.css adds itself back). No utilities in the HTML files. */
+@source "../dashboard";
+@source "../popover";
+@source "../lib";
 @import "tw-animate-css";
 @import "shadcn-svelte/tailwind.css";
 @import "./base.css" layer(legacy);

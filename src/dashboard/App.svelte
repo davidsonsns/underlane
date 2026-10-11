@@ -59,7 +59,7 @@
 </script>
 
 <!-- One tooltip provider and one toaster per window (02 §1.4, §2). -->
-<Tooltip.Provider delayDuration={250}>
+<Tooltip.Provider delayDuration={250} ignoreNonKeyboardFocus>
 <div class="shell">
   <aside class="sidebar" data-tauri-drag-region>
     <div class="traffic-space" data-tauri-drag-region></div>

@@ -126,7 +126,7 @@
   </div>
 {/snippet}
 
-<Tooltip.Provider delayDuration={250}>
+<Tooltip.Provider delayDuration={250} ignoreNonKeyboardFocus>
   <div class="flex h-screen flex-col bg-background text-foreground">
     <Toolbar title="UI lab" subtitle="Phase 1: ui/* and app/* in every state">
       <Segmented label="Theme" bind:value={theme} onchange={setTheme} items={[{ value: "system", label: "System" }, { value: "light", label: "Light" }, { value: "dark", label: "Dark" }]} />
@@ -379,10 +379,10 @@
           <SettingsGroup title="General">
             {#snippet aside()}Saved automatically{/snippet}
             <SettingsRow label="Launch at login" help="Opens Burrow in the menu bar when you log in.">
-              {#snippet control({ labelId, describedBy })}<Switch bind:checked={launch} aria-labelledby={labelId} aria-describedby={describedBy} />{/snippet}
+              {#snippet control({ id, describedBy })}<Switch {id} bind:checked={launch} aria-describedby={describedBy} />{/snippet}
             </SettingsRow>
             <SettingsRow label="Appearance">
-              {#snippet control()}<Segmented label="Appearance" bind:value={appearance} items={[{ value: "system", label: "System" }, { value: "light", label: "Light" }, { value: "dark", label: "Dark" }]} />{/snippet}
+              {#snippet control({ id, labelId, describedBy })}<Segmented {id} label="Appearance" aria-labelledby={labelId} aria-describedby={describedBy} bind:value={appearance} items={[{ value: "system", label: "System" }, { value: "light", label: "Light" }, { value: "dark", label: "Dark" }]} />{/snippet}
             </SettingsRow>
             <SettingsRow label="Default log level" help="Used for newly added tunnels.">
               {#snippet control({ id, describedBy })}

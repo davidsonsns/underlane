@@ -1,5 +1,7 @@
 <script lang="ts">
 	// burrow: macOS overrides, see .scratch/shadcn-luma/01-theming.md §5.18 (stock Luma: shadcn-svelte@1.7.0 add; the spike tuned only command and command-item).
+	// burrow: the input keeps data-slot="input-group-control" (stock: "command-input"), since the
+	// group's focus ring keys on that slot.
 	import { Command as CommandPrimitive } from "bits-ui";
 	import * as InputGroup from "$lib/components/ui/input-group/index.js";
 	import SearchIcon from '@lucide/svelte/icons/search';
@@ -17,7 +19,7 @@
 	<InputGroup.Root>
 		<CommandPrimitive.Input
 			{value}
-			data-slot="command-input"
+			data-slot="input-group-control"
 			class={cn(
 				"w-full text-sm outline-hidden disabled:cursor-default disabled:opacity-45",
 				className

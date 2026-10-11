@@ -1,6 +1,6 @@
 // UI lab entry (dev only). ?theme=light|dark|system pins the theme the way the app does
 // (applyTheme sets or removes html[data-theme]); no param = system.
-import "../styles/app.css";
+import "./lab.css";
 import { mount } from "svelte";
 import { applyTheme, installFocusModality } from "$lib/theme";
 import Lab from "./Lab.svelte";

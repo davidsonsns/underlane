@@ -18,6 +18,7 @@
     variant,
     size,
     disabled = false,
+    class: className,
   }: {
     /** The text to copy, or a function that builds it on click. */
     value: string | (() => string);
@@ -29,6 +30,7 @@
     variant?: ButtonVariant;
     size?: ButtonSize;
     disabled?: boolean;
+    class?: string;
   } = $props();
 
   async function copy() {
@@ -51,9 +53,9 @@
 {#if label}
   <Tip text={tip ?? `Copy ${what}`}>
     {#snippet children({ props })}
-      <Button {...mergeProps(props, { onclick: copy })} variant={variant ?? "outline"} {size} {disabled}><CopyIcon class="size-3.5" />{label}</Button>
+      <Button {...mergeProps(props, { onclick: copy })} variant={variant ?? "outline"} {size} {disabled} class={className}><CopyIcon class="size-3.5" />{label}</Button>
     {/snippet}
   </Tip>
 {:else}
-  <IconAction label={`Copy ${what}`} {tip} {variant} {size} {disabled} onclick={copy}><CopyIcon /></IconAction>
+  <IconAction label={`Copy ${what}`} {tip} {variant} {size} {disabled} class={className} onclick={copy}><CopyIcon /></IconAction>
 {/if}
