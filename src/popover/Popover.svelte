@@ -10,11 +10,14 @@
   import { motion } from "../lib/theme";
   import { isOn, publicUrl, statusLabel } from "../lib/format";
   import type { Tunnel } from "../lib/types";
-  import StatusDot from "../components/StatusDot.svelte";
-  import Toggle from "../components/Toggle.svelte";
-  import Route from "../components/Route.svelte";
-  import Icon from "../components/Icon.svelte";
-  import StatePanel from "../components/StatePanel.svelte";
+  import StatusDot from "$lib/components/app/StatusDot.svelte";
+  import Toggle from "$lib/components/app/Toggle.svelte";
+  import RouteLine from "$lib/components/app/RouteLine.svelte";
+  import Icon from "$lib/components/app/Icon.svelte";
+  import StatePanel from "$lib/components/app/StatePanel.svelte";
+  import * as Tooltip from "$lib/components/ui/tooltip/index.js";
+  import { Toaster } from "$lib/components/ui/sonner/index.js";
+  import { notify } from "$lib/toast";
 
   let busy = $state<Record<string, boolean>>({});
   let toast = $state<string | null>(null);
@@ -77,6 +80,10 @@
   });
 </script>
 
+<!-- The popover hides on blur (tray.rs); drop toasts so a stale one doesn't reappear. -->
+<svelte:window onblur={() => notify.dismiss()} />
+
+<Tooltip.Provider delayDuration={250} ignoreNonKeyboardFocus>
 <main class="popover">
   <header>
     <div class="title">
@@ -129,7 +136,7 @@
                 {#if t.state.status === "crashed" || t.state.status === "degraded"}
                   <span class="detail" class:bad={t.state.status === "crashed"}>{t.state.detail ?? statusLabel[t.state.status]}</span>
                 {:else if m}
-                  <Route hostname={t.kind === "quick" ? (t.state.public_url?.replace("https://", "") ?? null) : m.hostname} service={m.service} inspected={m.inspected} pulse={store.pulses[t.id] ?? 0} compact />
+                  <RouteLine hostname={t.kind === "quick" ? (t.state.public_url?.replace("https://", "") ?? null) : m.hostname} service={m.service} inspected={m.inspected} pulse={store.pulses[t.id] ?? 0} compact />
                 {:else if t.kind === "token"}
                   <span class="detail">Routes come from the Cloudflare dashboard</span>
                 {:else if t.kind === "quick"}
@@ -159,6 +166,16 @@
     <div class="toast" transition:fly={{ y: 8, duration: motion(180) }}>{toast}</div>
   {/if}
 </main>
+
+<!-- Above the footer; the window is 360px wide, so sonner uses mobileOffset (<= 600px). -->
+<Toaster
+  theme={store.overview?.settings.theme ?? "system"}
+  position="bottom-center"
+  visibleToasts={1}
+  offset={{ bottom: 52 }}
+  mobileOffset={{ bottom: 52, left: 20, right: 20 }}
+/>
+</Tooltip.Provider>
 
 <style>
   :global(.popover-body) {

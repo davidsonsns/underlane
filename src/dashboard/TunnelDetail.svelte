@@ -6,10 +6,10 @@
   import { motion } from "../lib/theme";
   import { formatUptime, isOn, statusLabel } from "../lib/format";
   import type { Tunnel, Validation } from "../lib/types";
-  import StatusDot from "../components/StatusDot.svelte";
-  import Toggle from "../components/Toggle.svelte";
+  import StatusDot from "$lib/components/app/StatusDot.svelte";
+  import Toggle from "$lib/components/app/Toggle.svelte";
   import Routes from "./Routes.svelte";
-  import Icon from "../components/Icon.svelte";
+  import Icon from "$lib/components/app/Icon.svelte";
 
   let { tunnel }: { tunnel: Tunnel } = $props();
   let busy = $state(false);

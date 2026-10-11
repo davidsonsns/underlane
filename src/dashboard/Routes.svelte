@@ -8,7 +8,7 @@
   import { reachSummary, serviceLabel, shortService } from "../lib/format";
   import type { Tunnel } from "../lib/types";
   import { tooltip } from "../lib/tooltip";
-  import Icon from "../components/Icon.svelte";
+  import Icon from "$lib/components/app/Icon.svelte";
 
   let { tunnel }: { tunnel: Tunnel } = $props();
   const PROBE_EVERY_MS = 3000;

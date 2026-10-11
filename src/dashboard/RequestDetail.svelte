@@ -2,7 +2,7 @@
   import { writeText } from "@tauri-apps/plugin-clipboard-manager";
   import { base64ToBytes, formatBytes, formatClock, formatDuration, hexDump, prettyJson, statusClass, toCurl } from "../lib/format";
   import type { BodyView, RequestDetail } from "../lib/types";
-  import Icon from "../components/Icon.svelte";
+  import Icon from "$lib/components/app/Icon.svelte";
 
   let { detail, side: initial = "resp" }: { detail: RequestDetail; side?: "req" | "resp" } = $props();
   // svelte-ignore state_referenced_locally
