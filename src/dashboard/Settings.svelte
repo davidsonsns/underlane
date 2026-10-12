@@ -6,6 +6,7 @@
   import { store } from "../lib/store.svelte";
   import { api } from "../lib/api";
   import { notify } from "$lib/toast";
+  import { motion } from "../lib/theme";
   import type { LoginItem, Settings } from "../lib/types";
   import Toolbar from "$lib/components/app/Toolbar.svelte";
   import StatePanel from "$lib/components/app/StatePanel.svelte";
@@ -58,6 +59,14 @@
     } catch (e) {
       notify.error(e, "Couldn't save settings");
     }
+  }
+
+  // Saving the theme makes Rust flip the NSWindow appearance on the main thread, which freezes
+  // the webview's animations (see commands.rs), so let the segment thumb finish sliding first.
+  let themeTimer: ReturnType<typeof setTimeout> | undefined;
+  function setTheme(theme: Settings["theme"]) {
+    clearTimeout(themeTimer);
+    themeTimer = setTimeout(() => save({ theme }), motion(220));
   }
 
   async function detect() {
@@ -142,7 +151,7 @@
         {/if}
         <SettingsRow label="Appearance">
           {#snippet control({ id, labelId, describedBy })}
-            <Segmented {id} label="Appearance" aria-labelledby={labelId} aria-describedby={describedBy} items={themes} bind:value={draft!.theme} onchange={(theme) => save({ theme })} />
+            <Segmented {id} label="Appearance" aria-labelledby={labelId} aria-describedby={describedBy} items={themes} bind:value={draft!.theme} onchange={setTheme} />
           {/snippet}
         </SettingsRow>
         <SettingsRow label="Default log level" help="Used for newly added tunnels.">

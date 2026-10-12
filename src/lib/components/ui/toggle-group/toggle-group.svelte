@@ -9,6 +9,8 @@
 	interface ToggleGroupContext extends ToggleVariants {
 		spacing?: number;
 		orientation?: "horizontal" | "vertical";
+		/** burrow: single-select segmented group; the selection is a sliding thumb, not item backgrounds. */
+		sliding?: boolean;
 	}
 
 	export function setToggleGroupCtx(props: ToggleGroupContext) {
@@ -32,12 +34,15 @@
 		spacing = 0,
 		orientation = "horizontal",
 		variant = "default",
+		children,
 		...restProps
 	}: ToggleGroupPrimitive.RootProps &
 		ToggleVariants & {
 			spacing?: number;
 			orientation?: "horizontal" | "vertical";
 		} = $props();
+
+	const sliding = $derived(restProps.type === "single" && spacing === 0);
 
 	setToggleGroupCtx({
 		get variant() {
@@ -52,6 +57,36 @@
 		get orientation() {
 			return orientation;
 		},
+		get sliding() {
+			return sliding;
+		},
+	});
+
+	// burrow: the selected segment's background is one thumb that slides to the new item
+	// (NSSegmentedControl). It follows data-state rather than `value`, so it tracks any change
+	// bits makes, and re-measures on resize. The first placement doesn't animate.
+	let thumb = $state<{ x: number; y: number; w: number; h: number } | null>(null);
+	let animate = $state(false);
+
+	$effect(() => {
+		if (!sliding || !ref) return;
+		const root = ref;
+		const measure = () => {
+			const on = root.querySelector<HTMLElement>('[data-slot="toggle-group-item"][data-state="on"]');
+			thumb = on ? { x: on.offsetLeft, y: on.offsetTop, w: on.offsetWidth, h: on.offsetHeight } : null;
+		};
+		measure();
+		const frame = requestAnimationFrame(() => (animate = true));
+		const mo = new MutationObserver(measure);
+		mo.observe(root, { subtree: true, attributes: true, attributeFilter: ["data-state"] });
+		const ro = new ResizeObserver(measure);
+		ro.observe(root);
+		return () => {
+			cancelAnimationFrame(frame);
+			mo.disconnect();
+			ro.disconnect();
+			animate = false;
+		};
 	});
 </script>
 
@@ -69,8 +104,22 @@ get along, so we shut typescript up by casting `value` to `never`.
 	data-spacing={spacing}
 	style={`--gap: ${spacing}`}
 	class={cn(
-		"group/toggle-group flex w-fit flex-row items-center gap-[--spacing(var(--gap))] data-vertical:flex-col data-vertical:items-stretch data-[spacing=0]:h-[22px] data-[spacing=0]:gap-px data-[spacing=0]:rounded-md data-[spacing=0]:bg-fill data-[spacing=0]:p-px data-[spacing=0]:border-[0.5px] data-[spacing=0]:border-border",
+		"group/toggle-group relative isolate flex w-fit flex-row items-center gap-[--spacing(var(--gap))] data-vertical:flex-col data-vertical:items-stretch data-[spacing=0]:h-[22px] data-[spacing=0]:gap-px data-[spacing=0]:rounded-md data-[spacing=0]:bg-fill data-[spacing=0]:p-px data-[spacing=0]:border-[0.5px] data-[spacing=0]:border-border",
 		className
 	)}
 	{...restProps}
-/>
+>
+	{#if sliding && thumb}
+		<div
+			aria-hidden="true"
+			class={cn(
+				"pointer-events-none absolute top-0 left-0 -z-1 rounded-[5px] border-[0.5px] border-input bg-segment",
+				animate && "transition-[translate,width,height] duration-200 ease-out motion-reduce:transition-none"
+			)}
+			style:translate="{thumb.x}px {thumb.y}px"
+			style:width="{thumb.w}px"
+			style:height="{thumb.h}px"
+		></div>
+	{/if}
+	{@render children?.()}
+</ToggleGroupPrimitive.Root>

@@ -24,7 +24,11 @@
 	data-size={ctx.size || size}
 	data-spacing={ctx.spacing}
 	class={cn(
-		"shrink-0 focus-visible:z-10 group-data-[spacing=0]/toggle-group:h-full group-data-[spacing=0]/toggle-group:rounded-[5px] group-data-[spacing=0]/toggle-group:px-2.5 group-data-[spacing=0]/toggle-group:hover:bg-transparent group-data-[spacing=0]/toggle-group:data-[state=on]:bg-segment group-data-[spacing=0]/toggle-group:border-[0.5px] group-data-[spacing=0]/toggle-group:border-transparent group-data-[spacing=0]/toggle-group:data-[state=on]:border-input",
+		"shrink-0 focus-visible:z-10 group-data-[spacing=0]/toggle-group:h-full group-data-[spacing=0]/toggle-group:rounded-[5px] group-data-[spacing=0]/toggle-group:px-2.5 group-data-[spacing=0]/toggle-group:hover:bg-transparent group-data-[spacing=0]/toggle-group:border-[0.5px] group-data-[spacing=0]/toggle-group:border-transparent",
+		// burrow: a sliding group draws the selection with its thumb (toggle-group.svelte).
+		ctx.sliding
+			? "group-data-[spacing=0]/toggle-group:data-[state=on]:bg-transparent"
+			: "group-data-[spacing=0]/toggle-group:data-[state=on]:bg-segment group-data-[spacing=0]/toggle-group:data-[state=on]:border-input",
 		toggleVariants({
 			variant: ctx.variant || variant,
 			size: ctx.size || size,
