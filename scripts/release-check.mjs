@@ -30,20 +30,20 @@ const theme = () => sql("SELECT json_extract(value,'$.theme') FROM settings WHER
 
 // Click targets in the dashboard, in points relative to the window's top-left corner. The
 // window is a fixed 1080x700 with an overlay title bar, so the webview fills it and these are
-// also CSS pixels. Measured on the e2e debug build (Phase 2a) from the elements' bounding boxes
-// (Playwright WebKit at a 1080x700 viewport, same numbers as the real window's screenshot),
-// then checked by clicking them with click.swift and reading the theme back from the control
-// server. They assume cloudflared is found (no "Install it with Homebrew" row above
+// also CSS pixels. They assume cloudflared is found (no "Install it with Homebrew" row above
 // Appearance) and a "This launch" row (always there after a launch).
-// - Sidebar: 28px nav items every 29px from y=78 (centres: Tunnels 92, Requests 121, Logs 150,
-//   Settings 179); x=60 is inside the 179px-wide items. (The old 60,147 and 60,60 were already
-//   off on the Phase 0 baseline: they hit Logs and the brand.)
+// - Sidebar (re-measured in Phase 2h on the e2e debug build, from the selected item's highlight
+//   in real-window captures): 28px nav items every 29px from y=78 (Tunnels 78-105, Settings
+//   165-192; centres Tunnels 92, Requests 121, Logs 150, Settings 179), x 10-189, so x=60 is
+//   inside. Unchanged from Phase 2a: the shell kept its 46px spacer, brand and item metrics.
 // - Appearance (Settings, General group, 4th row): segment centres at y=368; System 864,
-//   Light 922, Dark 973 (the old 770/832/886,327 land on the "This launch" row).
+//   Light 922, Dark 973. Measured in Phase 2a; Settings didn't move in 2h.
 //   The control is right-aligned in the 760px column centred in the 880px content pane. The
-//   pane's scroll bar (base.css still draws a fixed 10px one) can move it left by about its
-//   width; that stays inside each 48-65px segment (half-widths of 24px or more).
-// The screen layouts change in Phases 2h (shell) and 2i (popover); re-measure then.
+//   pane's scroll bar can move it left by about its width; that stays inside each 48-65px
+//   segment (half-widths of 24px or more).
+// Validated in 2h by clicking each point with click.swift in the e2e debug build: Settings then
+// Dark, Light, System, Light (theme read back from the control server each time), then Tunnels
+// (capture shows the Tunnels view). The popover layout changes in Phase 2i; re-measure then.
 const AT = { tunnels: [60, 92], settings: [60, 179], system: [864, 368], light: [922, 368], dark: [973, 368] };
 
 if (execFileSync("sh", ["-c", "pgrep -f 'MacOS/Burrow$' || true"]).toString().trim()) {

@@ -535,7 +535,35 @@ selection before the store refresh, and Tunnels dropped the unknown id and selec
 tunnel; App now refreshes, selects, then closes the sheet, which hands focus to the new row
 (imports and cancels still go back to the Add tunnel button).
 
+**Inactive window (Phase 2h, O9).** While the dashboard isn't key, `html[data-inactive]` maps
+the selection fill to the unemphasized grey (the system colour where WebKit has it, #dcdcdc /
+#464646 otherwise) and the selected-row tint to `--fill-strong`, so the default button and the
+selection grey out with the sidebar material, as in AppKit. The attribute follows the page's
+`window` focus/blur events, not Tauri's `getCurrentWindow().onFocusChanged` that 01 §4 names: the
+window module costs about 3.4 KB of dashboard JS (≈148 of 150 KB) and grows the popover's shared
+chunk by about 0.5 KB, and WebKit already fires blur/focus when the NSWindow resigns or becomes
+key (checked in the real app; opening a native `<select>` menu doesn't fire it). One difference:
+when keyboard focus tabs out of the web view (one Tab stop after the last control, before it
+wraps back), the page also gets blur, so it greys for that stop although the window stays key.
+AppKit greys a selection whose view isn't first responder too, so this was left.
+
 **Alternatives rejected.** Bits UI alone with hand-written styles (an earlier spike: every
 component's look written from scratch, and its dark variant missed "System" in dark mode).
 Keeping scoped CSS (1,440 lines of duplicated per-component styles, no shared primitives, and the
 accessibility fixes the port brings would have to be hand-built).
+
+**System accent colour (2h real-window check, 2026-10-11).** Measured in the e2e debug build by
+switching System Settings › Appearance › Color to green (restored to Multicolor afterwards): the
+tint (`AccentColor` → `--tint`) stayed rgb(0,122,255) live, after remounting the view, and after a
+fresh launch with green set. So Burrow's WKWebView never reflects the system accent colour, and the
+01 §4 fallback (force a style recalc) can't fix it: the web process doesn't have the new value.
+`main` before the migration used the same `AccentColor` keyword, so this isn't a regression.
+Follow-up (not done): have Rust read `NSColor.controlAccentColor` at launch and on
+`NSSystemColorsDidChangeNotification`, and push it to both windows as a CSS variable that `--tint`
+(and the selection fill) use.
+
+**O9 follow-ups (not done).** While the dashboard isn't key, the switch and checkbox on-state, the
+sidebar nav icons and keyboard focus rings stay accent-coloured (01 §4 only names the selection,
+the selected row and the default button); AppKit greys those too. The inactive default button
+uses the unemphasized grey fill rather than looking like a plain push button.
+
