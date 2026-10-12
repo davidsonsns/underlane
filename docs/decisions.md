@@ -6,7 +6,9 @@ Each entry gives the decision, why it was made, and the alternatives. Evidence i
 ## 1. Name: Underlane
 
 The name is short, suggests tunnels, and doesn't use "Cloudflare" in the product name or icon. The
-icon is an abstract arch mark, not the Cloudflare cloud. Bundle id: `com.davidsonsns.underlane`.
+icon is Lane Cut: a circular mark split by a route dipping beneath the surface, representing a
+tunnel running under everything else. The monochrome design was selected on 2026-10-12.
+Bundle id: `com.davidsonsns.underlane`.
 
 The app was first called Burrow. It was renamed on 2026-10-11 because an open-source Mac app with
 that name already exists (caezium/Burrow), as do linkedin/Burrow and hyperledger/burrow. The

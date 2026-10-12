@@ -3,7 +3,7 @@
 A macOS menu bar app that runs your `cloudflared` tunnels for you. Set them up once, then stop
 thinking about them: no terminal windows, no juggling `config.yml` files.
 
-![Popover with three tunnels running](docs/screenshots/04-popover-three-tunnels.png)
+![Underlane dashboard with the Lane Cut logo](docs/screenshots/lane-cut-dashboard-dark.png)
 
 - **Import what you already have.** Underlane scans `~/.cloudflared` for config files, and you can
   add files or project folders. It also supports token (dashboard-managed) tunnels and
@@ -57,7 +57,7 @@ Open `Underlane.app`. On first run it opens the dashboard. Choose **Add tunnel**
 files, paste a tunnel token, or share a local port as a quick tunnel.
 
 If you use a menu bar manager (Hidden Bar, Ice, Bartender), new items may land in its hidden
-section. Drag Underlane's arch icon into the visible part.
+section. Drag Underlane's circular Lane Cut icon into the visible part.
 
 ## Dev loop
 

@@ -8,3 +8,4 @@ target/
 .claude/worktrees/
 /src-tauri/gen/schemas/
 /docs/screenshots/session-notes.txt
+/output/logo-proposals/*/app-icons/

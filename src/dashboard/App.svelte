@@ -10,7 +10,7 @@
   import ScrollText from "@lucide/svelte/icons/scroll-text";
   import SettingsIcon from "@lucide/svelte/icons/settings";
   import TriangleAlert from "@lucide/svelte/icons/triangle-alert";
-  import ArchGlyph from "$lib/components/app/ArchGlyph.svelte";
+  import LaneGlyph from "$lib/components/app/LaneGlyph.svelte";
   import { Badge } from "$lib/components/ui/badge/index.js";
   import { kbRing } from "$lib/components/ui/mac";
   import { cn } from "$lib/utils";
@@ -114,7 +114,7 @@
     adding = true;
   }
 
-  // Tunnels uses the brand arch (no icon here); the rest are lucide (02 §1.3).
+  // Tunnels uses the brand mark; the rest are lucide (02 §1.3).
   const nav: { id: View; label: string; icon?: Component<{ class?: string }> }[] = [
     { id: "tunnels", label: "Tunnels" },
     { id: "requests", label: "Requests", icon: List },
@@ -155,8 +155,7 @@
           {#if n.icon}
             <n.icon class="size-[15px] text-tint" />
           {:else}
-            <!-- 3.5 in the 48-unit box is lucide's 1.75 in 24, so the arch matches its neighbours. -->
-            <ArchGlyph size={15} strokeWidth={3.5} class="text-tint" />
+            <LaneGlyph size={15} class="text-tint" />
           {/if}
           <span class="flex-1">{n.label}</span>
           {#if n.id === "tunnels" && store.activeCount > 0}
