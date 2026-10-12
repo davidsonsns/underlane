@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatBytes, formatDuration, hexDump, prettyJson, publicUrl, reachSummary, serviceLabel, shortService, toCurl } from "./format";
+import { formatBytes, formatDuration, hexDump, jsonTokens, prettyJson, publicUrl, reachSummary, serviceLabel, shortService, toCurl } from "./format";
 import { logFields } from "./logfields";
 
 describe("format", () => {
@@ -31,6 +31,15 @@ describe("format", () => {
     expect(prettyJson('{"a":1}')).toBe('{\n  "a": 1\n}');
     expect(prettyJson("hello")).toBeNull();
     expect(prettyJson("{broken")).toBeNull();
+  });
+  it("tokenises pretty JSON for colouring", () => {
+    const pretty = prettyJson('{"a":"x\\"y","n":-1.5e3,"b":[true,null]}')!;
+    const toks = jsonTokens(pretty);
+    expect(toks.map((t) => t.text).join("")).toBe(pretty);
+    expect(toks.filter((t) => t.kind !== "punct").map((t) => [t.kind, t.text])).toEqual([
+      ["key", '"a"'], ["string", '"x\\"y"'], ["key", '"n"'], ["number", "-1500"],
+      ["key", '"b"'], ["literal", "true"], ["literal", "null"],
+    ]);
   });
   it("hex dumps with an ASCII gutter", () => {
     const d = hexDump(new Uint8Array([0x48, 0x69, 0x00, 0xff]));

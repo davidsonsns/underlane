@@ -89,6 +89,23 @@ export function prettyJson(text: string): string | null {
   }
 }
 
+export type JsonToken = { kind: "key" | "string" | "number" | "literal" | "punct"; text: string };
+
+/** Split prettyJson output into tokens for syntax colouring; joined back, they equal the input. */
+export function jsonTokens(pretty: string): JsonToken[] {
+  const out: JsonToken[] = [];
+  const re = /("(?:[^"\\]|\\.)*")(?=:)|("(?:[^"\\]|\\.)*")|(-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)|(true|false|null)/g;
+  let last = 0;
+  for (const m of pretty.matchAll(re)) {
+    if (m.index > last) out.push({ kind: "punct", text: pretty.slice(last, m.index) });
+    const kind = m[1] ? "key" : m[2] ? "string" : m[3] ? "number" : "literal";
+    out.push({ kind, text: m[0] });
+    last = m.index + m[0].length;
+  }
+  if (last < pretty.length) out.push({ kind: "punct", text: pretty.slice(last) });
+  return out;
+}
+
 
 export function base64ToBytes(b64: string): Uint8Array {
   const bin = atob(b64);

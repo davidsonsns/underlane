@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { base64ToBytes, formatBytes, formatClock, formatDuration, hexDump, prettyJson, statusClass, toCurl } from "../lib/format";
+  import { base64ToBytes, formatBytes, formatClock, formatDuration, hexDump, jsonTokens, prettyJson, statusClass, toCurl } from "../lib/format";
   import type { BodyView, RequestDetail } from "../lib/types";
   import * as Tabs from "$lib/components/ui/tabs/index.js";
   import { Badge } from "$lib/components/ui/badge/index.js";
@@ -35,6 +35,7 @@
       : [{ value: "hex" as const, label: "Hex" }],
   );
   const statusText = { ok: "text-ok-text", redirect: "", client: "text-degraded-text", server: "text-bad-text", none: "" };
+  const tokenClass = { key: "text-syn-key", string: "text-syn-string", number: "text-syn-number", literal: "text-syn-literal", punct: "" };
   const code = "mt-2 rounded-lg bg-(--code-bg) px-3 py-2.5 font-mono text-code leading-normal";
 </script>
 
@@ -108,7 +109,7 @@
   {:else if effectiveMode === "hex"}
     <pre class="{code} overflow-x-auto whitespace-pre">{hexDump(base64ToBytes(body.base64))}</pre>
   {:else if effectiveMode === "pretty" && pretty}
-    <pre class="{code} break-all whitespace-pre-wrap">{pretty}</pre>
+    <pre class="{code} break-all whitespace-pre-wrap">{#each jsonTokens(pretty) as t, i (i)}<span class={tokenClass[t.kind]}>{t.text}</span>{/each}</pre>
   {:else}
     <pre class="{code} break-all whitespace-pre-wrap">{body.text}</pre>
   {/if}

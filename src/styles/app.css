@@ -142,6 +142,10 @@
   --color-off: var(--off);
   --color-info: var(--info);
   --color-info-text: var(--info-text);
+  --color-syn-key: var(--syn-key);
+  --color-syn-string: var(--syn-string);
+  --color-syn-number: var(--syn-number);
+  --color-syn-literal: var(--syn-literal);
 }
 
 /* ---------------------------------------------------------------------------------------------
@@ -204,6 +208,11 @@
        not follow the user's accent, which can be orange or red. */
     --info: #007aff;
     --info-text: #0068da;
+    /* JSON body colours (Xcode's palette), each >= 4.5:1 on --code-bg. */
+    --syn-key: #326d74;
+    --syn-string: #c41a16;
+    --syn-number: #1c00cf;
+    --syn-literal: #9b2393;
 
     @variant dark {
       --accent-fallback: #0a84ff;
@@ -240,6 +249,10 @@
       --bad-text: #ff6b6b;
       --info: #0a84ff;
       --info-text: #419cff;
+      --syn-key: #5dd8ff;
+      --syn-string: #fc6a5d;
+      --syn-number: #d0bf69;
+      --syn-literal: #fc5fa3;
       /* --off keeps #a1a1a6 in both themes, as before the migration (01 §3.3). */
     }
 
