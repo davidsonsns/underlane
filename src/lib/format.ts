@@ -89,6 +89,7 @@ export function prettyJson(text: string): string | null {
   }
 }
 
+
 export function base64ToBytes(b64: string): Uint8Array {
   const bin = atob(b64);
   const out = new Uint8Array(bin.length);

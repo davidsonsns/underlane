@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { formatBytes, formatDuration, hexDump, prettyJson, publicUrl, reachSummary, serviceLabel, shortService, toCurl } from "./format";
+import { logFields } from "./logfields";
 
 describe("format", () => {
   it("labels services", () => {
@@ -68,5 +69,9 @@ describe("format", () => {
     expect(cmd).toBe(
       `curl -X 'POST' 'https://x.trycloudflare.com/api?q=1' -H 'Content-Type: application/json' -H 'Authorization: [redacted]' --data-raw '{"a":"it'\\''s"}'`,
     );
+  });
+  it("reads a log line's fields only from a non-empty JSON object", () => {
+    expect(logFields('{"connIndex":0,"event":"x","n":{"a":1}}')).toEqual([["connIndex", "0"], ["event", "x"], ["n", '{"a":1}']]);
+    for (const bad of ["{}", "", "not json", "{", "[1,2]", "null", "3", '"s"']) expect(logFields(bad)).toEqual([]);
   });
 });

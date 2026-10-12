@@ -428,6 +428,44 @@ real component (`requests-r49.mjs`, Playwright WebKit) the first visible row sta
 bursts of 1 to 30 requests scrolled to the middle, bursts of 1, 5 and 12 scrolled to the very end,
 and batches into and past the 1,000 ceiling; the e2e debug build repeats the burst checks.
 
+**Logs list (Phase 2f).** No fallback was needed: Logs runs on virtua as planned
+(`src/dashboard/LogList.svelte`), with measured heights (wrapped messages; expanded fields render
+inside the row). A `role=treegrid` wrapper holds focus and points `aria-activedescendant` at the
+active line (tracked by id) once it exists; rows carry `aria-level`, `aria-rowindex` and, when they
+have fields, `aria-expanded`. Up/Down/Home/End/PageUp/PageDown move, Right/Enter expand, Left
+collapses; a list key with nothing active starts on the line at that edge of the view. The list
+follows the newest line while the view is within 40px of the bottom; only moving up stops it,
+summed since the view was last at the bottom so that slow scrolls of a pixel at a time count too
+(virtua re-measuring rows below the view, or content growing at the end, doesn't move
+`scrollTop`), and End or "Jump to latest" resumes it. The follow state is read from the viewport's
+`scrollTop`, as in Requests. Only open lines are kept in the expansion map, and trimmed lines leave
+it; a line is expandable only when its fields parse to a non-empty object.
+
+A new result set (a tunnel, level or search change) **remounts the VList**: virtua's per-index
+height cache survives a data change of the same length, so unrelated lines would inherit the old
+heights, expanded rows included. The new set opens at the end, following. Loads carry a
+generation as in Requests: an older answer or error never lands (also after A -> B -> A) and an
+identical load in flight is shared.
+
+The 3,000 cap holds **while following**: new lines are appended, the head is trimmed and the view
+tails the end. Scrolled up, the head trim is **deferred**, as the Phase 1 measurement recommended
+(a head trim shifts virtua's per-index height cache, so the view would jump): appends land below
+the view and leave it untouched. Back at the bottom (by scrolling, End or "Jump to latest") the
+list trims to 3,000 and tails again. The hard ceiling is 6,000 lines (2x): past it the list stops
+growing and newer lines are **held** off-list (at most 3,000, all a trim would keep) until the user
+is back at the bottom, so the view never moves, at the cost of not seeing lines past the ceiling
+by scrolling down until the bottom is reached (they're also in SQLite). Catching up trims the head
+with virtua's `shift`, so the lines kept keep their measured heights (exact when nothing was
+held); the scroll jump virtua makes for it isn't read as the user scrolling up. End, or Down onto
+the last line, catches up first and then makes the newest line active (with 3,000 or more held,
+the old tail is gone). Measured in the ui-lab harness on the real component (`logs-r49.mjs`,
+Playwright WebKit, 54 checks): with three expanded
+rows on and above the view, bursts of 1 to 400 lines and frame-by-frame appends never moved the
+first visible line, through and past the ceiling; 12–16 rows in the DOM. In the e2e debug build
+(lines sent through the real `logs` event): 28 rows in the DOM at 3,000 lines, at most 36 while
+wheel-scrolling (p95 frame 11 ms), the tail follows at the bottom and stops on a real wheel scroll
+up, and bursts of 20 and 600 lines while scrolled up leave the view in place.
+
 **E2E snapshot mode.** The e2e harness asserts on `document.body.innerText`, which a virtualized
 list would truncate. A snapshot flag renders every row while the harness reads the text, so the
 assertions stay as they are.
