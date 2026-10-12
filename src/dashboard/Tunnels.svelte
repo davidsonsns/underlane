@@ -121,7 +121,11 @@
                 data-tunnel-id={t.id}
                 tabindex={t.id === selected ? 0 : -1}
                 aria-current={t.id === selected ? "true" : undefined}
-                onclick={() => (selected = t.id)}
+                onclick={(e) => {
+                  selected = t.id;
+                  // WebKit doesn't focus a clicked button: focus it so arrow keys work after a click.
+                  e.currentTarget.focus({ preventScroll: true });
+                }}
                 animate:flip={{ duration: motion(200) }}
                 in:fly={{ x: -8, duration: motion(200) }}
                 out:fade={{ duration: motion(120) }}
