@@ -39,8 +39,8 @@
 @custom-variant kb-focus (&:where(:root[data-kb-nav] *):focus-visible);
 
 /* ---------------------------------------------------------------------------------------------
-   2. Static theme tokens (emitted as real :root variables so Svelte <style> blocks can use
-   var(--text-sm) etc. as well as the utilities). */
+   2. Static theme tokens (emitted as real :root variables, so arbitrary values and app.css
+   can use var(--text-sm) etc. as well as the utilities). */
 @theme static {
   /* "Segoe UI" and Consolas are for the later Windows build. */
   --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", system-ui, sans-serif;
@@ -55,7 +55,7 @@
   --text-xs--line-height: 14px;
   --text-callout: 12px;
   --text-callout--line-height: 16px;
-  --text-code: 11.5px; /* log lines and bodies (replaces the 11.5px literals) */
+  --text-code: 11.5px; /* log lines and bodies */
   --text-code--line-height: 16px;
   --text-sm: 13px;
   --text-sm--line-height: 18px;
