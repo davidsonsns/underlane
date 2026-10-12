@@ -18,6 +18,7 @@
   let { focusId = null }: { focusId?: string | null } = $props();
   let tunnelId = $state<string | null>(null);
   let rows = $state<RequestSummary[]>([]);
+  /** Only the first load shows the loading panel; later reloads keep the current view until they land. */
   let loading = $state(true);
   let error = $state<string | null>(null);
   let search = $state("");
@@ -92,7 +93,6 @@
     const current = () => g === loadGen;
     const t = tunnelId;
     const q = search;
-    loading = true;
     error = null;
     const run = (async () => {
       try {

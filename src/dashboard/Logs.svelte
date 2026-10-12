@@ -25,6 +25,7 @@
   let levels = $state<Record<string, boolean>>({ debug: true, info: true, warn: true, error: true });
   let search = $state("");
   let lines = $state<LogLine[]>([]);
+  /** Only the first load shows the loading panel; later reloads keep the current view until they land. */
   let loading = $state(true);
   let error = $state<string | null>(null);
   let list = $state<LogList>();
@@ -55,7 +56,6 @@
       loading = false;
       return Promise.resolve();
     }
-    loading = true;
     const q = { tunnelId, levels: lv.length === 5 ? [] : lv, search, limit: 1000 };
     const run = (async () => {
       try {
@@ -159,7 +159,7 @@
     {:else if error}
       <StatePanel kind="error" title="Couldn't load logs" message={error}><Button variant="outline" onclick={load}>Try again</Button></StatePanel>
     {:else if lines.length === 0}
-      <StatePanel kind="empty" title={search || activeLevels.length < 5 ? "No matching log lines" : "No logs yet"} message={search ? "Try a different search or level filter." : "Start a tunnel and cloudflared's output streams here live."} />
+      <StatePanel kind="empty" title={search || activeLevels.length < 5 ? "No matching log lines" : "No logs yet"} message={search || activeLevels.length < 5 ? "Try a different search or level filter." : "Start a tunnel and cloudflared's output streams here live."} />
     {:else}
       <LogList bind:this={list} bind:lines {names} showTunnel={!tunnelId} cap={MAX} />
     {/if}
