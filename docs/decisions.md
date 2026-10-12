@@ -489,7 +489,7 @@ decoration. WCAG 1.4.3 covers placeholder text.
 provider mounted in both windows, nothing using them yet): popover JS 61.5 kB gzip (3.5 entry +
 58.0 shared), dashboard JS 80.8 kB, CSS 16.3 kB (popover) and 19.5 kB (dashboard), the shared
 chunk carrying every installed component's utilities and sonner's stylesheet. Under the popover
-budget, so sonner stays statically imported (no lazy load). Budgets for the finished port: popover JS ≤ 70 kB gzip,
+budget, so sonner stayed statically imported until Phase 2i (see below). Budgets for the finished port: popover JS ≤ 70 kB gzip,
 dashboard JS ≤ 150 kB, CSS ≤ 20 kB per page.
 
 **Tooltip chunking (Phase 2a).** Phase 1's popover figure didn't include the tooltip
@@ -501,11 +501,40 @@ popover 67.9 kB (3.4 entry + 64.5 shared), dashboard 116.6 kB. Phase 2i, which p
 popover, brings floating-ui back to it (about +20 kB), so 2i needs O10 (lazy sonner) or a lazy
 tooltip content to stay within 70 kB.
 
+**Popover budget: lazy toast and tooltip surfaces (Phase 2i, O10).** With Tips in the
+popover, Tooltip.Content (Bits' popper layer, its dismiss/escape/focus-scope layers and
+floating-ui) joined the popover's JS: 86.9 kB gzip with svelte-sonner already lazy, over the
+70 kB budget. Two changes bring it back. `src/lib/lazy.ts` re-exports svelte-sonner's `toast`,
+the Toaster and `Tooltip.Content`, and is only ever loaded with `import()`: `notify.*` loads it
+on the first toast (the popover mounts its Toaster then; the toast list is global, so that
+first toast still shows), and `Tip` loads it on the first hover or keyboard focus of any trigger,
+inside the 250ms open delay, rendering only Root and Trigger until then. One lazy module, not
+one `import()` per surface: Vite 8's bundler (rolldown) splits shared code by the set of
+entries and dynamic imports that reach it, and three dynamic imports cut the shared chunk into
+five, which cost the dashboard about 6 kB of compression (151.0 kB, over its budget). The
+dashboard imports all three statically, so there the `import()` resolves at once.
+Measured (gzip -9, `vite build`): popover on open 67.7 kB (5.1 entry + 62.6 shared), down from
+67.8 kB in 2h; the lazy chunk is 28.3 kB JS + 3.0 kB CSS (svelte-sonner, the Toaster, the
+tooltip content and floating-ui), fetched from disk on the first toast or tooltip. Dashboard
+148.3 kB (57.5 + 62.6 + 28.3, plus a 0.1 kB stub). CSS: popover 14.0 kB on open (sonner's
+stylesheet moved to the lazy chunk), dashboard 17.0 kB. StatusDot lost its `use:tooltip` hint:
+every caller now wraps it in a Tip, so `src/lib/tooltip.ts`, `Icon.svelte` and `Toggle.svelte`
+have no importers left (Phase 3 deletes them).
+
+**Popover keyboard (Phase 2i, F12).** The first tunnel row (or "Add a tunnel" when there are
+none) gets focus on `popover-shown` after the refresh, and also after the first `store.init()`,
+because the first open creates the webview and the event can fire before its listener exists.
+That focus clears `html[data-kb-nav]`, so no ring shows until a key is pressed, as in AppKit.
+Up/Down/Home/End move between the rows (from any control in a row) and set `data-kb-nav`;
+Escape calls the re-added `hide_popover` command. Checked in the e2e debug build, first open
+after launch and reopen separately.
+
 **Status dot hint (Phase 2b).** 02 maps StatusDot to "utilities + `Tip` with `statusHint`", but
 StatusDot is also in the popover, and a Tip inside it would put `ui/tooltip` (floating-ui) into
 the popover's JS before 2i has made room for it. So StatusDot keeps its `use:tooltip` hint behind a
 `hint` prop (default on), and a ported screen wraps the dot in its own Tip with `hint={false}`
-(TunnelDetail does). The popover and the Tunnels list switch in 2i and 2g. The dot is not a tab
+(TunnelDetail does). The Tunnels list (2g) and the popover (2i) switched, and 2i removed the
+`hint` prop. The dot is not a tab
 stop: the status word sits next to it as text. Popover JS after 2b: 68.0 kB (3.4 + 64.6), up
 49 B on 2a, 27 B of which comes with main's StatusDot unchanged (the shared chunk exports more
 names to the dashboard).

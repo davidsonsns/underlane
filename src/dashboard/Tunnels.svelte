@@ -132,7 +132,7 @@
               >
                 <!-- The status word follows in text, so the dot's hint is hover-only (no tab stop). -->
                 <Tip text={statusHint[t.state.status]}>
-                  {#snippet children({ props })}<span {...{ ...props, tabindex: undefined }} class="flex"><StatusDot status={t.state.status} hint={false} /></span>{/snippet}
+                  {#snippet children({ props })}<span {...{ ...props, tabindex: undefined }} class="flex"><StatusDot status={t.state.status} /></span>{/snippet}
                 </Tip>
                 <span class="flex min-w-0 flex-1 flex-col">
                   <span class="truncate font-medium">{t.name}</span>

@@ -33,6 +33,7 @@ export const api = {
   loginItem: () => invoke<LoginItem>("login_item_status"),
   setLaunchAtLogin: (enabled: boolean) => invoke<LoginItem>("set_launch_at_login", { enabled }),
   openDashboard: (view?: string) => invoke<void>("open_dashboard", { view: view ?? null }),
+  hidePopover: () => invoke<void>("hide_popover"),
   quit: () => invoke<void>("quit"),
   e2eReport: (nonce: string, text: string) => invoke<void>("e2e_report", { nonce, text }),
 };

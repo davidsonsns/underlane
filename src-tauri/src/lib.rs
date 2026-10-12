@@ -87,6 +87,7 @@ pub fn run() {
             commands::login_item_status,
             commands::set_launch_at_login,
             commands::open_dashboard,
+            commands::hide_popover,
             commands::quit,
             commands::e2e_report,
         ])

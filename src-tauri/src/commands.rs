@@ -441,6 +441,11 @@ pub fn open_dashboard(app: AppHandle, view: Option<String>) {
 }
 
 #[tauri::command]
+pub fn hide_popover(app: AppHandle) {
+    tray::hide_popover(&app);
+}
+
+#[tauri::command]
 pub fn quit(app: AppHandle) {
     app.exit(0);
 }
