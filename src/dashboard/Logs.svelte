@@ -19,6 +19,9 @@
     if (focusId) tunnelId = focusId;
   });
   const LEVELS = ["debug", "info", "warn", "error"] as const;
+  // A severity ladder for the filter's dots; shown labels take the level's text colour.
+  const levelDot: Record<(typeof LEVELS)[number], string> = { debug: "var(--text-3)", info: "var(--info)", warn: "var(--degraded)", error: "var(--bad)" };
+  const levelText: Partial<Record<(typeof LEVELS)[number], string>> = { info: "data-[state=on]:text-info-text", warn: "data-[state=on]:text-degraded-text", error: "data-[state=on]:text-bad-text" };
   let levels = $state<Record<string, boolean>>({ debug: true, info: true, warn: true, error: true });
   let search = $state("");
   let lines = $state<LogLine[]>([]);
@@ -128,11 +131,19 @@
         }
       }
     >
+      <!-- No per-item chips (four lit boxes in dark mode): a shown level has a filled
+           severity dot and full-strength label, a hidden one a hollow ring and a muted label. -->
       {#each LEVELS as l (l)}
         <ToggleGroup.Item
           value={l}
-          class="text-muted-foreground data-[state=on]:text-foreground {l === 'warn' ? 'data-[state=on]:text-degraded-text' : l === 'error' ? 'data-[state=on]:text-bad-text' : ''}"
-        >{l}</ToggleGroup.Item>
+          style="--lvl: {levelDot[l]}"
+          class="group-data-[spacing=0]/toggle-group:hover:bg-fill group-data-[spacing=0]/toggle-group:data-[state=on]:border-transparent group-data-[spacing=0]/toggle-group:data-[state=on]:bg-transparent gap-1.5 text-muted-foreground data-[state=on]:text-foreground {levelText[l]}"
+        >
+          <span
+            aria-hidden="true"
+            class="size-1.5 rounded-full shadow-[inset_0_0_0_1px_var(--text-3)] transition-[background-color,box-shadow] duration-150 group-data-[state=on]/toggle:bg-(--lvl) group-data-[state=on]/toggle:shadow-none motion-reduce:transition-none"
+          ></span>{l}
+        </ToggleGroup.Item>
       {/each}
     </ToggleGroup.Root>
     <InputGroup.Root class="w-44">

@@ -140,6 +140,8 @@
   --color-bad: var(--bad);
   --color-bad-text: var(--bad-text);
   --color-off: var(--off);
+  --color-info: var(--info);
+  --color-info-text: var(--info-text);
 }
 
 /* ---------------------------------------------------------------------------------------------
@@ -198,6 +200,10 @@
     --bad: #e5484d;
     --bad-text: #c4262e;
     --off: #a1a1a6;
+    /* Log level "info" (the Logs filter dot). systemBlue, not --tint: a severity colour must
+       not follow the user's accent, which can be orange or red. */
+    --info: #007aff;
+    --info-text: #0068da;
 
     @variant dark {
       --accent-fallback: #0a84ff;
@@ -232,6 +238,8 @@
       --starting-text: #f0b429;
       --degraded-text: #ff9f45;
       --bad-text: #ff6b6b;
+      --info: #0a84ff;
+      --info-text: #419cff;
       /* --off keeps #a1a1a6 in both themes, as before the migration (01 §3.3). */
     }
 
