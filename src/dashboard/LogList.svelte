@@ -64,8 +64,10 @@
     const min = lines[0]?.id ?? Infinity;
     for (const k in open) if (+k < min) delete open[k];
   }
-  /** How many lines are expanded (ui-lab reads it to check the map stays bounded). */
-  export const openCount = () => Object.keys(open).length;
+  /** ui-lab only (dev builds): the expansion map's size and virtua's cached row heights. */
+  export const lab = import.meta.env.DEV
+    ? { openCount: () => Object.keys(open).length, sizes: () => lines.map((_, i) => list?.getItemSize(i) ?? -1) }
+    : undefined;
 
   // aria-activedescendant only once the row exists: virtua mounts a row one animation frame
   // after scrollToIndex, not on the next tick (decisions.md §17).

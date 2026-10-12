@@ -25,6 +25,11 @@
     };
   };
   const seed = () => Array.from({ length: CAP }, mk);
+  /** A different result set of the same length (a filter change): short lines, no fields. */
+  const plain = (): LogLine => {
+    const l = mk();
+    return { ...l, message: `${l.id}: plain line`, fields: "{}" };
+  };
 
   let lines = $state<LogLine[]>(seed());
   let list = $state<LogList>();
@@ -45,6 +50,15 @@
       /** E2E snapshot mode (every row rendered), as App.svelte's e2e handler sets it. */
       snapshot: async (full: boolean) => {
         snapshot.full = full;
+        await tick();
+      },
+      openCount: () => list?.lab?.openCount() ?? 0,
+      sizes: () => list?.lab?.sizes() ?? [],
+      /** A tunnel/level/search change that returns the same number of lines, as Logs.load() does. */
+      refilter: async () => {
+        seq = 100000;
+        lines = Array.from({ length: CAP }, plain);
+        list?.reset();
         await tick();
       },
       reset: async () => {
