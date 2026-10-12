@@ -528,6 +528,13 @@ with `shouldFilter={false}` rather than a custom `filter`: with a filter Bits re
 moving their DOM nodes, which is fragile under Svelte's keyed blocks and would leave the order
 to its score sort.
 
+**Tunnels list keyboard and add focus (Phase 2g).** The list is one Tab stop, the selected
+tunnel (roving tabindex); Up/Down/Home/End move the selection and focus together, like a source
+list, so remove and add can keep focusing the selected row. Adding a tunnel used to set the
+selection before the store refresh, and Tunnels dropped the unknown id and selected the first
+tunnel; App now refreshes, selects, then closes the sheet, which hands focus to the new row
+(imports and cancels still go back to the Add tunnel button).
+
 **Alternatives rejected.** Bits UI alone with hand-written styles (an earlier spike: every
 component's look written from scratch, and its dark variant missed "System" in dark mode).
 Keeping scoped CSS (1,440 lines of duplicated per-component styles, no shared primitives, and the
