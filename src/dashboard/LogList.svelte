@@ -9,7 +9,8 @@
   import { VList } from "virtua/svelte";
   import { next } from "$lib/listnav";
   import { snapshot } from "$lib/snapshot.svelte";
-  import { formatClock, logFields } from "$lib/format";
+  import { formatClock } from "$lib/format";
+  import { logFields } from "$lib/logfields";
   import { cn } from "$lib/utils";
   import type { LogLine } from "$lib/types";
   import { Button } from "$lib/components/ui/button/index.js";

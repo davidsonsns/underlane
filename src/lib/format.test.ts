@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { formatBytes, formatDuration, hexDump, logFields, prettyJson, publicUrl, reachSummary, serviceLabel, shortService, toCurl } from "./format";
+import { formatBytes, formatDuration, hexDump, prettyJson, publicUrl, reachSummary, serviceLabel, shortService, toCurl } from "./format";
+import { logFields } from "./logfields";
 
 describe("format", () => {
   it("labels services", () => {
