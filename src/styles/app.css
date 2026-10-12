@@ -386,8 +386,9 @@
     font-family: inherit;
     font-size: var(--text-sm);
   }
-  /* No ::-webkit-scrollbar rules: WKWebView then draws native overlay scrollbars that follow
-     System Settings > Appearance > Show scroll bars. */
+  /* No ::-webkit-scrollbar rules: WKWebView then draws native scrollbars that follow System
+     Settings > Appearance > Show scroll bars (overlay with a trackpad, a 15px classic scroller
+     when a mouse is attached and the setting is "automatically"). */
 }
 
 /* ---------------------------------------------------------------------------------------------

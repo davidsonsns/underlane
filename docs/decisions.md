@@ -322,9 +322,10 @@ ships after each phase. The full plan lives outside the repo; this entry records
 `@layer theme, base, legacy, components, utilities`. The old `base.css` is imported into
 `legacy`: it beats Tailwind's preflight, so unported screens keep their look, and loses to
 utilities, so new code wins. Svelte `<style>` blocks are unlayered and beat everything, so a
-component moves to utilities in one go. Tailwind only scans `src/` (`source(none)` +
-`@source "../"`), so the HTML files carry no utility classes. Two preflight compat rules
-(placeholder colour, checkbox margin) sit at the bottom of base.css and go with it.
+component moves to utilities in one go. Tailwind only scans the shipped code in `src/`
+(`source(none)` + `@source` lines for `dashboard/`, `popover/` and `lib/`), so the HTML files
+carry no utility classes. Two preflight compat rules (placeholder colour, checkbox margin) sat at
+the bottom of base.css and went with it. (Phase 3 removed the `legacy` layer and base.css.)
 
 **Phase 3: base.css is gone.** The `legacy` layer and `src/styles/base.css` were deleted, so
 app.css now declares `@layer theme, base, components, utilities`. What was still live in base.css
@@ -637,3 +638,14 @@ few bytes; the shared CSS shrinks by 830 B.
 tooltip content). Not done, follow-ups: O1 (resizable dashboard, fluid Requests split), O2
 (confirm before Clear), O4 (⌘1–4, ⌘N, ⌘F shortcuts with Kbd hints), O5 (⌘K palette), O7 (Copy on
 error toasts). O8 (tighter CSP `style-src`) is deliberately not done (R14).
+
+**After Phase 3: what changed with base.css gone.** The native `<select>` is now fully the
+browser's default pop-up (base.css's `font: inherit; color` override is gone; app.css sets only
+the family and the 13px size), which is what F5 wanted. Scrollbars are native: overlay with a
+trackpad, a 15px classic scroller with a mouse attached and "Show scroll bars: automatically", so
+the Requests column headers can sit up to 15px off their columns when the list scrolls (it was
+10px with the old custom scrollbar). The Phase 3 `title=` gate allows these six native titles,
+all on truncated text: `RequestList.svelte` (path), `Settings.svelte` (path snippet),
+`TunnelDetail.svelte` (config path), `Routes.svelte` (host), `AddSheetBody.svelte` (hostnames),
+`RouteLine.svelte` (hostname → service).
+
