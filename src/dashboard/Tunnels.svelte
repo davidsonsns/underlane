@@ -2,15 +2,24 @@
   import { tick } from "svelte";
   import { flip } from "svelte/animate";
   import { fly, fade } from "svelte/transition";
+  import Eye from "@lucide/svelte/icons/eye";
+  import Play from "@lucide/svelte/icons/play";
+  import Plus from "@lucide/svelte/icons/plus";
+  import RotateCw from "@lucide/svelte/icons/rotate-cw";
+  import Square from "@lucide/svelte/icons/square";
   import { store } from "../lib/store.svelte";
   import { api } from "../lib/api";
   import { motion } from "../lib/theme";
-  import { isOn, statusLabel } from "../lib/format";
+  import { isOn, statusHint, statusLabel } from "../lib/format";
   import type { Tunnel } from "../lib/types";
   import Toolbar from "$lib/components/app/Toolbar.svelte";
   import StatusDot from "$lib/components/app/StatusDot.svelte";
-  import Icon from "$lib/components/app/Icon.svelte";
   import StatePanel from "$lib/components/app/StatePanel.svelte";
+  import Tip from "$lib/components/app/Tip.svelte";
+  import { kbRing } from "$lib/components/ui/mac";
+  import { Button } from "$lib/components/ui/button/index.js";
+  import { mergeProps } from "bits-ui";
+  import { cn } from "$lib/utils";
   import TunnelDetail from "./TunnelDetail.svelte";
 
   let { focusId = null, onadd }: { focusId?: string | null; onadd: (e: MouseEvent) => void } = $props();
@@ -51,65 +60,100 @@
     if (next) list?.querySelector<HTMLElement>(`[data-tunnel-id="${next.id}"]`)?.focus();
     else emptyAdd?.focus();
   }
+
+  // O3: the list is one Tab stop (the selected tunnel); Up/Down/Home/End move the selection
+  // and focus with it, like a source list. Rows fading out are inert, so they're skipped.
+  function onListKey(e: KeyboardEvent) {
+    const rows = [...(list?.querySelectorAll<HTMLElement>("[data-tunnel-id]:not([inert])") ?? [])];
+    const i = rows.indexOf(document.activeElement as HTMLElement);
+    const to = ({ ArrowDown: i + 1, ArrowUp: i - 1, Home: 0, End: rows.length - 1 } as Record<string, number>)[e.key];
+    if (i < 0 || to === undefined || e.metaKey || e.altKey || e.ctrlKey) return;
+    e.preventDefault();
+    const row = rows[Math.max(0, Math.min(rows.length - 1, to))];
+    selected = row.dataset.tunnelId ?? selected;
+    document.documentElement.dataset.kbNav = ""; // arrows count as keyboard navigation (03 R-13)
+    row.focus();
+  }
 </script>
 
-<div class="page">
+<div class="flex h-full flex-col">
   <Toolbar title="Tunnels" subtitle={store.tunnels.length ? `${store.activeCount} of ${store.tunnels.length} running` : ""}>
     {#if store.tunnels.length}
       {#if anyOn}
-        <button class="btn" onclick={() => api.restartAll()} title="Restart every running tunnel"><Icon name="restart" size={13} /> Restart all</button>
-        <button class="btn" onclick={() => api.stopAll()}><Icon name="stop" size={11} /> Stop all</button>
+        <Tip text="Restart every running tunnel">
+          {#snippet children({ props })}
+            <Button variant="outline" {...mergeProps(props, { onclick: () => api.restartAll() })}><RotateCw class="size-3.5" /> Restart all</Button>
+          {/snippet}
+        </Tip>
+        <Button variant="outline" onclick={() => api.stopAll()}><Square class="size-2.5 fill-current" /> Stop all</Button>
       {:else}
-        <button class="btn" onclick={() => api.startAll()}><Icon name="play" size={11} /> Start all</button>
+        <Button variant="outline" onclick={() => api.startAll()}><Play class="size-2.5 fill-current" /> Start all</Button>
       {/if}
     {/if}
-    <button class="btn primary" data-add-tunnel onclick={onadd}><Icon name="plus" size={12} /> Add tunnel</button>
+    <Button data-add-tunnel onclick={onadd}><Plus class="size-3.5" /> Add tunnel</Button>
   </Toolbar>
 
   {#if store.loading}
-    <StatePanel kind="loading" title="Loading tunnels…" />
+    <div class="grid flex-1 place-items-center"><StatePanel kind="loading" title="Loading tunnels…" /></div>
   {:else if store.error}
-    <StatePanel kind="error" title="Couldn't load tunnels" message={store.error}>
-      <button class="btn" onclick={() => store.refresh()}>Try again</button>
-    </StatePanel>
+    <div class="grid flex-1 place-items-center">
+      <StatePanel kind="error" title="Couldn't load tunnels" message={store.error}>
+        <Button variant="outline" onclick={() => store.refresh()}>Try again</Button>
+      </StatePanel>
+    </div>
   {:else if store.tunnels.length === 0}
-    <div class="empty">
+    <div class="grid flex-1 place-items-center">
       <StatePanel kind="empty" title="Set up your first tunnel" message="Burrow runs cloudflared for you. Import the config files you already have, paste a token from the Cloudflare dashboard, or share a local port with a quick tunnel; no account needed for that one.">
-        <button class="btn primary" bind:this={emptyAdd} onclick={onadd}>Add tunnel</button>
+        <Button bind:ref={emptyAdd} onclick={onadd}>Add tunnel</Button>
       </StatePanel>
     </div>
   {:else}
-    <div class="split">
-      <nav class="list" aria-label="Tunnels" bind:this={list}>
+    <div class="grid min-h-0 flex-1 grid-cols-[250px_1fr]">
+      <!-- The keydown only moves focus between the buttons inside (O3). -->
+      <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
+      <nav class="flex flex-col gap-2 overflow-y-auto border-e-[0.5px] border-border p-2" aria-label="Tunnels" bind:this={list} onkeydown={onListKey}>
         {#each groups as g (g.id)}
-          <div class="group" animate:flip={{ duration: motion(200) }}>
-            <div class="group-name">{g.name}</div>
+          <div animate:flip={{ duration: motion(200) }}>
+            <div class="px-2 py-1 text-xs font-semibold text-muted-foreground">{g.name}</div>
             {#each g.tunnels as t (t.id)}
               <button
-                class="item"
+                class={cn("flex w-full items-center gap-2.5 rounded-md px-2 py-1.75 text-left", t.id === selected ? "bg-(--selected)" : "hover:bg-fill", kbRing)}
                 data-tunnel-id={t.id}
-                class:sel={t.id === selected}
+                tabindex={t.id === selected ? 0 : -1}
                 aria-current={t.id === selected ? "true" : undefined}
-                onclick={() => (selected = t.id)}
+                onclick={(e) => {
+                  selected = t.id;
+                  // WebKit doesn't focus a clicked button: focus it so arrow keys work after a click.
+                  e.currentTarget.focus({ preventScroll: true });
+                }}
                 animate:flip={{ duration: motion(200) }}
                 in:fly={{ x: -8, duration: motion(200) }}
                 out:fade={{ duration: motion(120) }}
               >
-                <StatusDot status={t.state.status} />
-                <span class="item-text">
-                  <span class="item-name">{t.name}</span>
-                  <span class="item-sub" class:bad={t.state.status === "crashed"}>{statusLabel[t.state.status]}</span>
+                <!-- The status word follows in text, so the dot's hint is hover-only (no tab stop). -->
+                <Tip text={statusHint[t.state.status]}>
+                  {#snippet children({ props })}<span {...{ ...props, tabindex: undefined }} class="flex"><StatusDot status={t.state.status} hint={false} /></span>{/snippet}
+                </Tip>
+                <span class="flex min-w-0 flex-1 flex-col">
+                  <span class="truncate font-medium">{t.name}</span>
+                  <span class={cn("text-xs", t.state.status === "crashed" ? "text-bad-text" : "text-muted-foreground")}>{statusLabel[t.state.status]}</span>
                 </span>
-                {#if t.inspect}<span class="tag" title="Requests are inspected"><Icon name="eye" size={12} /></span>{/if}
+                {#if t.inspect}
+                  <Tip text="Requests are inspected">
+                    {#snippet children({ props })}
+                      <span {...{ ...props, tabindex: undefined }} class="flex text-muted-foreground" role="img" aria-label="Requests are inspected"><Eye class="size-3" aria-hidden="true" /></span>
+                    {/snippet}
+                  </Tip>
+                {/if}
               </button>
             {/each}
           </div>
         {/each}
       </nav>
-      <div class="detail">
+      <div class="min-w-0 overflow-y-auto">
         {#if current}
           {#key current.id}
-            <div class="detail-inner" in:fade={{ duration: motion(120) }}>
+            <div class="px-6 pt-5 pb-8" in:fade={{ duration: motion(120) }}>
               <TunnelDetail tunnel={current} onremove={remove} />
             </div>
           {/key}
@@ -118,83 +162,3 @@
     </div>
   {/if}
 </div>
-
-<style>
-  .page {
-    display: flex;
-    flex-direction: column;
-    height: 100%;
-  }
-  .empty {
-    flex: 1;
-    display: grid;
-    place-items: center;
-  }
-  .split {
-    flex: 1;
-    display: grid;
-    grid-template-columns: 250px 1fr;
-    min-height: 0;
-  }
-  .list {
-    overflow-y: auto;
-    padding: 8px;
-    border-right: 0.5px solid var(--line);
-  }
-  .group + .group {
-    margin-top: 8px;
-  }
-  .group-name {
-    padding: 4px 8px;
-    font-size: var(--text-xs);
-    font-weight: 600;
-    color: var(--text-2);
-  }
-  .item {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    width: 100%;
-    padding: 7px 8px;
-    border: 0;
-    border-radius: 7px;
-    background: transparent;
-    text-align: left;
-  }
-  .item:hover {
-    background: var(--hover);
-  }
-  .item.sel {
-    background: var(--selected);
-  }
-  .item-text {
-    display: flex;
-    flex-direction: column;
-    min-width: 0;
-    flex: 1;
-  }
-  .item-name {
-    font-weight: 500;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-  .item-sub {
-    font-size: var(--text-xs);
-    color: var(--text-2);
-  }
-  .item-sub.bad {
-    color: var(--bad);
-  }
-  .tag {
-    color: var(--text-3);
-    display: flex;
-  }
-  .detail {
-    overflow-y: auto;
-    min-width: 0;
-  }
-  .detail-inner {
-    padding: 20px 24px 32px;
-  }
-</style>

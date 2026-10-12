@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount, tick } from "svelte";
+  import { onMount, tick, untrack } from "svelte";
   import { fade } from "svelte/transition";
   import { listen } from "@tauri-apps/api/event";
   import { store } from "../lib/store.svelte";
@@ -23,7 +23,14 @@
   let adding = $state(false);
   let addTab = $state<AddTab>("import");
   // The button that opened the sheet, for return focus (02 R7). Null when the popover opened it.
+  // Bumped each time the Add sheet opens, so a slow add can't close a sheet reopened meanwhile.
+  let sheetSession = $state(0);
+  $effect.pre(() => {
+    if (adding) untrack(() => sheetSession++);
+  });
   let addTrigger = $state<HTMLElement | null>(null);
+  // The tunnel the sheet just added (null for imports), for return focus.
+  let addedId: string | null = null;
   let requestsRef = $state<{ selectFirst: (side?: "req" | "resp") => Promise<void> } | null>(null);
 
   function navigate(target: string) {
@@ -32,6 +39,7 @@
       // add:<tab> opens a given tab (O6), e.g. for screenshots.
       addTab = id === "quick" || id === "token" ? id : "import";
       addTrigger = null;
+      addedId = null;
       view = "tunnels";
       adding = true;
       return;
@@ -74,6 +82,7 @@
 
   function openAdd(e: MouseEvent) {
     addTrigger = e.currentTarget as HTMLElement;
+    addedId = null;
     addTab = "import";
     adding = true;
   }
@@ -132,13 +141,31 @@
   </main>
 </div>
 
-<!-- Without a live trigger (opened from the popover, or the empty state went away after an
-     add), focus goes to the Tunnels toolbar's Add tunnel. -->
+<!-- After adding one tunnel, focus goes to its row in the Tunnels list (it's selected through
+     focusId). Otherwise, without a live trigger (opened from the popover, or the empty state went
+     away after an import), focus goes to the Tunnels toolbar's Add tunnel. -->
 <AddSheet
   bind:open={adding}
   tab={addTab}
-  returnFocus={() => (addTrigger?.isConnected ? addTrigger : document.querySelector<HTMLElement>("[data-add-tunnel]"))}
-  onadded={(id) => { addTrigger = null; adding = false; focusId = id; view = "tunnels"; store.refresh(); }}
+  returnFocus={() => {
+    const row = addedId ? document.querySelector<HTMLElement>(`[data-tunnel-id="${addedId}"]`) : null;
+    // Focus is restored with preventScroll, so bring a new row that's below the fold into view.
+    row?.scrollIntoView({ block: "nearest" });
+    return row || (addTrigger?.isConnected ? addTrigger : document.querySelector<HTMLElement>("[data-add-tunnel]"));
+  }}
+  onadded={async (id) => {
+    const session = sheetSession;
+    addTrigger = null;
+    addedId = id;
+    // Refresh first: Tunnels drops a selection that isn't in the list yet, and the sheet hands
+    // focus to the new row when it closes. The sheet stays busy until this returns.
+    await store.refresh();
+    focusId = id;
+    view = "tunnels";
+    await tick();
+    // Close only the sheet this add came from, not one reopened during the refresh.
+    if (session === sheetSession) adding = false;
+  }}
 />
 
 <Toaster theme={store.overview?.settings.theme ?? "system"} position="bottom-right" visibleToasts={3} />

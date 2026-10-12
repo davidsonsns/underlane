@@ -30,7 +30,7 @@
     initialTab = "import",
     onclose,
     onadded,
-  }: { initialTab?: AddTab; onclose: () => void; onadded: (id: string | null) => void } = $props();
+  }: { initialTab?: AddTab; onclose: () => void; onadded: (id: string | null) => void | Promise<void> } = $props();
 
   // Only the starting tab: the body remounts on every open.
   // svelte-ignore state_referenced_locally
@@ -66,7 +66,7 @@
     error = null;
     try {
       report = await api.importPaths(paths);
-      if (report.added.length && !report.failed.length) onadded(null);
+      if (report.added.length && !report.failed.length) await onadded(null);
     } catch (e) {
       error = errorText(e);
     } finally {
@@ -86,7 +86,7 @@
     try {
       const id = await api.addQuick(quick.name, quick.origin, quick.project, quick.inspect);
       await api.start(id);
-      onadded(id);
+      await onadded(id); // busy until the list shows it, so it can't be submitted twice
     } catch (e) {
       error = errorText(e);
     } finally {
@@ -99,7 +99,7 @@
     error = null;
     try {
       const id = await api.addToken(token.name, token.token, token.project);
-      onadded(id);
+      await onadded(id); // busy until the list shows it, so it can't be submitted twice
     } catch (e) {
       error = errorText(e);
     } finally {

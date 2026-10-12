@@ -17,7 +17,7 @@
     tab?: AddTab;
     /** Where focus goes when the sheet closes (02 R7: WebKit doesn't focus a clicked button). */
     returnFocus: () => HTMLElement | null | undefined;
-    onadded: (id: string | null) => void;
+    onadded: (id: string | null) => void | Promise<void>;
   } = $props();
 
   // Bits keeps Content mounted until the 150ms close animation ends, so a reopen inside that

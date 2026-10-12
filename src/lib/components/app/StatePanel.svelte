@@ -1,9 +1,10 @@
 <script lang="ts">
   // Shared empty / loading / error states. Copy tells the user what to do next.
-  // Built on ui/empty. The loading ring stays the drawn 18px ring (not ui/spinner) so the
-  // panel looks exactly as before the port; leading-legacy keeps base.css's line height.
+  // Built on ui/empty, with ui/spinner for loading (02 §2; the drawn 18px ring until 2g).
+  // leading-legacy keeps base.css's line height.
   import type { Snippet } from "svelte";
   import * as Empty from "$lib/components/ui/empty/index.js";
+  import { Spinner } from "$lib/components/ui/spinner/index.js";
   import ArchGlyph from "./ArchGlyph.svelte";
   let {
     kind,
@@ -15,7 +16,8 @@
 
 <Empty.Root class="animate-rise leading-legacy" role={kind === "error" ? "alert" : "status"}>
   {#if kind === "loading"}
-    <div class="size-[18px] animate-spinner rounded-full border-2 border-(color:--line-strong) border-t-muted-foreground" aria-hidden="true"></div>
+    <!-- The panel is the status region and its title the announcement: the spinner is decoration. -->
+    <Spinner role="presentation" aria-hidden="true" />
   {:else if kind === "error"}
     <div class="grid size-7 place-items-center rounded-full bg-bad/14 font-bold text-bad">!</div>
   {:else}
