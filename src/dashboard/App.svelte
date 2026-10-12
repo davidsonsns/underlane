@@ -24,6 +24,8 @@
   let addTab = $state<AddTab>("import");
   // The button that opened the sheet, for return focus (02 R7). Null when the popover opened it.
   let addTrigger = $state<HTMLElement | null>(null);
+  // The tunnel the sheet just added (null for imports), for return focus.
+  let addedId: string | null = null;
   let requestsRef = $state<{ selectFirst: (side?: "req" | "resp") => Promise<void> } | null>(null);
 
   function navigate(target: string) {
@@ -32,6 +34,7 @@
       // add:<tab> opens a given tab (O6), e.g. for screenshots.
       addTab = id === "quick" || id === "token" ? id : "import";
       addTrigger = null;
+      addedId = null;
       view = "tunnels";
       adding = true;
       return;
@@ -74,6 +77,7 @@
 
   function openAdd(e: MouseEvent) {
     addTrigger = e.currentTarget as HTMLElement;
+    addedId = null;
     addTab = "import";
     adding = true;
   }
@@ -132,13 +136,16 @@
   </main>
 </div>
 
-<!-- Without a live trigger (opened from the popover, or the empty state went away after an
-     add), focus goes to the Tunnels toolbar's Add tunnel. -->
+<!-- After adding one tunnel, focus goes to its row in the Tunnels list (it's selected through
+     focusId). Otherwise, without a live trigger (opened from the popover, or the empty state went
+     away after an import), focus goes to the Tunnels toolbar's Add tunnel. -->
 <AddSheet
   bind:open={adding}
   tab={addTab}
-  returnFocus={() => (addTrigger?.isConnected ? addTrigger : document.querySelector<HTMLElement>("[data-add-tunnel]"))}
-  onadded={(id) => { addTrigger = null; adding = false; focusId = id; view = "tunnels"; store.refresh(); }}
+  returnFocus={() =>
+    (addedId && document.querySelector<HTMLElement>(`[data-tunnel-id="${addedId}"]`)) ||
+    (addTrigger?.isConnected ? addTrigger : document.querySelector<HTMLElement>("[data-add-tunnel]"))}
+  onadded={(id) => { addTrigger = null; addedId = id; adding = false; focusId = id; view = "tunnels"; store.refresh(); }}
 />
 
 <Toaster theme={store.overview?.settings.theme ?? "system"} position="bottom-right" visibleToasts={3} />
