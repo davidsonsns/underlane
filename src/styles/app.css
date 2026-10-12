@@ -93,7 +93,6 @@
 /* Motion for the shared app components (keyframes in section 6). Emitted only when used. */
 @theme {
   --animate-status-ping: status-ping 1.3s var(--ease-out) infinite; /* StatusDot "starting" */
-  --animate-spinner: spin 0.8s linear infinite; /* StatePanel loading ring */
   --animate-rise: rise 260ms var(--ease-out); /* StatePanel entrance */
   --animate-travel: travel 650ms var(--ease-out) forwards; /* RouteLine request pulse */
   --animate-route-ping: route-ping 650ms var(--ease-out) forwards; /* Routes reach dot: inspected traffic */
