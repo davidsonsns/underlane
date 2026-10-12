@@ -8,11 +8,24 @@ import type { toast as Toast } from "svelte-sonner";
 import { errorText } from "./api";
 
 let sonner: Promise<typeof Toast> | undefined;
+let isLoaded = false;
 let loaded: (() => void) | undefined;
 
 function show(fn: (toast: typeof Toast) => void) {
-  sonner ??= import("./lazy").then((m) => (loaded?.(), m.toast));
-  sonner.then(fn);
+  // A failed load is forgotten so the next toast retries it, instead of every later toast
+  // silently failing on the same rejected promise.
+  sonner ??= import("./lazy").then(
+    (m) => {
+      isLoaded = true;
+      loaded?.();
+      return m.toast;
+    },
+    (e) => {
+      sonner = undefined;
+      throw e;
+    },
+  );
+  sonner.then(fn, (e) => console.error("Couldn't load toasts", e));
 }
 
 export const notify = {
@@ -30,11 +43,12 @@ export const notify = {
   },
   /** Drop every toast, e.g. when the popover hides so a stale one doesn't reappear. */
   dismiss() {
-    sonner?.then((t) => t.dismiss());
+    sonner?.then((t) => t.dismiss(), () => {});
   },
   /** Runs once svelte-sonner has loaded for the first toast. The popover mounts its Toaster
    *  then (a Toaster mounted after a toast() call still shows it: the toast list is global). */
   onLoad(fn: () => void) {
     loaded = fn;
+    if (isLoaded) fn();
   },
 };

@@ -2,12 +2,21 @@
   import type TooltipContent from "$lib/components/ui/tooltip/tooltip-content.svelte";
 
   // Tooltip.Content (bits' popper layer and floating-ui, ~20 KB gzip) loads on the first hover or
-  // keyboard focus of any Tip, so the popover's first open doesn't pay for it (02 O10). The
-  // dashboard imports it statically elsewhere, so there it's already loaded.
+  // keyboard focus of any Tip, so the popover's first open doesn't pay for it (02 O10). A hover
+  // loads it during the 250ms delay; keyboard focus opens at once, so there it fades in once
+  // loaded. The dashboard imports it statically elsewhere, so there it's already loaded.
   let Content = $state<typeof TooltipContent | null>(null);
   let loading: Promise<unknown> | undefined;
+  /** Load the tooltip content ahead of the first hover (the popover calls this once it's idle
+   *  after opening): content mounted late, mid-hover, can't run its exit animation and stays. */
+  export function preloadTipContent() {
+    load();
+  }
   function load() {
-    loading ??= import("$lib/lazy").then((m) => (Content = m.TooltipContent));
+    loading ??= import("$lib/lazy").then(
+      (m) => (Content = m.TooltipContent),
+      () => (loading = undefined), // retry on the next hover instead of never showing tooltips
+    );
   }
 </script>
 
@@ -37,6 +46,14 @@
     children: Snippet<[{ props: Record<string, unknown> }]>;
   } = $props();
 
+  // Until Content has loaded, bits can't close an open tooltip when the pointer leaves (its
+  // safe-polygon lives in Content), so a late load would show a tooltip after the user moved
+  // away. Close it ourselves on leave/blur while Content is missing.
+  let open = $state(false);
+  const closeIfNotLoaded = () => {
+    if (!Content) open = false;
+  };
+
   // Open on focus only during keyboard navigation (html[data-kb-nav], installFocusModality).
   // WebKit matches :focus-visible on programmatic focus, so bits' ignoreNonKeyboardFocus alone
   // still opened the tooltip when returnFocusTo() refocused a trigger after a dialog closed.
@@ -45,13 +62,13 @@
     const kbNav = () => document.documentElement.hasAttribute("data-kb-nav");
     return mergeProps(
       { ...props, onfocus: (e: FocusEvent) => kbNav() && onfocus?.(e) },
-      // Start loading the content during the 250ms open delay.
-      { onpointerenter: load, onfocus: () => kbNav() && load() }
+      // Start loading the content on the first hover or keyboard focus.
+      { onpointerenter: load, onfocus: () => kbNav() && load(), onpointerleave: closeIfNotLoaded, onblur: closeIfNotLoaded }
     );
   }
 </script>
 
-<TooltipRoot {disabled}>
+<TooltipRoot {disabled} bind:open>
   <TooltipTrigger>
     {#snippet child({ props })}{@render children({ props: keyboardFocusOnly(props) })}{/snippet}
   </TooltipTrigger>

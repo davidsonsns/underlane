@@ -26,7 +26,7 @@
   import StatePanel from "$lib/components/app/StatePanel.svelte";
   import CopyButton from "$lib/components/app/CopyButton.svelte";
   import IconAction from "$lib/components/app/IconAction.svelte";
-  import Tip from "$lib/components/app/Tip.svelte";
+  import Tip, { preloadTipContent } from "$lib/components/app/Tip.svelte";
   import { notify } from "$lib/toast";
 
   let busy = $state<Record<string, boolean>>({});
@@ -47,9 +47,14 @@
   onMount(() => {
     // The first open creates this webview, and tray.rs emits popover-shown right after show(),
     // which can be before the listener below exists. So focus after the first load too (R-27).
-    store.init().then(tick).then(focusFirst);
+    store.init().then(tick).then(focusFirst).then(() => {
+      // The tooltip content is lazy (02 O10); fetch it once the first open has settled, so it's
+      // there before the first hover instead of mounting mid-hover.
+      setTimeout(preloadTipContent, 300);
+    });
     // Refresh when shown, in case tunnels were added in the dashboard.
     const un = listen("popover-shown", async () => {
+      notify.dismiss(); // also covered by the blur handler; this doesn't depend on blur firing
       await store.refresh();
       await tick();
       focusFirst();
@@ -73,7 +78,8 @@
     if (!NAV_KEYS.has(e.key) || e.metaKey || e.ctrlKey || e.altKey || !root) return;
     const rows = [...root.querySelectorAll<HTMLElement>("[data-row-main]")];
     const current = document.activeElement?.closest("[data-row]")?.querySelector<HTMLElement>("[data-row-main]");
-    const i = next(e.key, current ? rows.indexOf(current) : -1, rows.length);
+    // From outside the rows (header, footer), Up goes to the last row and Down to the first.
+    const i = !current && e.key === "ArrowUp" ? rows.length - 1 : next(e.key, current ? rows.indexOf(current) : -1, rows.length);
     if (i === null || i < 0) return;
     e.preventDefault();
     // installFocusModality only reacts to Tab; the arrows are keyboard navigation too (R-13).
