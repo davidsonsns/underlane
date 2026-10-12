@@ -52,8 +52,22 @@
       return;
     }
     adding = false;
-    if (["tunnels", "requests", "logs", "settings"].includes(v)) view = v as View;
-    focusId = id || null;
+    const next = ["tunnels", "requests", "logs", "settings"].includes(v) ? (v as View) : view;
+    show(next, () => {
+      view = next;
+      focusId = id || null;
+    });
+  }
+
+  // A view switch crossfades the content pane (app.css): WebKit snapshots the old view, so the
+  // two are never mounted together. The update runs a frame later, so e2e snapshots, which
+  // read the view right after navigating, switch at once.
+  function show(next: View, update: () => void) {
+    if (next === view || snapshot.full || !document.startViewTransition) return update();
+    document.startViewTransition(async () => {
+      update();
+      await tick();
+    });
   }
 
   // The e2e harness asks for the rendered text of a view. Lists render every row meanwhile
@@ -124,12 +138,19 @@
       <img src={logo} alt="" width="22" height="22" draggable="false" class="pointer-events-none" />
       <span>Burrow</span>
     </div>
-    <nav class="flex flex-col gap-px" aria-label="Sections">
+    <nav class="relative isolate flex flex-col gap-px" aria-label="Sections">
+      <!-- The selection is one pill that slides to the current item, like the segmented
+           control's thumb. Items are h-7 with a 1px gap, so item i sits i × (100% + 1px) down. -->
+      <div
+        aria-hidden="true"
+        class="pointer-events-none absolute inset-x-0 top-0 -z-1 h-7 rounded-md bg-sidebar-accent transition-[translate] duration-200 ease-out motion-reduce:transition-none"
+        style:translate="0 calc({nav.findIndex((n) => n.id === view)} * (100% + 1px))"
+      ></div>
       {#each nav as n}
         <button
-          class={cn("flex h-7 items-center gap-2 rounded-md px-2 text-left", view === n.id ? "bg-sidebar-accent" : "hover:bg-fill", kbRing)}
+          class={cn("flex h-7 items-center gap-2 rounded-md px-2 text-left", view !== n.id && "hover:bg-fill", kbRing)}
           aria-current={view === n.id ? "page" : undefined}
-          onclick={() => { view = n.id; focusId = null; }}
+          onclick={() => show(n.id, () => { view = n.id; focusId = null; })}
         >
           {#if n.icon}
             <n.icon class="size-[15px] text-tint" />
@@ -148,27 +169,23 @@
       {#if store.overview?.cloudflared}
         <span class="text-muted-foreground">cloudflared {store.overview.cloudflared.version ?? ""}</span>
       {:else if store.overview}
-        <button class={cn("flex items-center gap-1 rounded-xs text-degraded-text", kbRing)} onclick={() => (view = "settings")}>
+        <button class={cn("flex items-center gap-1 rounded-xs text-degraded-text", kbRing)} onclick={() => show("settings", () => (view = "settings"))}>
           <TriangleAlert class="size-3" /> cloudflared not found
         </button>
       {/if}
     </div>
   </aside>
 
-  <main class="min-w-0 overflow-hidden bg-background">
-    {#key view}
-      <div class="h-full" in:fade={{ duration: motion(140) }}>
-        {#if view === "tunnels"}
-          <Tunnels {focusId} onadd={openAdd} />
-        {:else if view === "requests"}
-          <Requests bind:this={requestsRef} {focusId} />
-        {:else if view === "logs"}
-          <Logs {focusId} />
-        {:else}
-          <Settings />
-        {/if}
-      </div>
-    {/key}
+  <main class="min-w-0 overflow-hidden bg-background [view-transition-name:page]">
+    {#if view === "tunnels"}
+      <Tunnels {focusId} onadd={openAdd} />
+    {:else if view === "requests"}
+      <Requests bind:this={requestsRef} {focusId} />
+    {:else if view === "logs"}
+      <Logs {focusId} />
+    {:else}
+      <Settings />
+    {/if}
   </main>
 </div>
 

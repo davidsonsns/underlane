@@ -460,10 +460,27 @@
   }
 }
 
+/* Switching views crossfades the content pane (App.svelte). Only <main> is captured: the root
+   isn't, so the sidebar keeps rendering live (its selection slides meanwhile) and the overlay
+   lets clicks through to it. */
+:root {
+  view-transition-name: none;
+}
+::view-transition {
+  pointer-events: none;
+}
+::view-transition-group(page) {
+  animation-duration: 150ms;
+  animation-timing-function: ease-out;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
-  *::after {
+  *::after,
+  ::view-transition-group(*),
+  ::view-transition-old(*),
+  ::view-transition-new(*) {
     animation-duration: 0.001ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.001ms !important;
