@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onDestroy, onMount, untrack } from "svelte";
+  import { cubicOut } from "svelte/easing";
   import { listen } from "@tauri-apps/api/event";
   import { store } from "../lib/store.svelte";
   import { api, errorText } from "../lib/api";
@@ -19,6 +20,7 @@
   import RequestDetail from "./RequestDetail.svelte";
   import { COLUMNS, columnPrefs, gridTemplate, setHidden, type ColumnId } from "$lib/columns.svelte";
   import { formatAt } from "$lib/format";
+  import { motion } from "$lib/theme";
 
   const CAP = 500;
   let { focusId = null }: { focusId?: string | null } = $props();
@@ -162,6 +164,79 @@
 
   onDestroy(() => detailLoad.cancel());
 
+  // The detail pane's width, as a share of the split so it scales with the window. Dragging the
+  // divider sets it; it's remembered per window in localStorage, like the hidden columns.
+  const SHARE_KEY = "underlane.requests.detail-share";
+  const SHARE = 0.44;
+  const LIST_MIN = 420;
+  const PANE_MIN = 340;
+  let share = $state(loadShare());
+  let split = $state<HTMLDivElement>();
+  let dragging = $state(false);
+
+  function loadShare(): number {
+    try {
+      const v = Number(localStorage.getItem(SHARE_KEY));
+      if (v > 0 && v < 1) return v;
+    } catch {}
+    return SHARE;
+  }
+
+  function setShare(v: number, save = true) {
+    const w = split?.clientWidth ?? 0;
+    share = w > 0 ? Math.min(Math.max(v, PANE_MIN / w), Math.max(PANE_MIN, w - LIST_MIN) / w) : v;
+    if (!save) return;
+    try {
+      localStorage.setItem(SHARE_KEY, String(share));
+    } catch {}
+  }
+
+  function ondividerdown(e: PointerEvent) {
+    if (e.button !== 0) return;
+    e.preventDefault();
+    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
+    dragging = true;
+  }
+
+  function ondividermove(e: PointerEvent) {
+    if (!dragging || !split) return;
+    const r = split.getBoundingClientRect();
+    setShare((r.right - e.clientX) / r.width, false);
+  }
+
+  function ondividerup() {
+    if (!dragging) return;
+    dragging = false;
+    setShare(share);
+  }
+
+  function ondividerkey(e: KeyboardEvent) {
+    const step = e.shiftKey ? 0.1 : 0.02;
+    if (e.key === "ArrowLeft") setShare(share + step);
+    else if (e.key === "ArrowRight") setShare(share - step);
+    else if (e.key === "Home") setShare(SHARE);
+    else return;
+    e.preventDefault();
+  }
+
+  function close() {
+    select(null);
+    list?.focus();
+  }
+
+  /** The detail pane opens from the right edge, pushing the list over. The content keeps its
+   *  final width while the pane grows or shrinks, so it slides in clipped instead of rewrapping. */
+  function reveal(node: HTMLElement) {
+    const w = node.offsetWidth;
+    const inner = node.firstElementChild as HTMLElement;
+    return {
+      duration: motion(200),
+      easing: cubicOut,
+      css: (t: number) => `min-width: 0; width: ${t * w}px; opacity: ${Math.min(1, t * 2)}`,
+      tick: (t: number) => (inner.style.width = t < 1 ? `${w}px` : ""),
+    };
+  }
+
   async function clear() {
     detailLoad.cancel();
     // A list load still in flight answers from before the Clear: drop it.
@@ -221,8 +296,8 @@
       </StatePanel>
     </div>
   {:else}
-    <div class="grid min-h-0 flex-1 grid-cols-[minmax(420px,1.25fr)_minmax(340px,1fr)]">
-      <div class="flex min-h-0 flex-col border-r-[0.5px] border-border">
+    <div class="flex min-h-0 flex-1" class:cursor-col-resize={dragging} class:select-none={dragging} bind:this={split}>
+      <div class="flex min-h-0 min-w-105 flex-1 flex-col">
         <div class="{columns} h-7 flex-none pr-[calc(--spacing(3)+var(--scrollbar-size))] border-b-[0.5px] border-border text-xs text-muted-foreground" style:grid-template-columns={template} aria-hidden="true">
           {#each shown as c (c.id)}<span class:text-right={"end" in c}>{c.label}</span>{/each}
         </div>
@@ -236,16 +311,48 @@
           <RequestList bind:this={list} bind:rows {selected} {template} {now} cap={CAP} onselect={(id) => select(id)} />
         {/if}
       </div>
-      <div class="flex min-w-0 flex-col overflow-hidden">
-        {#if detailError}
-          <StatePanel kind="error" title="Couldn't load this request" message={detailError} />
-        {:else if detail}
-          <!-- Remounted per request so its panel starts scrolled to the top; tab and view persist. -->
-          {#key detail.id}<RequestDetail {detail} bind:side bind:mode />{/key}
-        {:else}
-          <StatePanel kind="empty" title="Select a request" message="Headers and bodies show here." />
-        {/if}
-      </div>
+      <!-- Open while a request is selected. While it closes, its content stays as it was. -->
+      {#if selected != null}
+        <div
+          class="relative max-w-[calc(100%-420px)] min-w-85 flex-none overflow-hidden border-l-[0.5px] border-border"
+          style:width="{share * 100}%"
+          in:reveal
+          out:reveal
+        >
+          <div class="flex h-full min-w-0 flex-col">
+            {#if detailError}
+              <StatePanel kind="error" title="Couldn't load this request" message={detailError}><Button variant="outline" onclick={close}>Close</Button></StatePanel>
+            {:else if detail}
+              <!-- Remounted per request so its panel starts scrolled to the top; tab and view persist. -->
+              {#key detail.id}<RequestDetail {detail} bind:side bind:mode onclose={close} />{/key}
+            {/if}
+          </div>
+          <!-- The divider: drag, or arrow keys (Shift for bigger steps); double-click or Home resets.
+               A focusable separator is a widget (ARIA window splitter), which the lint doesn't know. -->
+          <!-- svelte-ignore a11y_no_noninteractive_tabindex, a11y_no_noninteractive_element_interactions -->
+          <div
+            role="separator"
+            aria-orientation="vertical"
+            aria-label="Resize request details"
+            aria-valuenow={Math.round(share * 100)}
+            aria-valuemin={0}
+            aria-valuemax={100}
+            tabindex="0"
+            class={[
+              "absolute inset-y-0 left-0 z-10 w-1.5 cursor-col-resize outline-none",
+              "after:absolute after:inset-y-0 after:left-0 after:w-0.5 after:transition-colors after:duration-150 motion-reduce:after:transition-none",
+              "hover:after:bg-tint/60 kb-focus:after:bg-tint",
+              dragging && "after:bg-tint",
+            ]}
+            onpointerdown={ondividerdown}
+            onpointermove={ondividermove}
+            onpointerup={ondividerup}
+            onpointercancel={ondividerup}
+            ondblclick={() => setShare(SHARE)}
+            onkeydown={ondividerkey}
+          ></div>
+        </div>
+      {/if}
     </div>
   {/if}
 </div>

@@ -177,6 +177,15 @@ export function statusClass(code: number | null): "ok" | "redirect" | "client" |
   return "ok";
 }
 
+/** The text colour of a method, shared by the Requests list and the detail pane. */
+export const methodText = (m: string) =>
+  m === "DELETE"
+    ? "text-bad-text"
+    : m === "POST" || m === "PUT" || m === "PATCH"
+      ? // A darkened accent, as before the port (the raw accent is under 4.5:1 on white).
+        "text-[color-mix(in_srgb,var(--tint)_80%,var(--foreground))]"
+      : "text-muted-foreground";
+
 export const statusLabel: Record<string, string> = {
   stopped: "Stopped",
   starting: "Starting",

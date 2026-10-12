@@ -15,7 +15,7 @@
   import { VList } from "virtua/svelte";
   import { next } from "$lib/listnav";
   import { snapshot } from "$lib/snapshot.svelte";
-  import { formatAt, formatBytes, formatDuration, statusClass } from "$lib/format";
+  import { formatAt, formatBytes, formatDuration, methodText, statusClass } from "$lib/format";
   import { columnPrefs } from "$lib/columns.svelte";
   import { cn } from "$lib/utils";
   import type { RequestSummary } from "$lib/types";
@@ -40,7 +40,8 @@
     cap?: number;
     /** Rows kept while the user is scrolled away from the top (the trim waits until they're back). */
     ceiling?: number;
-    /** A user move (click, keys) or a fallback after the active row went away. */
+    /** A user move (click, keys; null when the active row is clicked again or on Escape) or a
+     *  fallback after the active row went away. */
     onselect: (id: string | null) => void;
   } = $props();
 
@@ -104,6 +105,11 @@
 
   function onkeydown(e: KeyboardEvent) {
     if (e.metaKey || e.ctrlKey || e.altKey) return;
+    if (e.key === "Escape" && selected != null) {
+      e.preventDefault();
+      onselect(null);
+      return;
+    }
     const page = Math.floor((list?.getViewportSize() ?? box?.clientHeight ?? ROW) / ROW);
     const i = next(e.key, active, rows.length, page);
     if (i == null) return;
@@ -114,7 +120,9 @@
   function onclick(e: MouseEvent) {
     const el = (e.target as Element).closest<HTMLElement>("[role=option]");
     const i = el ? rows.findIndex((r) => r.id === el.dataset.id) : -1;
-    if (i >= 0) move(i);
+    // Clicking the active row again closes its detail.
+    if (i >= 0 && i === active) onselect(null);
+    else if (i >= 0) move(i);
     box?.focus({ preventScroll: true });
   }
 
@@ -196,13 +204,6 @@
     box?.focus();
   }
 
-  const methodText = (m: string) =>
-    m === "DELETE"
-      ? "text-bad-text"
-      : m === "POST" || m === "PUT" || m === "PATCH"
-        ? // A darkened accent, as before the port (the raw accent is under 4.5:1 on white).
-          "text-[color-mix(in_srgb,var(--tint)_80%,var(--foreground))]"
-        : "text-muted-foreground";
   const hidden = $derived(new Set(columnPrefs.hidden));
   const statusText = { ok: "text-ok-text", redirect: "text-muted-foreground", client: "text-degraded-text", server: "text-bad-text", none: "" };
 </script>

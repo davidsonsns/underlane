@@ -1,11 +1,17 @@
 <script lang="ts">
-  import { base64ToBytes, formatBytes, formatClock, formatDuration, hexDump, jsonTokens, prettyJson, statusClass, toCurl } from "../lib/format";
+  import { base64ToBytes, formatBytes, formatClock, formatDuration, hexDump, jsonTokens, methodText, prettyJson, statusClass, toCurl } from "../lib/format";
   import type { BodyView, RequestDetail } from "../lib/types";
   import * as Tabs from "$lib/components/ui/tabs/index.js";
   import { Badge } from "$lib/components/ui/badge/index.js";
   import CopyButton from "$lib/components/app/CopyButton.svelte";
   import Segmented from "$lib/components/app/Segmented.svelte";
   import Tip from "$lib/components/app/Tip.svelte";
+  import IconAction from "$lib/components/app/IconAction.svelte";
+  import * as Collapsible from "$lib/components/ui/collapsible/index.js";
+  import { sectionPrefs, setOpen, type SectionId } from "../lib/sections.svelte";
+  import type { Snippet } from "svelte";
+  import X from "@lucide/svelte/icons/x";
+  import ChevronRight from "@lucide/svelte/icons/chevron-right";
 
   type Side = "req" | "resp";
   type Mode = "pretty" | "raw" | "hex";
@@ -13,12 +19,15 @@
     detail,
     side = $bindable("resp"),
     mode = $bindable("pretty"),
+    onclose,
   }: {
     detail: RequestDetail;
     /** The open tab; bound by Requests so it persists across selections. */
     side?: Side;
     /** The chosen body view. A body that can't show it uses `effectiveMode` and leaves it as is. */
     mode?: Mode;
+    /** Closes the pane (the close button). */
+    onclose: () => void;
   } = $props();
 
   const body = $derived<BodyView>(side === "req" ? detail.req : detail.resp);
@@ -40,27 +49,38 @@
 </script>
 
 <div class="flex h-full min-h-0 flex-col">
-  <div class="border-b-[0.5px] border-border px-4 pt-3 pb-2.5">
-    <div class="flex items-baseline gap-2">
-      <span class="font-bold">{detail.method}</span>
-      <span class="font-mono text-callout break-all select-text">{detail.path}</span>
+  <!-- One row: what was called on the left (the host is a muted prefix that gives way first in a
+       narrow pane), how it went on the right. -->
+  <div class="border-b-[0.5px] border-border ps-4 pe-2.5">
+    <div class="flex h-10 items-center gap-2.5 text-callout">
+      <span class={["shrink-0 font-bold", methodText(detail.method)]}>{detail.method}</span>
+      <span class="flex min-w-0 flex-1 font-mono select-text" title="{detail.host}{detail.path}">
+        <span class="min-w-0 shrink-[100] truncate text-muted-foreground">{detail.host}</span>
+        <span class="min-w-0 truncate">{detail.path}</span>
+      </span>
+      <div class="flex shrink-0 items-center gap-2.5 tabular-nums">
+        {#if detail.kind !== "http"}
+          <Tip text="Streamed, so the body isn't stored">
+            {#snippet children({ props })}<Badge {...{ ...props, tabindex: undefined }}>{detail.kind === "sse" ? "SSE" : "WebSocket"}</Badge>{/snippet}
+          </Tip>
+        {/if}
+        <span class={["font-semibold", statusText[statusClass(detail.status)]]}>{detail.status ?? "No response"}</span>
+        <span class="text-muted-foreground">{formatDuration(detail.duration_ms)}</span>
+        <span class="text-muted-foreground" title={new Date(detail.ts).toLocaleString()}>{formatClock(detail.ts)}</span>
+      </div>
+      <div class="flex shrink-0 items-center gap-0.5">
+        <!-- "Copy as curl" is read by the e2e (02 §0.3): it stays a text button with this label. -->
+        <CopyButton
+          value={() => toCurl(detail)}
+          what="curl command"
+          label="Copy as curl"
+          variant="ghost"
+          tip={detail.req.truncated ? "The request body was truncated; the command includes only the stored part" : "Copy this request as a curl command"}
+        />
+        <IconAction label="Close" shortcut="Esc" onclick={onclose}><X /></IconAction>
+      </div>
     </div>
-    <div class="mt-1.5 flex flex-wrap items-center gap-2.5 text-callout">
-      <span class={["font-semibold", statusText[statusClass(detail.status)]]}>{detail.status ?? "no response"}</span>
-      <span>{formatDuration(detail.duration_ms)}</span>
-      <span class="text-muted-foreground">{detail.host}</span>
-      <span class="text-muted-foreground">{formatClock(detail.ts)}</span>
-      {#if detail.kind !== "http"}<Badge>{detail.kind === "sse" ? "Server-sent events" : "WebSocket"}, body not stored</Badge>{/if}
-      <span class="flex-1"></span>
-      <!-- "Copy as curl" is read by the e2e (02 §0.3): it stays a text button with this label. -->
-      <CopyButton
-        value={() => toCurl(detail)}
-        what="curl command"
-        label="Copy as curl"
-        tip={detail.req.truncated ? "The request body was truncated; the command includes only the stored part" : "Copy this request as a curl command"}
-      />
-    </div>
-    {#if detail.error}<div class="mt-2 text-callout text-bad-text select-text">{detail.error}</div>{/if}
+    {#if detail.error}<div class="-mt-1 pb-2.5 text-callout text-bad-text select-text">{detail.error}</div>{/if}
   </div>
 
   <Tabs.Root class="flex min-h-0 flex-1 flex-col gap-0" bind:value={() => side, (v) => (side = v as Side)}>
@@ -74,9 +94,37 @@
   </Tabs.Root>
 </div>
 
+<!-- A section heading that folds its content; which sections are folded is remembered (sections.svelte.ts). -->
+{#snippet trigger(title: string, meta: string, metaClass = "")}
+  <h3 class="text-callout">
+    <Collapsible.Trigger class="group/sec -ms-1 flex items-center gap-1 rounded-sm px-1 outline-none focus-visible:ring-2 focus-visible:ring-ring">
+      <ChevronRight class="size-3.5 text-muted-foreground transition-transform duration-200 group-data-[state=open]/sec:rotate-90" />
+      <span class="font-semibold">{title}</span>
+      <span class={["whitespace-nowrap text-muted-foreground", metaClass]}>{meta}</span>
+    </Collapsible.Trigger>
+  </h3>
+{/snippet}
+
+{#snippet section(id: SectionId, head: Snippet, content: Snippet)}
+  <Collapsible.Root class="mt-3" bind:open={() => !sectionPrefs.collapsed.includes(id), (v) => setOpen(id, v)}>
+    {@render head()}
+    <Collapsible.Content class="overflow-hidden data-[state=closed]:animate-collapsible-up data-[state=open]:animate-collapsible-down">
+      {@render content()}
+    </Collapsible.Content>
+  </Collapsible.Root>
+{/snippet}
+
 {#snippet panel()}
-  <h3 class="mt-3 mb-1.5 text-callout font-semibold">Headers <span class="text-muted-foreground">{headers.length}</span></h3>
-  <table class="w-full border-collapse font-mono text-code">
+  {@render section("headers", headersHead, headersTable)}
+  {@render section("body", bodyHead, bodyContent)}
+{/snippet}
+
+{#snippet headersHead()}
+  {@render trigger("Headers", String(headers.length))}
+{/snippet}
+
+{#snippet headersTable()}
+  <table class="mt-1.5 w-full border-collapse font-mono text-code">
     <tbody>
       {#each headers as [k, v], i (i)}
         <tr>
@@ -89,21 +137,25 @@
       {/each}
     </tbody>
   </table>
+{/snippet}
 
-  <div class="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1.5 text-xs">
-    <h3 class="text-callout font-semibold">Body</h3>
-    <span class="whitespace-nowrap text-muted-foreground">{formatBytes(body.size)}{body.content_type ? `, ${body.content_type.split(";")[0]}` : ""}</span>
+{#snippet bodyHead()}
+  <div class="flex flex-wrap items-center gap-x-2 gap-y-1.5 text-xs">
+    {@render trigger("Body", `${formatBytes(body.size)}${body.content_type ? `, ${body.content_type.split(";")[0]}` : ""}`, "text-xs")}
     {#if body.truncated}
       <Tip text="Only the first {formatBytes(body.stored)} were stored">
         {#snippet children({ props })}<Badge {...{ ...props, tabindex: undefined }} variant="warning">Truncated at {formatBytes(body.stored)}</Badge>{/snippet}
       </Tip>
     {/if}
     {#if body.decoded_from}<Badge>Decoded {body.decoded_from}{body.decode_partial ? " (partial)" : ""}</Badge>{/if}
-    {#if body.stored > 0}
+    {#if body.stored > 0 && !sectionPrefs.collapsed.includes("body")}
       <!-- ms-auto keeps it on the right, also when it wraps under the badges in a narrow pane. -->
       <Segmented class="ms-auto" label="Body view" items={modes} bind:value={() => effectiveMode, (v) => (mode = v)} />
     {/if}
   </div>
+{/snippet}
+
+{#snippet bodyContent()}
   {#if body.stored === 0}
     <div class="mt-2 rounded-lg bg-(--code-bg) p-3.5 text-callout text-muted-foreground">{body.size > 0 ? `${formatBytes(body.size)} went through, but this body wasn't stored (capture limit is 0 or the stream isn't captured).` : "Empty body"}</div>
   {:else if effectiveMode === "hex"}
