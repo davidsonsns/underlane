@@ -1,4 +1,4 @@
-/* Underlane design system: Tailwind v4 + shadcn-svelte (Luma), tuned to macOS.
+/* Underlane design system: Tailwind v4 + shadcn-svelte, inspired by Linear.
    One file is the source of truth for tokens; both windows (dashboard, popover) import it.
 
    Theme model (unchanged from today, see src/lib/theme.ts and src-tauri tray.rs):
@@ -70,8 +70,8 @@
      through a future `shadcn-svelte add` come out as 12px corners, not pills. */
   --radius-xs: 3px;
   --radius-sm: 5px;
-  --radius-md: 6px;
-  --radius-lg: 8px;
+  --radius-md: 7px;
+  --radius-lg: 10px;
   --radius-xl: 12px;
   --radius-2xl: 12px;
   --radius-3xl: 12px;
@@ -126,6 +126,7 @@
   --color-tint: var(--tint);
   --color-control: var(--control);
   --color-segment: var(--segment);
+  --color-switch-track: var(--switch-track);
   --color-fill: var(--fill);
   --color-fill-strong: var(--fill-strong);
   --color-faint: var(--text-3);
@@ -154,40 +155,33 @@
   :root {
     color-scheme: light dark;
 
-    /* System accent. AccentColor needs WebKit 16.4 (macOS 13.3); older WebKit gets
-       -apple-system-control-accent, anything else the fallback (see @supports below). */
-    --accent-fallback: #007aff;
-    --tint: var(--accent-fallback);
-    /* Fill behind text that must be readable: the menu highlight, the default button, the
-       selected row. AppKit's selectedContentBackgroundColor is accent-derived but darker,
-       so white text on it passes AA (5.4:1) where white on AccentColor fails (4.0:1).
-       AccentColorText is not used: WebKit resolves it to black (checked in system
-       WKWebView, macOS 27), which is not what any native control does. */
-    --selection-fill: #0064e1;
+    /* One quiet brand accent; status colours retain their separate meanings. */
+    --tint: #087f8c;
+    --selection-fill: #087f8c;
     --on-selection: #ffffff;
 
-    --bg: #f5f5f7;
-    --surface: #ffffff;
-    --surface-2: #fafafa;
+    --bg: #fcfcfc;
+    --surface: #f3f3f3;
+    --surface-2: #eeeeee;
     --control: #ffffff;
     --segment: #ffffff;
-    --sidebar-tint: rgb(240 240 243 / 0.55);
-    --popover-tint: rgb(250 250 252 / 0.55);
-    --menu: rgb(246 246 246 / 0.82);
-    --text-1: #1d1d1f;
-    --text-2: #6e6e73; /* AA on every surface (4.66:1 on --bg) */
+    --switch-track: #b5b5b5;
+    --sidebar-tint: #f5f5f5;
+    --popover-tint: #fcfcfc;
+    --menu: #ffffff;
+    --text-1: #222222;
+    --text-2: #666666; /* AA on the canvas, cards and controls. */
     --text-3: #8a8a8e; /* disabled / decoration only: 3.2:1, not for content */
-    /* Placeholder text: WCAG 1.4.3 covers it, so >= 4.5:1 on every field background
-       (light: 5.07 on --control, 4.66 on --bg). */
+    /* Placeholder text uses the readable secondary colour in both themes. */
     --text-placeholder: var(--text-2);
-    --line: rgb(0 0 0 / 0.085);
-    --line-strong: rgb(0 0 0 / 0.14);
+    --line: rgb(0 0 0 / 0.07);
+    --line-strong: rgb(0 0 0 / 0.10);
     --fill: rgb(0 0 0 / 0.05);
     --fill-strong: rgb(0 0 0 / 0.09);
     --hover: var(--fill);
-    --selected: color-mix(in srgb, var(--tint) 14%, transparent);
+    --selected: #e7e7e8;
     --code-bg: #f3f3f5;
-    --link: #0068da;
+    --link: #076f7a;
     --scrim: rgb(0 0 0 / 0.15);
     /* Scrollbars (section 5): the gutter every scroller reserves, and the thumb drawn in it. */
     --scrollbar-size: 10px;
@@ -215,30 +209,29 @@
     --syn-literal: #9b2393;
 
     @variant dark {
-      --accent-fallback: #0a84ff;
-      --selection-fill: #0058d0;
+      --tint: #67c6ce;
+      --selection-fill: #087f8c;
 
-      --bg: #1c1c1e;
-      --surface: #232325;
-      --surface-2: #2a2a2d;
-      --control: rgb(255 255 255 / 0.1);
-      --segment: rgb(255 255 255 / 0.2);
-      --sidebar-tint: rgb(36 36 40 / 0.45);
-      --popover-tint: rgb(30 30 34 / 0.45);
-      --menu: rgb(40 40 42 / 0.82);
-      --text-1: #f5f5f7;
-      --text-2: #a1a1a6;
+      --bg: #111111;
+      --surface: #1b1b1b;
+      --surface-2: #222222;
+      --control: #252525;
+      --segment: #343434;
+      --switch-track: #686868;
+      --sidebar-tint: #151515;
+      --popover-tint: #191919;
+      --menu: #222222;
+      --text-1: #eeeeee;
+      --text-2: #a1a1a1;
       --text-3: #7c7c82;
-      /* Brighter than --text-2: a field is white 10% over the surface, where #a1a1a6 is only
-         4.08-4.90:1. #aeaeb2 is 4.75 on --surface-2, 5.21 on --surface, 5.70 on --bg. */
-      --text-placeholder: #aeaeb2;
-      --line: rgb(255 255 255 / 0.08);
-      --line-strong: rgb(255 255 255 / 0.14);
+      --text-placeholder: #a1a1a1;
+      --line: rgb(255 255 255 / 0.065);
+      --line-strong: rgb(255 255 255 / 0.09);
       --fill: rgb(255 255 255 / 0.07);
       --fill-strong: rgb(255 255 255 / 0.12);
-      --selected: color-mix(in srgb, var(--tint) 26%, transparent);
-      --code-bg: #1a1a1c;
-      --link: #419cff;
+      --selected: #292929;
+      --code-bg: #171717;
+      --link: #67c6ce;
       --scrollbar-thumb: rgb(255 255 255 / 0.18);
       --scrollbar-thumb-hover: rgb(255 255 255 / 0.32);
       --scrim: rgb(0 0 0 / 0.3);
@@ -256,8 +249,7 @@
       /* --off keeps #a1a1a6 in both themes, as before the migration (01 §3.3). */
     }
 
-    /* shadcn aliases. menuAccent "bold" means accent == primary: the highlight is the
-       accent fill with white text, exactly like an NSMenu. */
+    /* Neutral menu highlights keep the brand accent for primary actions and switches. */
     --background: var(--bg);
     --foreground: var(--text-1);
     --card: var(--surface);
@@ -270,13 +262,13 @@
     --secondary-foreground: var(--text-1);
     --muted: var(--fill);
     --muted-foreground: var(--text-2);
-    --accent: var(--selection-fill);
-    --accent-foreground: var(--on-selection);
+    --accent: var(--fill-strong);
+    --accent-foreground: var(--text-1);
     --destructive: var(--bad-text);
     --border: var(--line);
     --input: var(--line-strong);
     --ring: var(--tint);
-    /* One meaning for "sidebar": the translucent tint over the native Sidebar material. */
+    /* Opaque neutral chrome keeps surfaces consistent over the native window material. */
     --sidebar: var(--sidebar-tint);
     --sidebar-foreground: var(--text-1);
     --sidebar-primary: var(--selection-fill);
@@ -298,43 +290,6 @@
   }
   :root[data-theme="dark"] {
     color-scheme: dark;
-  }
-}
-
-/* Real system colours where the engine has them. Outside @layer so the upgrade always wins.
-   They resolve per color-scheme, so dark mode needs no second copy. */
-@supports (color: -apple-system-control-accent) {
-  :root {
-    --tint: -apple-system-control-accent;
-  }
-}
-@supports (color: AccentColor) {
-  :root {
-    --tint: AccentColor;
-  }
-}
-@supports (color: -apple-system-selected-content-background) {
-  :root {
-    --selection-fill: -apple-system-selected-content-background;
-    --on-selection: -apple-system-alternate-selected-text;
-  }
-}
-
-/* Inactive dashboard window (02 O9, 01 §4): App.svelte sets data-inactive while the window
-   isn't key. AppKit then greys the selection and the default button; the sidebar material
-   already greys itself (EffectState::FollowsWindowActiveState). :root[data-inactive] beats the
-   :root upgrades above on specificity; the order only matters among the inactive rules below. */
-:root[data-inactive] {
-  --selection-fill: #dcdcdc;
-  --on-selection: var(--text-1);
-  --selected: var(--fill-strong);
-  @variant dark {
-    --selection-fill: #464646;
-  }
-}
-@supports (color: -apple-system-unemphasized-selected-content-background) {
-  :root[data-inactive] {
-    --selection-fill: -apple-system-unemphasized-selected-content-background;
   }
 }
 

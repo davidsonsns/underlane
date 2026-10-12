@@ -6,13 +6,11 @@
   import { store } from "../lib/store.svelte";
   import { api } from "../lib/api";
   import { notify } from "$lib/toast";
-  import { motion } from "../lib/theme";
   import type { LoginItem, Settings } from "../lib/types";
   import Toolbar from "$lib/components/app/Toolbar.svelte";
   import StatePanel from "$lib/components/app/StatePanel.svelte";
   import SettingsGroup from "$lib/components/app/SettingsGroup.svelte";
   import SettingsRow from "$lib/components/app/SettingsRow.svelte";
-  import Segmented from "$lib/components/app/Segmented.svelte";
   import CopyButton from "$lib/components/app/CopyButton.svelte";
   import IconAction from "$lib/components/app/IconAction.svelte";
   import { Button } from "$lib/components/ui/button/index.js";
@@ -60,12 +58,8 @@
     }
   }
 
-  // Saving the theme makes Rust flip the NSWindow appearance on the main thread, which freezes
-  // the webview's animations (see commands.rs), so let the segment thumb finish sliding first.
-  let themeTimer: ReturnType<typeof setTimeout> | undefined;
-  function setTheme(theme: Settings["theme"]) {
-    clearTimeout(themeTimer);
-    themeTimer = setTimeout(() => save({ theme }), motion(220));
+  function setTheme(theme: string) {
+    if (theme === "system" || theme === "light" || theme === "dark") save({ theme });
   }
 
   // Detection usually lands in a few ms, so the button keeps its label and look (no
@@ -115,8 +109,8 @@
   {#if !draft}
     <StatePanel kind="loading" title="Loading settings…" />
   {:else}
-    <!-- Full-width scroller (scrollbar at the edge), content capped at 760px and centred. -->
-    <div class="overflow-y-auto px-[max(24px,calc((100%-760px)/2))] pt-2 pb-8">
+    <!-- Full-width scroller (scrollbar at the edge), content capped at 720px and centred. -->
+    <div class="overflow-y-auto px-[max(24px,calc((100%-720px)/2))] pt-1 pb-10">
       <SettingsGroup title="cloudflared">
         <SettingsRow label="Status">
           {#if store.overview?.cloudflared}
@@ -151,15 +145,20 @@
             <span class="text-muted-foreground">{store.overview.last_launch.reason === "login_item" ? "Opened by macOS at login" : "Opened manually"} at {new Date(store.overview.last_launch.at).toLocaleTimeString()}</span>
           </SettingsRow>
         {/if}
-        <SettingsRow label="Appearance">
+        <SettingsRow label="Interface theme" help="Choose how Underlane looks, or follow your system appearance.">
           {#snippet control({ id, labelId, describedBy })}
-            <Segmented {id} label="Appearance" aria-labelledby={labelId} aria-describedby={describedBy} items={themes} bind:value={draft!.theme} onchange={setTheme} />
+            <Select.Root type="single" value={draft!.theme} onValueChange={setTheme}>
+              <Select.Trigger {id} aria-labelledby={labelId} aria-describedby={describedBy} class="w-40">{themes.find((t) => t.value === draft!.theme)?.label}</Select.Trigger>
+              <Select.Content>
+                {#each themes as theme (theme.value)}<Select.Item value={theme.value} label={theme.label} />{/each}
+              </Select.Content>
+            </Select.Root>
           {/snippet}
         </SettingsRow>
         <SettingsRow label="Default log level" help="Used for newly added tunnels.">
           {#snippet control({ id, describedBy })}
             <Select.Root type="single" value={draft!.default_loglevel} onValueChange={(default_loglevel) => save({ default_loglevel })}>
-              <Select.Trigger {id} aria-describedby={describedBy} class="w-55">{draft!.default_loglevel}</Select.Trigger>
+              <Select.Trigger {id} aria-describedby={describedBy} class="w-40">{draft!.default_loglevel}</Select.Trigger>
               <Select.Content>
                 {#each ["debug", "info", "warn", "error"] as l (l)}<Select.Item value={l} label={l} />{/each}
               </Select.Content>

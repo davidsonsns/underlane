@@ -279,7 +279,7 @@
   <SettingsRow label="Log level" help="Debug logs every request's headers (redacted before storage).">
     {#snippet control({ id, describedBy })}
       <Select.Root type="single" value={tunnel.loglevel} onValueChange={(loglevel) => patch({ loglevel })}>
-        <Select.Trigger {id} aria-describedby={describedBy} class="w-55">{tunnel.loglevel}</Select.Trigger>
+        <Select.Trigger {id} aria-describedby={describedBy} class="w-40">{tunnel.loglevel}</Select.Trigger>
         <Select.Content>
           {#each ["debug", "info", "warn", "error"] as l (l)}<Select.Item value={l} label={l} />{/each}
         </Select.Content>
@@ -294,6 +294,7 @@
         aria-labelledby="{labelId} {id}"
         value={tunnel.project_name}
         items={(store.overview?.projects ?? []).map((p) => p.name)}
+        class="w-40"
         placeholder="Move to project…"
         onpick={(project) => patch({ project })}
       />

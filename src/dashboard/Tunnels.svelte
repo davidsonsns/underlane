@@ -108,16 +108,16 @@
       </StatePanel>
     </div>
   {:else}
-    <div class="grid min-h-0 flex-1 grid-cols-[250px_1fr]">
+    <div class="grid min-h-0 flex-1 grid-cols-[240px_minmax(0,1fr)]">
       <!-- The keydown only moves focus between the buttons inside (O3). -->
       <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
-      <nav class="flex flex-col gap-2 overflow-y-auto border-e-[0.5px] border-border p-2" aria-label="Tunnels" bind:this={list} onkeydown={onListKey}>
+      <nav class="flex flex-col gap-2 overflow-y-auto border-e-[0.5px] border-border bg-sidebar/40 p-3" aria-label="Tunnels" bind:this={list} onkeydown={onListKey}>
         {#each groups as g (g.id)}
           <div animate:flip={{ duration: motion(200) }}>
             <div class="px-2 py-1 text-xs font-semibold text-muted-foreground">{g.name}</div>
             {#each g.tunnels as t (t.id)}
               <button
-                class={cn("flex w-full items-center gap-2.5 rounded-md px-2 py-1.75 text-left", t.id === selected ? "bg-(--selected)" : "hover:bg-fill", kbRing)}
+                class={cn("flex w-full items-center gap-2.5 rounded-md px-2.5 py-2.5 transition-colors text-left", t.id === selected ? "bg-(--selected)" : "hover:bg-fill", kbRing)}
                 data-tunnel-id={t.id}
                 tabindex={t.id === selected ? 0 : -1}
                 aria-current={t.id === selected ? "true" : undefined}
@@ -153,7 +153,7 @@
       <div class="min-w-0 overflow-y-auto">
         {#if current}
           {#key current.id}
-            <div class="px-6 pt-5 pb-8" in:fade={{ duration: motion(120) }}>
+            <div class="mx-auto max-w-[880px] px-8 pt-7 pb-10" in:fade={{ duration: motion(120) }}>
               <TunnelDetail tunnel={current} onremove={remove} />
             </div>
           {/key}

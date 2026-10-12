@@ -23,13 +23,13 @@
 
 <section class={className} aria-labelledby={title ? `${id}-title` : undefined}>
   {#if title || aside}
-    <div class="mt-5 mb-2 ms-0.5 flex items-baseline justify-between gap-3">
-      {#if title}<h2 id="{id}-title" class="text-sm font-semibold">{title}</h2>{/if}
+    <div class="mt-8 mb-3 ms-3.5 flex items-baseline justify-between gap-3">
+      {#if title}<h2 id="{id}-title" class="text-sm font-medium">{title}</h2>{/if}
       {#if aside}<div class="text-xs text-muted-foreground">{@render aside()}</div>{/if}
     </div>
   {/if}
-  <div class={cn("rounded-lg bg-card border-[0.5px] border-border *:not-first:border-t-[0.5px] *:not-first:border-border")}>
+  <div class={cn("rounded-xl bg-card px-4 *:not-first:border-t *:not-first:border-border")}>
     {@render children()}
   </div>
-  {#if footer}<div class="mt-1.5 ms-0.5 text-xs text-muted-foreground">{@render footer()}</div>{/if}
+  {#if footer}<div class="mt-2.5 mx-3.5 text-xs text-muted-foreground">{@render footer()}</div>{/if}
 </section>

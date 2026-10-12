@@ -6,7 +6,7 @@
   // (02 R7: WebKit doesn't focus a button on click), unless an outside click put it in another field.
   //   <Combobox value={project} items={names} placeholder="Move to project…" onpick={(name) => …} />
   import Check from "@lucide/svelte/icons/check";
-  import ChevronsUpDown from "@lucide/svelte/icons/chevrons-up-down";
+  import ChevronDown from "@lucide/svelte/icons/chevron-down";
   import * as Popover from "$lib/components/ui/popover/index.js";
   import { Command as CommandPrimitive } from "bits-ui";
   import * as Command from "$lib/components/ui/command/index.js";
@@ -50,8 +50,8 @@
   const CREATE = " create";
   // Back to the trigger on Escape or a pick; to the field an outside click went to (02 R7).
   const focusOnClose = returnFocusOnClose(() => trigger);
-  // menuItem geometry (01 §5.18): 22px rows, check column on the left.
-  const row = "relative h-[22px] rounded-sm ps-[22px] pe-3";
+  // Matches the shared 28px menu rows, with a check column on the left.
+  const row = "relative h-7 rounded-sm ps-[22px] pe-3";
 
   // Bits highlights the first row one tick after every search change. When the search is blank
   // again (cleared, or only spaces), put the highlight back on the current value, so Enter can't
@@ -75,7 +75,7 @@
   <Popover.Trigger bind:ref={trigger}>
     {#snippet child({ props })}
       <Button {...props} {id} aria-describedby={describedBy} aria-labelledby={labelledBy} variant="outline" class={cn("w-55 justify-between", className)}>
-        <span class="truncate">{value}</span><ChevronsUpDown class="size-3 text-muted-foreground" />
+        <span class="truncate">{value}</span><ChevronDown class="size-3 text-muted-foreground" />
       </Button>
     {/snippet}
   </Popover.Trigger>

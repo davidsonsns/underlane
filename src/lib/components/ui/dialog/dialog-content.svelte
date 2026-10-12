@@ -31,7 +31,7 @@
 		class={cn(
 			// macOS window sheet: drops from under the toolbar, centred horizontally, opaque
 			// window background, no zoom, no close button (Escape and Cancel close it).
-			"fixed top-(--sheet-top) left-1/2 z-50 grid max-h-[calc(100vh-var(--sheet-top)-24px)] w-[min(520px,calc(100vw-48px))] -translate-x-1/2 gap-4 overflow-auto rounded-xl bg-background p-5 text-sm text-foreground border-[0.5px] border-input outline-none",
+			"fixed top-(--sheet-top) left-1/2 z-50 grid max-h-[calc(100vh-var(--sheet-top)-24px)] w-[min(520px,calc(100vw-48px))] -translate-x-1/2 gap-4 overflow-auto rounded-xl bg-card p-6 shadow-xl text-sm text-foreground border-[0.5px] border-input outline-none",
 			"data-open:animate-in data-open:fade-in-0 data-open:slide-in-from-top-4 data-open:duration-200 data-open:ease-out data-closed:animate-out data-closed:fade-out-0 data-closed:slide-out-to-top-2 data-closed:duration-150",
 			className
 		)}

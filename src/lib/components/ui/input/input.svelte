@@ -27,7 +27,7 @@
 		bind:this={ref}
 		data-slot={dataSlot}
 		class={cn(
-			"h-[22px] w-full min-w-0 rounded-[5px] bg-control px-2 text-sm text-foreground border-[0.5px] border-input focus-visible:border-ring transition-[box-shadow] duration-100 outline-none placeholder:text-placeholder disabled:pointer-events-none disabled:opacity-45 aria-invalid:ring-[3px] aria-invalid:ring-destructive/40 file:inline-flex file:h-full file:border-0 file:bg-transparent file:text-sm file:text-foreground",
+			"h-7 w-full min-w-0 rounded-md bg-control px-2 text-sm text-foreground border border-input focus-visible:border-ring transition-[border-color,box-shadow] duration-150 outline-none placeholder:text-placeholder disabled:pointer-events-none disabled:opacity-45 aria-invalid:ring-[3px] aria-invalid:ring-destructive/40 file:inline-flex file:h-full file:border-0 file:bg-transparent file:text-sm file:text-foreground",
 			className
 		)}
 		type="file"
@@ -40,7 +40,7 @@
 		bind:this={ref}
 		data-slot={dataSlot}
 		class={cn(
-			"h-[22px] w-full min-w-0 rounded-[5px] bg-control px-2 text-sm text-foreground border-[0.5px] border-input focus-visible:border-ring transition-[box-shadow] duration-100 outline-none placeholder:text-placeholder disabled:pointer-events-none disabled:opacity-45 aria-invalid:ring-[3px] aria-invalid:ring-destructive/40 file:inline-flex file:h-full file:border-0 file:bg-transparent file:text-sm file:text-foreground",
+			"h-7 w-full min-w-0 rounded-md bg-control px-2 text-sm text-foreground border border-input focus-visible:border-ring transition-[border-color,box-shadow] duration-150 outline-none placeholder:text-placeholder disabled:pointer-events-none disabled:opacity-45 aria-invalid:ring-[3px] aria-invalid:ring-destructive/40 file:inline-flex file:h-full file:border-0 file:bg-transparent file:text-sm file:text-foreground",
 			className
 		)}
 		{type}

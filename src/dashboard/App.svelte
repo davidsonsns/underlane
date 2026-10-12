@@ -127,35 +127,34 @@
 
 <!-- One tooltip provider and one toaster per window (02 §1.4, §2). -->
 <Tooltip.Provider delayDuration={250} ignoreNonKeyboardFocus>
-<!-- Only the content pane is opaque: body and sidebar stay transparent so the window's
-     NSVisualEffectView (Sidebar material) shows through, under the bg-sidebar tint (02 R5). -->
-<div class="grid h-screen grid-cols-[200px_1fr]">
+<!-- Neutral sidebar and content surfaces share the same light/dark palette. -->
+<div class="grid h-screen grid-cols-[208px_1fr]">
   <aside class="flex flex-col border-e-[0.5px] border-border bg-sidebar px-2.5 pb-2.5" data-tauri-drag-region>
     <!-- Room for the traffic lights: the dashboard has an overlay title bar
          (TitleBarStyle::Overlay in src-tauri/src/tray.rs), so the webview starts at y=0. -->
     <div class="h-[46px] flex-none" data-tauri-drag-region></div>
-    <div class="flex items-center gap-[7px] px-1.5 pb-2.5 text-lg font-semibold" data-tauri-drag-region>
+    <div class="flex items-center gap-2 px-2 pb-4 text-lg font-semibold" data-tauri-drag-region>
       <img src={logo} alt="" width="22" height="22" draggable="false" class="pointer-events-none" />
       <span>Underlane</span>
     </div>
-    <nav class="relative isolate flex flex-col gap-px" aria-label="Sections">
+    <nav class="relative isolate flex flex-col gap-1" aria-label="Sections">
       <!-- The selection is one pill that slides to the current item, like the segmented
-           control's thumb. Items are h-7 with a 1px gap, so item i sits i × (100% + 1px) down. -->
+           control's thumb. Items are h-8 with a 4px gap, so item i sits i × (100% + 4px) down. -->
       <div
         aria-hidden="true"
-        class="pointer-events-none absolute inset-x-0 top-0 -z-1 h-7 rounded-md bg-sidebar-accent transition-[translate] duration-200 ease-out motion-reduce:transition-none"
-        style:translate="0 calc({nav.findIndex((n) => n.id === view)} * (100% + 1px))"
+        class="pointer-events-none absolute inset-x-0 top-0 -z-1 h-8 rounded-md bg-sidebar-accent transition-[translate] duration-200 ease-out motion-reduce:transition-none"
+        style:translate="0 calc({nav.findIndex((n) => n.id === view)} * (100% + 4px))"
       ></div>
       {#each nav as n}
         <button
-          class={cn("flex h-7 items-center gap-2 rounded-md px-2 text-left", view !== n.id && "hover:bg-fill", kbRing)}
+          class={cn("flex h-8 items-center gap-2.5 rounded-md px-2.5 text-left transition-colors", view === n.id ? "text-foreground font-medium" : "text-muted-foreground hover:bg-fill hover:text-foreground", kbRing)}
           aria-current={view === n.id ? "page" : undefined}
           onclick={() => show(n.id, () => { view = n.id; focusId = null; })}
         >
           {#if n.icon}
-            <n.icon class="size-[15px] text-tint" />
+            <n.icon class="size-[15px]" />
           {:else}
-            <LaneGlyph size={15} class="text-tint" />
+            <LaneGlyph size={15} class="text-muted-foreground" />
           {/if}
           <span class="flex-1">{n.label}</span>
           {#if n.id === "tunnels" && store.activeCount > 0}

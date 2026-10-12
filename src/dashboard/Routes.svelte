@@ -99,9 +99,9 @@
   }
 </script>
 
-<section class="mt-5.5" aria-labelledby={headingId}>
-  <div class="mb-2 ms-0.5 flex items-baseline justify-between gap-3">
-    <h2 id={headingId} class="text-sm font-semibold">Routes</h2>
+<section class="mt-8" aria-labelledby={headingId}>
+  <div class="mb-3 ms-3.5 flex items-baseline justify-between gap-3">
+    <h2 id={headingId} class="text-sm font-medium">Routes</h2>
     {#if summary}
       <span class="text-xs {live && upCount < probed.length ? 'text-bad-text' : 'text-muted-foreground'}" role="status">{summary}</span>
     {/if}
@@ -113,13 +113,13 @@
     </p>
   {:else}
     <!-- routes-grid / routes-row (app.css): rows are subgrids, so every service sits in one right-hand column. -->
-    <ul class="routes-grid rounded-lg bg-card border-[0.5px] border-border">
+    <ul class="routes-grid rounded-xl bg-card px-4">
       {#each routes as m, i (i)}
         {@const host = hostOf(m)}
         {@const r = reachOf(m.service)}
         {@const tip = reachTip(m.service, r)}
         {@const linkable = live && host && !host.includes("*")}
-        <li class="group/route routes-row min-h-9 items-center px-3 py-1.5 not-first:border-t-[0.5px] not-first:border-border">
+        <li class="group/route routes-row min-h-11 items-center py-2.5 not-first:border-t not-first:border-border">
           <span class="flex min-w-0 items-center gap-1">
             {#if linkable}
               <!-- The path is a regex in cloudflared, so the link opens the hostname alone. -->

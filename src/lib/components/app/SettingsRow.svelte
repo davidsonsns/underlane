@@ -32,10 +32,10 @@
   const ids = $derived<Ids>({ id: `${uid}-control`, labelId: `${uid}-label`, describedBy: help ? `${uid}-help` : undefined });
 </script>
 
-<div class={cn("flex min-h-[42px] items-center gap-2.5 px-3 py-2.5", column && "flex-col items-stretch", className)}>
+<div class={cn("flex min-h-[58px] items-center gap-4 py-3.5", column && "flex-col items-stretch", className)}>
   <div class="flex min-w-0 flex-1 flex-col">
     {#if control}<label id={ids.labelId} for={ids.id} class="self-start">{label}</label>{:else}<span id={ids.labelId}>{label}</span>{/if}
-    {#if help}<span id={ids.describedBy} class="mt-px text-xs leading-[1.4] text-muted-foreground">{help}</span>{/if}
+    {#if help}<span id={ids.describedBy} class="mt-1 text-callout leading-[1.4] text-muted-foreground">{help}</span>{/if}
   </div>
   {@render control?.(ids)}
   {@render children?.()}

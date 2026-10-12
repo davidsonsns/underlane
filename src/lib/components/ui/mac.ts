@@ -6,13 +6,13 @@ export const kbRing = "outline-none kb-focus:ring-[3px] kb-focus:ring-ring/50 kb
 
 /** Floating menu surface (dropdown, context, select): translucent material, no zoom. */
 export const menuContent =
-  "z-50 min-w-[10rem] overflow-x-hidden overflow-y-auto rounded-lg bg-popover p-[5px] text-sm text-popover-foreground border-[0.5px] border-input outline-none backdrop-blur-xl backdrop-saturate-150 " +
+  "z-50 min-w-[10rem] overflow-x-hidden overflow-y-auto rounded-lg bg-popover p-[5px] shadow-lg text-sm text-popover-foreground border border-input outline-none backdrop-blur-xl backdrop-saturate-150 " +
   // Open instantly like NSMenu; fade out quickly on close.
   "data-closed:animate-out data-closed:fade-out-0 data-closed:duration-150";
 
-/** Menu row: 22px, check column on the left, accent highlight with white text. */
+/** Menu row: 28px, check column on the left and a neutral hover highlight. */
 export const menuItem =
-  "group/menu-item relative flex h-[22px] cursor-default items-center gap-2 rounded-sm ps-[22px] pe-3 text-sm whitespace-nowrap outline-none select-none " +
+  "group/menu-item relative flex h-7 cursor-default items-center gap-2 rounded-sm ps-[22px] pe-3 text-sm whitespace-nowrap outline-none select-none " +
   "data-highlighted:bg-accent data-highlighted:text-accent-foreground " +
   "data-disabled:pointer-events-none data-disabled:text-faint " +
   "data-[variant=destructive]:text-destructive data-[variant=destructive]:data-highlighted:text-accent-foreground " +

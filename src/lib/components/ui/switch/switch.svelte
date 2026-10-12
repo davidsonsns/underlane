@@ -21,7 +21,7 @@
 	data-slot="switch"
 	data-size={size}
 	class={cn(
-			"peer group/switch relative inline-flex shrink-0 items-center rounded-full p-[2px] transition-colors duration-150 data-checked:bg-tint data-unchecked:bg-fill-strong before:pointer-events-none before:absolute before:inset-0 before:rounded-full before:border-[0.5px] before:border-transparent data-unchecked:before:border-border data-[size=default]:h-[18px] data-[size=default]:w-[30px] data-[size=sm]:h-[14px] data-[size=sm]:w-[24px] data-disabled:opacity-40 aria-invalid:ring-[3px] aria-invalid:ring-destructive/40 after:absolute after:-inset-x-2 after:-inset-y-1",
+			"peer group/switch relative inline-flex shrink-0 items-center rounded-full p-[2px] transition-colors duration-150 data-checked:bg-primary data-unchecked:bg-switch-track before:pointer-events-none before:absolute before:inset-0 before:rounded-full before:border-[0.5px] before:border-transparent data-unchecked:before:border-border data-[size=default]:h-[18px] data-[size=default]:w-[30px] data-[size=sm]:h-[14px] data-[size=sm]:w-[24px] data-disabled:opacity-40 aria-invalid:ring-[3px] aria-invalid:ring-destructive/40 after:absolute after:-inset-x-2 after:-inset-y-1",
 			kbRing,
 			className
 	)}
