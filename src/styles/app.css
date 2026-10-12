@@ -7,19 +7,15 @@
      NSWindow appearance, which also flips WKWebView's prefers-color-scheme. CSS never needs JS
      to know the system theme, and the native vibrancy material always matches. */
 
-/* Migration head (Phases 0-2i): base.css is imported into the `legacy` layer, which sits
-   after Tailwind's preflight (so today's screens keep their look) and before utilities (so
-   new code wins). Phase 3 deletes base.css and the `legacy` entry. */
-@layer theme, base, legacy, components, utilities;
+@layer theme, base, components, utilities;
 @import "tailwindcss" source(none);
-/* The shipped code in src/ only (skips src-tauri/, target/, crates/ and the dev-only ui-lab,
-   whose src/lab/lab.css adds itself back). No utilities in the HTML files. */
+/* The shipped code in src/ only (skips src-tauri/, target/ and crates/). No utilities in the
+   HTML files. */
 @source "../dashboard";
 @source "../popover";
 @source "../lib";
 @import "tw-animate-css";
 @import "shadcn-svelte/tailwind.css";
-@import "./base.css" layer(legacy);
 
 /* ---------------------------------------------------------------------------------------------
    1. Dark variant: data-theme wins, otherwise the system. Replaces shadcn's `.dark` class.
@@ -97,10 +93,6 @@
   --animate-travel: travel 650ms var(--ease-out) forwards; /* RouteLine request pulse */
   --animate-route-ping: route-ping 650ms var(--ease-out) forwards; /* Routes reach dot: inspected traffic */
   --animate-arrive: arrive 1.2s ease-out; /* Requests: a new row's accent bar fades out */
-
-  /* base.css's body line-height. Shared components ported before their screens keep it so
-     they render exactly as before; delete with base.css in Phase 3. */
-  --leading-legacy: 1.38;
 }
 
 /* ---------------------------------------------------------------------------------------------
@@ -376,13 +368,14 @@
   input,
   textarea,
   pre,
-  code,
-  .selectable {
+  code {
     -webkit-user-select: text;
     user-select: text;
   }
   input,
-  textarea {
+  textarea,
+  pre,
+  code {
     cursor: text;
   }
   /* Native <select>: Tailwind preflight gives it a background and radius, which makes WebKit

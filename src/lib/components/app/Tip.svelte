@@ -73,7 +73,7 @@
     {#snippet child({ props })}{@render children({ props: keyboardFocusOnly(props) })}{/snippet}
   </TooltipTrigger>
   {#if Content}
-    <!-- 8px keeps tooltips inside the 360x500 popover window (tooltip.ts EDGE). -->
+    <!-- 8px keeps tooltips inside the 360x500 popover window. -->
     <Content {side} collisionPadding={8}>
       {text}{#if shortcut}<Kbd class="ms-2">{shortcut}</Kbd>{/if}
     </Content>

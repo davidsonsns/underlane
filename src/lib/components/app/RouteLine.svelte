@@ -1,7 +1,6 @@
 <script lang="ts">
   // hostname ⟶ local service, joined by a conduit. When a request flows through an inspected
   // route, a pulse travels along the conduit (motion that answers real activity).
-  // The popover's compact route line; leading-legacy keeps base.css's line height.
   import { shortService } from "$lib/format";
   import { cn } from "$lib/utils";
   let {
@@ -14,7 +13,7 @@
   let key = $derived(pulse);
 </script>
 
-<span class={cn("flex min-w-0 items-center gap-1.5 leading-legacy", compact ? "text-xs" : "text-code")} title="{hostname ?? 'any hostname'} → {service}">
+<span class={cn("flex min-w-0 items-center gap-1.5", compact ? "text-xs" : "text-code")} title="{hostname ?? 'any hostname'} → {service}">
   <span class="min-w-0 flex-[0_1_auto] cursor-text truncate font-mono text-foreground select-text">{hostname ?? "*"}</span>
   <span
     class={cn(
