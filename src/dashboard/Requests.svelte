@@ -181,7 +181,7 @@
   {:else}
     <div class="grid min-h-0 flex-1 grid-cols-[minmax(420px,1.25fr)_minmax(340px,1fr)]">
       <div class="flex min-h-0 flex-col border-r-[0.5px] border-border">
-        <div class="{columns} h-7 flex-none border-b-[0.5px] border-border text-xs text-muted-foreground" aria-hidden="true">
+        <div class="{columns} h-7 flex-none pr-[calc(--spacing(3)+var(--scrollbar-size))] border-b-[0.5px] border-border text-xs text-muted-foreground" aria-hidden="true">
           <span>Method</span><span>Path</span><span class="text-right">Status</span><span class="text-right">Time</span><span class="text-right">Size</span><span class="text-right">At</span>
         </div>
         {#if loading && rows.length === 0}

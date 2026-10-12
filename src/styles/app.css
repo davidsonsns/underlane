@@ -183,6 +183,10 @@
     --code-bg: #f3f3f5;
     --link: #0068da;
     --scrim: rgb(0 0 0 / 0.15);
+    /* Scrollbars (section 5): the gutter every scroller reserves, and the thumb drawn in it. */
+    --scrollbar-size: 10px;
+    --scrollbar-thumb: rgb(0 0 0 / 0.2);
+    --scrollbar-thumb-hover: rgb(0 0 0 / 0.36);
 
     /* Status: the plain token is for dots, badges and fills; -text is for words (AA). */
     --ok: #2fb35a;
@@ -220,6 +224,8 @@
       --selected: color-mix(in srgb, var(--tint) 26%, transparent);
       --code-bg: #1a1a1c;
       --link: #419cff;
+      --scrollbar-thumb: rgb(255 255 255 / 0.18);
+      --scrollbar-thumb-hover: rgb(255 255 255 / 0.32);
       --scrim: rgb(0 0 0 / 0.3);
 
       --ok-text: #4cc76a;
@@ -372,9 +378,29 @@
   code {
     cursor: text;
   }
-  /* No ::-webkit-scrollbar rules: WKWebView then draws native scrollbars that follow System
-     Settings > Appearance > Show scroll bars (overlay with a trackpad, a 15px classic scroller
-     when a mouse is attached and the setting is "automatically"). */
+  /* One scrollbar everywhere, whatever System Settings > Show scroll bars says: a 6px pill inset
+     in a --scrollbar-size gutter, no track, always visible while the content overflows. Styling
+     ::-webkit-scrollbar opts WKWebView out of native overlay scrollbars, so the gutter takes
+     layout space on a trackpad too; in exchange it is always the same width. */
+  ::-webkit-scrollbar {
+    width: var(--scrollbar-size);
+    height: var(--scrollbar-size);
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background-color: var(--scrollbar-thumb);
+    background-clip: padding-box;
+    border: 2px solid transparent;
+    border-radius: 9999px;
+    min-height: 32px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background-color: var(--scrollbar-thumb-hover);
+  }
+  ::-webkit-scrollbar-track,
+  ::-webkit-scrollbar-corner {
+    background: transparent;
+  }
 }
 
 /* ---------------------------------------------------------------------------------------------
