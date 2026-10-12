@@ -37,10 +37,6 @@ export const notify = {
   error(e: unknown, title = "Something went wrong") {
     show((t) => t.error(title, { description: errorText(e), classes: { description: "select-text cursor-text" } }));
   },
-  /** Settings were written. One toast however fast the user types. */
-  saved() {
-    show((t) => t.success("Saved", { id: "settings-saved", duration: 1200 }));
-  },
   /** Drop every toast, e.g. when the popover hides so a stale one doesn't reappear. */
   dismiss() {
     sonner?.then((t) => t.dismiss(), () => {});

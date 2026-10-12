@@ -55,7 +55,6 @@
     Object.assign(draft, patch);
     try {
       await api.saveSettings($state.snapshot(draft));
-      notify.saved();
     } catch (e) {
       notify.error(e, "Couldn't save settings");
     }
