@@ -656,3 +656,58 @@ all on truncated text: `RequestList.svelte` (path), `Settings.svelte` (path snip
 `TunnelDetail.svelte` (config path), `Routes.svelte` (host), `AddSheetBody.svelte` (hostnames),
 `RouteLine.svelte` (hostname → service).
 
+
+## 18. Scope: Underlane as the cloudflared workspace
+
+Decided 2026-10-11 after a four-part scoping study (surface inventory, coverage audit, product
+brainstorm, architecture and risks). The study and the phased roadmap live in
+`.scratch/cloudflared-workspace/` (not committed); the decisions are recorded here because later
+work builds on them.
+
+The rule of thumb: **if it's a `cloudflared` subcommand or a `cloudflared` file, it belongs in
+Underlane; if it needs the Zero Trust dashboard, Underlane links to it.** Not a DNS manager, not
+an Access policy editor, not a WARP client.
+
+| # | Decision | Choice |
+|---|---|---|
+| D1 | Config editing | **App-owned tunnels.** Files the user wrote are never written (the §4 promise is reworded to "Underlane never edits files you wrote"). Tunnels created in-app get a config that Underlane owns and can fully edit; "Eject" turns it into an ordinary imported file. Comment-preserving edits of user YAML were rejected: `serde_yaml` drops comments and one bad write would erode the trust contract. |
+| D2 | Owned-config location | `~/.cloudflared/underlane/<name>.yml` with a `# Managed by Underlane` header: visible, runnable from a terminal, survives uninstall. Credentials stay where cloudflared writes them (`~/.cloudflared/<uuid>.json`). Each owned file is hashed; a hand-edited one is never overwritten. Derived copies stay in the data dir as in §4. |
+| D3 | Cloudflare API | **None through Phase 2.** Deep links to the dashboard where the CLI has no command (DNS record removal, editing remotely managed tunnels). The `apiToken` inside `cert.pem` is never used, logged or serialized: it is account-wide and lives 10+ years. If an API is ever added (Phase 3), it uses a separate user-created, minimally scoped token in the Keychain. |
+| D4 | Tunnels outliving the app | **Keep §3.** Phase 1 only detects and displays tunnels run by launchd or scripts. A Phase 3 candidate is a per-tunnel LaunchAgent written by Underlane. `cloudflared service install` is never used: one fixed label per machine, and without a token its plist can't run a locally managed tunnel. |
+| D5 | Access client | **In scope, Phase 2.** `cloudflared access tcp` forwards become a supervised kind (Start/Stop/autostart), `access ssh-config` is offered in copy mode. Writing `~/.ssh/config` only with diff + confirm, Phase 3. |
+| D6 | Account features | A separate **Account** sidebar view (login state, every tunnel on the account, connectors). Tunnels stays "what this Mac runs". Signed-out state explains that login is only for creating and managing tunnels; quick and token users are never nagged. |
+| D7 | Update checks | Yes: daily, with an off switch in Settings. Homebrew metadata first when brew installed the binary, GitHub releases otherwise, channel-aware comparison (brew lags GitHub). `cloudflared update` is never run on a brew install. |
+| D8 | Terminology | Adopt cloudflared's words before Phase 1: the Routes section becomes **Hostnames**; config tunnels are "locally managed", token tunnels "remotely managed". |
+| D9 | Multiple accounts | Phase 3. Until then one `~/.cloudflared/cert.pem`; a config pointing at another `--origincert` gets a clear error. Mechanism when it comes: per-account `HOME` dirs, because `tunnel login` ignores `--origincert`. |
+| D10 | Notifications | On by default only for autostart tunnels (crashed, degraded for more than a few seconds, recovered), with a per-tunnel mute. |
+
+Facts from the study that constrain the implementation: `cert.pem` is a JSON token blob
+(account id, zone id, API token), not a certificate; `tunnel login` and unknown flags exit 0 on
+failure, so results are classified from output text; `tunnel list` and `tunnel info` disagree on
+JSON key casing; no CLI command lists or deletes DNS routes and `tunnel delete` leaves CNAMEs
+behind while removing the local credentials file; every `cloudflared tunnel` subcommand auto-loads
+`~/.cloudflared/config.yml`, so tunnel one-shot commands select an explicit config before the
+subcommand: the target file and its working directory for file operations, neutral config
+otherwise. Top-level version probes stay config-free; `ingress validate --json` and
+`ingress rule <url>` work offline.
+
+Phases: 0 fixes and foundations (the token-file detection bug in `cloudflared.rs:364`, the argv leak in the
+"already running" hint at `supervisor.rs:430`, explicit `--config`, DB migrations, a `Secret<T>`
+type, a one-shot CLI runner with an error taxonomy, a fake cloudflared with subcommand dispatch);
+1 account-read-only (update notice/action, config-changed badge, ingress tester, explainers, diag, metrics,
+hostname health, external-runner detection, Account view, run options); 2 create and change
+(login, owned configs, new-tunnel wizard, dashboard DNS handoff, ingress editor, delete
+with a known-hostname checklist and unverified DNS status, Access forwards); 3 à la carte.
+
+Review clarifications (2026-10-11): the Phase 0 migration ladder retains production schema v1;
+unused fields and account/activity tables are deferred to feature migrations with concrete
+DDL and preservation/rollback tests. Bare cloudflared service mode handles Access forwarders,
+not tunnels; it must not match a running default-config tunnel (the proposed B2 fix is withdrawn).
+Phase 1 displays external-service state without taking over or stopping it; binary updates,
+local app settings and app-owned restarts are its explicit local mutations.
+
+Through Phase 2, DNS work is handed to the dashboard: the CLI cannot inspect existing records
+or enumerate proxied CNAME targets, and the cert's zone ID does not establish its zone name.
+Automated routing and overwrite move to the optional Phase 3 scoped-token API slice, requiring
+authoritative zone/account binding and existing-record inspection before mutation. The detailed
+contract and Phase 0 completion gates are in roadmap §4.1 and §8.
