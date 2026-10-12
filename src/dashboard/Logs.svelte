@@ -30,22 +30,48 @@
   const activeLevels = $derived(LEVELS.filter((l) => levels[l]).flatMap((l) => (l === "error" ? ["error", "fatal"] : [l])));
   const names = $derived(Object.fromEntries(store.tunnels.map((t) => [t.id, t.name])));
 
-  async function load() {
-    loading = true;
+  let loadGen = 0;
+  let loadKey: string | undefined;
+  let inflight: Promise<void> | null = null;
+  function load(): Promise<void> {
+    // Each change of tunnel, level or search (and Clear) starts a new generation, so a slow
+    // answer (or error) for an older one never lands, even after A -> B -> A. A load for the same
+    // generation while one is in flight shares it (as in Requests).
+    const lv = activeLevels;
+    const key = `${tunnelId}\u0000${lv.join()}\u0000${search}`;
+    if (key === loadKey && inflight) return inflight;
+    if (key !== loadKey) {
+      loadGen++;
+      loadKey = key;
+    }
+    const g = loadGen;
+    const current = () => g === loadGen;
     error = null;
-    if (activeLevels.length === 0) {
+    if (lv.length === 0) {
       lines = [];
       loading = false;
-      return;
+      return Promise.resolve();
     }
-    try {
-      lines = await api.queryLogs({ tunnelId, levels: activeLevels.length === 5 ? [] : activeLevels, search, limit: 1000 });
-      list?.reset();
-    } catch (e) {
-      error = errorText(e);
-    } finally {
-      loading = false;
-    }
+    loading = true;
+    const q = { tunnelId, levels: lv.length === 5 ? [] : lv, search, limit: 1000 };
+    const run = (async () => {
+      try {
+        const r = await api.queryLogs(q);
+        if (current()) {
+          lines = r;
+          list?.reset();
+        }
+      } catch (e) {
+        if (current()) error = errorText(e);
+      } finally {
+        if (current()) loading = false;
+      }
+    })();
+    inflight = run;
+    run.finally(() => {
+      if (inflight === run) inflight = null;
+    });
+    return run;
   }
 
   $effect(() => {
@@ -78,6 +104,11 @@
   });
 
   async function clear() {
+    // A load still in flight answers from before the Clear: drop it.
+    loadGen++;
+    loadKey = undefined;
+    inflight = null;
+    loading = false;
     await api.clearLogs(tunnelId);
     lines = [];
   }

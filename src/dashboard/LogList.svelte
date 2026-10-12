@@ -9,7 +9,7 @@
   import { VList } from "virtua/svelte";
   import { next } from "$lib/listnav";
   import { snapshot } from "$lib/snapshot.svelte";
-  import { formatClock } from "$lib/format";
+  import { formatClock, logFields } from "$lib/format";
   import { cn } from "$lib/utils";
   import type { LogLine } from "$lib/types";
   import { Button } from "$lib/components/ui/button/index.js";
@@ -39,20 +39,33 @@
   /** Lines that arrived past the ceiling while scrolled up; shown once the user is back at the bottom. */
   let held: LogLine[] = [];
   let activeId = $state<number | null>(null);
-  let open = $state<Record<number, boolean>>({});
+  /** Expanded lines by id: only open ones are kept, and trimmed lines are pruned. */
+  let open = $state<Record<number, true>>({});
+  /** Bumped by reset(): a new result set remounts the VList, so virtua's per-index height
+   *  cache (which survives a data change of the same length) starts empty. */
+  let gen = $state(0);
+  /** virtua's `shift`, set only for the update that trims the head on catching up. */
+  let shift = $state(false);
   const active = $derived(activeId == null ? -1 : lines.findIndex((l) => l.id === activeId));
   // Keep the active line mounted while the pointer scrolls it away (03 R-22).
   const keep = $derived(active >= 0 ? [active] : []);
 
-  const hasFields = (l: LogLine) => l.fields !== "{}" && l.fields !== "";
+  const parsed = new WeakMap<LogLine, [string, string][]>();
   function fieldsOf(l: LogLine): [string, string][] {
-    try {
-      const o = JSON.parse(l.fields) as Record<string, unknown>;
-      return Object.entries(o).map(([k, v]) => [k, typeof v === "string" ? v : JSON.stringify(v)]);
-    } catch {
-      return [];
-    }
+    let f = parsed.get(l);
+    if (!f) parsed.set(l, (f = logFields(l.fields)));
+    return f;
   }
+  /** Expandable only when the fields parse to a non-empty object. */
+  const hasFields = (l: LogLine) => l.fields !== "{}" && l.fields !== "" && fieldsOf(l).length > 0;
+
+  /** Drop expansions of lines trimmed from the head (ids ascend). */
+  function prune() {
+    const min = lines[0]?.id ?? Infinity;
+    for (const k in open) if (+k < min) delete open[k];
+  }
+  /** How many lines are expanded (ui-lab reads it to check the map stays bounded). */
+  export const openCount = () => Object.keys(open).length;
 
   // aria-activedescendant only once the row exists: virtua mounts a row one animation frame
   // after scrollToIndex, not on the next tick (decisions.md §17).
@@ -60,6 +73,7 @@
   $effect(() => {
     const id = active >= 0 ? `log-${activeId}` : null;
     void snapshot.full;
+    void gen;
     let live = true;
     (async () => {
       await tick();
@@ -109,6 +123,7 @@
     if (follow) {
       lines = [...lines, ...held, ...add].slice(-cap);
       held = [];
+      prune();
       scrollToEnd();
       return;
     }
@@ -117,32 +132,57 @@
     if (add.length > room) held = [...held, ...add.slice(room)].slice(-cap);
   }
 
-  /** The parent replaced `lines` (a new tunnel, filter or search): drop held lines and expansions. */
+  /**
+   * The parent replaced `lines` (a new tunnel, filter or search): drop held lines and expansions,
+   * remount the VList (fresh height cache) and open the new set at the end, following. The
+   * remount effect above does the scrolling.
+   */
   export function reset() {
     held = [];
     open = {};
-    scrollToEnd();
+    follow = true;
+    up = 0;
+    gen++;
   }
 
   /** Back at the live edge: show held lines, trim the head (off screen now) and tail again. */
   function catchUp() {
     follow = true;
+    up = 0;
     if (lines.length > cap || held.length) {
-      lines = [...lines, ...held].slice(-cap);
+      const next = [...lines, ...held].slice(-cap);
+      // A shorter list: `shift` drops the trimmed head from virtua's per-index height cache
+      // (exact with no held lines). virtua keeps the view across that shift with a scroll jump
+      // up, which mustn't read as the user scrolling away.
+      if (next.length < lines.length) {
+        shift = trimming = true;
+        tick().then(() => (shift = false));
+      }
+      lines = next;
       held = [];
+      prune();
     }
-    scrollToEnd();
+    scrollToEnd().then(() => requestAnimationFrame(() => requestAnimationFrame(() => (trimming = false))));
   }
 
   let lastTop = 0;
+  /** Upward movement since the view was last at the bottom. */
+  let up = 0;
+  /** catchUp() trimmed the head and virtua is re-anchoring: its scroll jump isn't the user's. */
+  let trimming = false;
   function onscroll() {
     const vp = viewport();
     if (!vp) return;
-    // Only a move up (wheel, scrollbar, keys) stops following: virtua re-measuring rows below
-    // the view, or content growing at the end, mustn't turn it off.
+    // Only moving up (wheel, scrollbar, keys) stops following, summed so that slow scrolls of a
+    // pixel at a time count too. virtua re-measuring rows below the view, or content growing at
+    // the end, doesn't move scrollTop, so it never adds up.
     if (atBottom(vp)) {
+      up = 0;
       if (!follow || lines.length > cap || held.length) catchUp();
-    } else if (vp.scrollTop < lastTop - 1) follow = false;
+    } else if (!trimming) {
+      up += Math.max(0, lastTop - vp.scrollTop);
+      if (up > 1) follow = false;
+    }
     lastTop = vp.scrollTop;
   }
 
@@ -155,18 +195,25 @@
 
   function move(i: number) {
     if (i < 0 || i >= lines.length) return;
-    activeId = lines[i].id;
     if (i === lines.length - 1) {
-      follow = true;
+      // The last line: catch up first, then make the newest line active (held lines arrive and
+      // the old tail may be trimmed, so `i` is stale).
       catchUp();
-    } else list?.scrollToIndex(i, { align: "nearest" });
+      activeId = lines.at(-1)!.id;
+    } else {
+      activeId = lines[i].id;
+      list?.scrollToIndex(i, { align: "nearest" });
+    }
   }
 
   async function setOpen(i: number, value: boolean) {
     const l = lines[i];
     if (!l || !hasFields(l) || !!open[l.id] === value) return;
-    open[l.id] = value;
-    if (!value) return;
+    if (!value) {
+      delete open[l.id];
+      return;
+    }
+    open[l.id] = true;
     // Bring the fields into view once virtua has measured the taller row.
     await tick();
     await new Promise((r) => requestAnimationFrame(r));
@@ -220,7 +267,7 @@
 
   const lvl = (l: LogLine) => (l.level === "fatal" ? "FTL" : l.level.slice(0, 3).toUpperCase());
   const lvlText: Record<LogLine["level"], string> = {
-    debug: "text-faint",
+    debug: "text-muted-foreground",
     info: "text-muted-foreground",
     warn: "text-degraded-text",
     error: "text-bad-text",
@@ -243,7 +290,7 @@
     <!-- 1.55 line height: the lines' rhythm from before the port (text-code's own is 16px). -->
     <div role="gridcell" class="px-4 py-px leading-[1.55]">
       <div class="flex gap-2.5">
-        <span class="flex-none text-faint tabular-nums">{formatClock(l.ts)}</span>
+        <span class="flex-none text-muted-foreground tabular-nums">{formatClock(l.ts)}</span>
         <span class={cn("w-7 flex-none", lvlText[l.level])}>{lvl(l)}</span>
         {#if showTunnel}<span class="max-w-[110px] flex-none truncate text-muted-foreground">{names[l.tunnel_id] ?? "removed"}</span>{/if}
         <span class={cn("min-w-0 break-words whitespace-pre-wrap", msgText[l.level])}>{l.message}</span>
@@ -278,9 +325,11 @@
         {#each lines as l, i (l.id)}{@render row(l, i)}{/each}
       </div>
     {:else}
-      <VList bind:this={list} data={lines} getKey={(l) => l.id} keepMounted={keep} {onscroll}>
-        {#snippet children(l, i)}{@render row(l, i)}{/snippet}
-      </VList>
+      {#key gen}
+        <VList bind:this={list} data={lines} getKey={(l) => l.id} keepMounted={keep} {shift} {onscroll}>
+          {#snippet children(l, i)}{@render row(l, i)}{/snippet}
+        </VList>
+      {/key}
     {/if}
   </div>
   {#if !follow}
