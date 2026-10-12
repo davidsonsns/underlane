@@ -535,6 +535,18 @@ selection before the store refresh, and Tunnels dropped the unknown id and selec
 tunnel; App now refreshes, selects, then closes the sheet, which hands focus to the new row
 (imports and cancels still go back to the Add tunnel button).
 
+**Inactive window (Phase 2h, O9).** While the dashboard isn't key, `html[data-inactive]` maps
+the selection fill to the unemphasized grey (the system colour where WebKit has it, #dcdcdc /
+#464646 otherwise) and the selected-row tint to `--fill-strong`, so the default button and the
+selection grey out with the sidebar material, as in AppKit. The attribute follows the page's
+`window` focus/blur events, not Tauri's `getCurrentWindow().onFocusChanged` that 01 §4 names: the
+window module costs about 3.4 KB of dashboard JS (≈148 of 150 KB) and grows the popover's shared
+chunk by about 0.5 KB, and WebKit already fires blur/focus when the NSWindow resigns or becomes
+key (checked in the real app; opening a native `<select>` menu doesn't fire it). One difference:
+when keyboard focus tabs out of the web view (one Tab stop after the last control, before it
+wraps back), the page also gets blur, so it greys for that stop although the window stays key.
+AppKit greys a selection whose view isn't first responder too, so this was left.
+
 **Alternatives rejected.** Bits UI alone with hand-written styles (an earlier spike: every
 component's look written from scratch, and its dark variant missed "System" in dark mode).
 Keeping scoped CSS (1,440 lines of duplicated per-component styles, no shared primitives, and the
