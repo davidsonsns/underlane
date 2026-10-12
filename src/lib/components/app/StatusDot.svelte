@@ -5,8 +5,8 @@
   import { cn } from "$lib/utils";
   // Ported screens put the hint in a Tip around the dot and pass `hint={false}`:
   //   <Tip text={statusHint[status]}>{#snippet children({ props })}<span {...{ ...props, tabindex: undefined }}><StatusDot {status} hint={false} /></span>{/snippet}</Tip>
-  // The popover and the Tunnels list keep use:tooltip until 2i/2g: Tip in here would put
-  // ui/tooltip (floating-ui, ~20 KB) into the popover, past its JS budget.
+  // The popover keeps use:tooltip until 2i: Tip in here would put ui/tooltip (floating-ui,
+  // ~20 KB) into the popover, past its JS budget.
   let { status, size = 8, hint = true }: { status: Status; size?: number; hint?: boolean } = $props();
 
   const look: Record<Status, string> = {
