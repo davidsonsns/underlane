@@ -307,6 +307,24 @@
   }
 }
 
+/* Inactive dashboard window (02 O9, 01 §4): App.svelte sets data-inactive while the window
+   isn't key. AppKit then greys the selection and the default button; the sidebar material
+   already greys itself (EffectState::FollowsWindowActiveState). After the upgrades above so it
+   beats them. */
+:root[data-inactive] {
+  --selection-fill: #dcdcdc;
+  --on-selection: var(--text-1);
+  --selected: var(--fill-strong);
+  @variant dark {
+    --selection-fill: #464646;
+  }
+}
+@supports (color: -apple-system-unemphasized-selected-content-background) {
+  :root[data-inactive] {
+    --selection-fill: -apple-system-unemphasized-selected-content-background;
+  }
+}
+
 /* ---------------------------------------------------------------------------------------------
    5. Base. Everything is layered so Tailwind utilities can override it; nothing here uses
    !important except the reduced-motion override. */

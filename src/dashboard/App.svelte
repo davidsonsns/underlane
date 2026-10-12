@@ -75,7 +75,13 @@
     }
   }
 
+  // O9: mark the window inactive while it isn't key, so app.css greys the selection and the
+  // default button as AppKit does. WebKit fires window blur/focus when the NSWindow resigns or
+  // becomes key; Tauri's onFocusChanged would cost ~3 KB of dashboard JS and grow the popover.
+  const inactive = (on: boolean) => document.documentElement.toggleAttribute("data-inactive", on);
+
   onMount(() => {
+    inactive(!document.hasFocus());
     store.init();
     if (location.hash) navigate(location.hash);
     const subs = [
@@ -102,6 +108,8 @@
     { id: "settings", label: "Settings", icon: SettingsIcon },
   ];
 </script>
+
+<svelte:window onfocus={() => inactive(false)} onblur={() => inactive(true)} />
 
 <!-- One tooltip provider and one toaster per window (02 §1.4, §2). -->
 <Tooltip.Provider delayDuration={250} ignoreNonKeyboardFocus>
