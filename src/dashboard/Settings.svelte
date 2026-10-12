@@ -68,7 +68,10 @@
     themeTimer = setTimeout(() => save({ theme }), motion(220));
   }
 
+  // Detection usually lands in a few ms, so the button keeps its label and look (no
+  // "Detecting…" swap or disabled dim that would resize the row and flash).
   async function detect() {
+    if (detecting) return;
     detecting = true;
     try {
       await save({ cloudflared_path: draft?.cloudflared_path?.trim() || null });
@@ -133,7 +136,7 @@
           {#snippet control({ id, describedBy })}
             <Input {id} aria-describedby={describedBy} data-field="path" class="w-65 font-mono text-callout" placeholder="/opt/homebrew/bin/cloudflared" bind:value={draft!.cloudflared_path} />
           {/snippet}
-          <Button variant="outline" disabled={detecting} onclick={detect}>{detecting ? "Detecting…" : "Detect"}</Button>
+          <Button variant="outline" aria-busy={detecting || undefined} onclick={detect}>Detect</Button>
         </SettingsRow>
       </SettingsGroup>
 
