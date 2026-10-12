@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount, tick } from "svelte";
+  import { onMount, tick, untrack } from "svelte";
   import { fade } from "svelte/transition";
   import { listen } from "@tauri-apps/api/event";
   import { store } from "../lib/store.svelte";
@@ -23,6 +23,11 @@
   let adding = $state(false);
   let addTab = $state<AddTab>("import");
   // The button that opened the sheet, for return focus (02 R7). Null when the popover opened it.
+  // Bumped each time the Add sheet opens, so a slow add can't close a sheet reopened meanwhile.
+  let sheetSession = $state(0);
+  $effect.pre(() => {
+    if (adding) untrack(() => sheetSession++);
+  });
   let addTrigger = $state<HTMLElement | null>(null);
   // The tunnel the sheet just added (null for imports), for return focus.
   let addedId: string | null = null;
@@ -142,19 +147,24 @@
 <AddSheet
   bind:open={adding}
   tab={addTab}
-  returnFocus={() =>
-    (addedId && document.querySelector<HTMLElement>(`[data-tunnel-id="${addedId}"]`)) ||
-    (addTrigger?.isConnected ? addTrigger : document.querySelector<HTMLElement>("[data-add-tunnel]"))}
+  returnFocus={() => {
+    const row = addedId ? document.querySelector<HTMLElement>(`[data-tunnel-id="${addedId}"]`) : null;
+    // Focus is restored with preventScroll, so bring a new row that's below the fold into view.
+    row?.scrollIntoView({ block: "nearest" });
+    return row || (addTrigger?.isConnected ? addTrigger : document.querySelector<HTMLElement>("[data-add-tunnel]"));
+  }}
   onadded={async (id) => {
+    const session = sheetSession;
     addTrigger = null;
     addedId = id;
     // Refresh first: Tunnels drops a selection that isn't in the list yet, and the sheet hands
-    // focus to the new row when it closes.
+    // focus to the new row when it closes. The sheet stays busy until this returns.
     await store.refresh();
     focusId = id;
     view = "tunnels";
     await tick();
-    adding = false;
+    // Close only the sheet this add came from, not one reopened during the refresh.
+    if (session === sheetSession) adding = false;
   }}
 />
 
