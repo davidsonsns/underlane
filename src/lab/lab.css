@@ -1,4 +1,0 @@
-/* ui-lab only (dev): app.css excludes src/lab from its sources so the lab adds nothing to the
-   shipped CSS; this file adds it back for the lab page. Deleted with the lab in Phase 3. */
-@import "../styles/app.css";
-@source "./";

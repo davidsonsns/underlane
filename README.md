@@ -75,7 +75,10 @@ a script.
   - log parsing and validation hints
   - the supervisor against a fake `cloudflared`: connect, crash with backoff, a derived config run
     from the config directory, the watchdog shim, and orphan reaping
-- `src/lib/format.test.ts` covers the UI's pure helpers (copy as curl, hex dump, JSON detection).
+- `src/lib/*.test.ts` (Vitest) cover the UI's pure helpers: `format` (copy as curl, hex dump, JSON
+  detection), `listnav` (list keyboard navigation), `latest` (debounced latest-only async jobs),
+  `combobox` (the project picker's rows), `focus` (returning focus when a dialog closes) and `utils`
+  (class merging with the custom text sizes).
 - `e2e/run.mjs` launches the real app with an isolated data folder and a local echo server. It
   exposes the echo server as a quick tunnel with inspection on, POSTs JSON to the
   `trycloudflare.com` URL, and asserts:
@@ -121,8 +124,12 @@ a script.
   - `platform.rs` covers `SMAppService`, App Nap and state restoration.
   - `commands.rs` holds the UI commands.
   - `e2e.rs` is the test-only control server.
-- **`src/`** is the Svelte UI. `popover/` is the menu bar panel. `dashboard/` has the Tunnels,
-  Requests, Logs and Settings views. `lib/` holds the API, store and formatting helpers.
+- **`src/`** is the Svelte 5 UI, styled with Tailwind v4 and shadcn-svelte (Luma style, tuned to
+  macOS). `popover/` is the menu bar panel. `dashboard/` has the Tunnels, Requests, Logs and
+  Settings views. `lib/` holds the API, store and formatting helpers, and `lib/components/` the
+  components: `ui/` are the shadcn-svelte copies (with Burrow's macOS edits), `app/` are Burrow's
+  own (StatusDot, Toolbar, Tip, Combobox, …). `styles/app.css` is the only stylesheet: the design
+  tokens for light and dark, and the base rules.
 
 Where state lives: `~/Library/Application Support/com.davidsonsns.burrow/`.
 

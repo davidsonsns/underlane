@@ -10,7 +10,6 @@
   // aria-activedescendant points at the active row, and a virtua VList that renders only the
   // rows in view. The active row is tracked by id (the parent's `selected`), never by index, so
   // a prepend, a filter, Clear or the cap can't move the selection to another request.
-  // ui-lab (src/lab/RequestsLab.svelte) drives this same component for the R-49 check.
   import { tick, untrack } from "svelte";
   import { VList } from "virtua/svelte";
   import { next } from "$lib/listnav";
