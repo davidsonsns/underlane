@@ -3,7 +3,7 @@
 	import { tv, type VariantProps } from "$lib/utils.js"; // burrow: tv without its own merge (01 §5)
 
 	export const tabsListVariants = tv({
-		base: "group/tabs-list inline-flex w-fit items-center justify-center text-sm group-data-horizontal/tabs:h-[22px] group-data-vertical/tabs:h-fit group-data-vertical/tabs:flex-col data-[variant=line]:rounded-none",
+		base: "group/tabs-list relative isolate inline-flex w-fit items-center justify-center text-sm group-data-horizontal/tabs:h-[22px] group-data-vertical/tabs:h-fit group-data-vertical/tabs:flex-col data-[variant=line]:rounded-none",
 		variants: {
 			variant: {
 				default: "gap-px rounded-md bg-fill p-px border-[0.5px] border-border",
@@ -26,10 +26,38 @@
 		ref = $bindable(null),
 		variant = "default",
 		class: className,
+		children,
 		...restProps
 	}: TabsPrimitive.ListProps & {
 		variant?: TabsListVariant;
 	} = $props();
+
+	// burrow: as in ui/toggle-group, the active tab's background is one thumb that slides to the
+	// new tab (NSSegmentedControl). It follows data-state, re-measures on resize, and the first
+	// placement doesn't animate. The line variant keeps its underline instead.
+	let thumb = $state<{ x: number; y: number; w: number; h: number } | null>(null);
+	let animate = $state(false);
+
+	$effect(() => {
+		if (variant !== "default" || !ref) return;
+		const root = ref;
+		const measure = () => {
+			const on = root.querySelector<HTMLElement>('[data-slot="tabs-trigger"][data-state="active"]');
+			thumb = on ? { x: on.offsetLeft, y: on.offsetTop, w: on.offsetWidth, h: on.offsetHeight } : null;
+		};
+		measure();
+		const frame = requestAnimationFrame(() => (animate = true));
+		const mo = new MutationObserver(measure);
+		mo.observe(root, { subtree: true, attributes: true, attributeFilter: ["data-state"] });
+		const ro = new ResizeObserver(measure);
+		ro.observe(root);
+		return () => {
+			cancelAnimationFrame(frame);
+			mo.disconnect();
+			ro.disconnect();
+			animate = false;
+		};
+	});
 </script>
 
 <TabsPrimitive.List
@@ -38,4 +66,18 @@
 	data-variant={variant}
 	class={cn(tabsListVariants({ variant }), className)}
 	{...restProps}
-/>
+>
+	{#if variant === "default" && thumb}
+		<div
+			aria-hidden="true"
+			class={cn(
+				"pointer-events-none absolute top-0 left-0 -z-1 rounded-[5px] border-[0.5px] border-input bg-segment",
+				animate && "transition-[translate,width,height] duration-200 ease-out motion-reduce:transition-none"
+			)}
+			style:translate="{thumb.x}px {thumb.y}px"
+			style:width="{thumb.w}px"
+			style:height="{thumb.h}px"
+		></div>
+	{/if}
+	{@render children?.()}
+</TabsPrimitive.List>
