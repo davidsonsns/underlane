@@ -54,6 +54,7 @@
       },
       openCount: () => list?.lab?.openCount() ?? 0,
       sizes: () => list?.lab?.sizes() ?? [],
+      trimming: () => list?.lab?.trimming() ?? false,
       /** A tunnel/level/search change that returns the same number of lines, as Logs.load() does. */
       refilter: async () => {
         seq = 100000;

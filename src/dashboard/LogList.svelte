@@ -67,7 +67,7 @@
   }
   /** ui-lab only (dev builds): the expansion map's size and virtua's cached row heights. */
   export const lab = import.meta.env.DEV
-    ? { openCount: () => Object.keys(open).length, sizes: () => lines.map((_, i) => list?.getItemSize(i) ?? -1) }
+    ? { openCount: () => Object.keys(open).length, sizes: () => lines.map((_, i) => list?.getItemSize(i) ?? -1), trimming: () => trimming }
     : undefined;
 
   // aria-activedescendant only once the row exists: virtua mounts a row one animation frame
@@ -165,7 +165,18 @@
       held = [];
       prune();
     }
-    scrollToEnd().then(() => requestAnimationFrame(() => requestAnimationFrame(() => (trimming = false))));
+    scrollToEnd().then(() => requestAnimationFrame(() => requestAnimationFrame(endTrimming)));
+  }
+
+  /** The trim's scroll jump is over. A user who scrolled up meanwhile (ignored while trimming)
+   *  is no longer at the bottom: stop following now instead of pulling them back on the next line. */
+  function endTrimming() {
+    if (!trimming) return;
+    trimming = false;
+    const vp = viewport();
+    if (!vp) return;
+    if (!atBottom(vp)) follow = false;
+    lastTop = vp.scrollTop;
   }
 
   let lastTop = 0;
