@@ -596,3 +596,20 @@ sidebar nav icons and keyboard focus rings stay accent-coloured (01 §4 only nam
 the selected row and the default button); AppKit greys those too. The inactive default button
 uses the unemphasized grey fill rather than looking like a plain push button.
 
+
+**Final bundle sizes, end of Phases 0–2i (gzip -9, measured from the built HTML's script and
+modulepreload tags on `main` after 2i).** R13 budgets: popover JS ≤ 70 kB, dashboard JS ≤ 150 kB,
+CSS ≤ 20 kB per page.
+
+| Page | JS on open | Loaded later | CSS |
+|---|---|---|---|
+| Popover | 67,805 B (entry 5,159 + shared 62,646) | 28,255 B JS + 2,974 B CSS on the first toast or tooltip | 14.0 kB shared |
+| Dashboard | 148,255 B (entry 57,354 + shared 62,646 + toast/tooltip chunk 28,255, preloaded) | – | 14.0 + 3.0 kB |
+
+Before the migration (`72c52ce`): popover ≈ 27.5 kB, dashboard ≈ 47.3 kB JS.
+
+**Optional items (02 §4.1), end of Phases 0–2i.** Done: O3 (Tunnels list arrow keys), O6
+(`add:quick`/`add:token` links), O9 (inactive window, partly: see above), O10 (lazy toasts and
+tooltip content). Not done, follow-ups: O1 (resizable dashboard, fluid Requests split), O2
+(confirm before Clear), O4 (⌘1–4, ⌘N, ⌘F shortcuts with Kbd hints), O5 (⌘K palette), O7 (Copy on
+error toasts). O8 (tighter CSP `style-src`) is deliberately not done (R14).
