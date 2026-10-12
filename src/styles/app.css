@@ -35,7 +35,7 @@
 /* Keyboard-navigation focus: rings on buttons, pop-ups, switches and segments only after the
    user has pressed Tab since their last pointer interaction (html[data-kb-nav], set by
    installFocusModality() in src/lib/theme.ts). macOS never rings a clicked button. Text
-   fields use plain focus-visible, because NSTextField always shows its ring when focused. */
+   fields have no ring: their border turns the tint colour while focused. */
 @custom-variant kb-focus (&:where(:root[data-kb-nav] *):focus-visible);
 
 /* ---------------------------------------------------------------------------------------------
@@ -80,10 +80,6 @@
   --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
   --ease-spring: cubic-bezier(0.34, 1.4, 0.64, 1);
 
-  --shadow-control: 0 0 0 0.5px var(--line-strong), 0 0.5px 1px rgb(0 0 0 / 0.12);
-  --shadow-segment: 0 0 0 0.5px rgb(0 0 0 / 0.06), 0 1px 2px rgb(0 0 0 / 0.14);
-  --shadow-menu: 0 0 0 0.5px var(--line-strong), 0 10px 30px rgb(0 0 0 / 0.2);
-  --shadow-sheet: 0 0 0 0.5px var(--line-strong), 0 20px 50px rgb(0 0 0 / 0.28);
 }
 
 /* Motion for the shared app components (keyframes in section 6). Emitted only when used. */
@@ -185,7 +181,6 @@
     --hover: var(--fill);
     --selected: color-mix(in srgb, var(--tint) 14%, transparent);
     --code-bg: #f3f3f5;
-    --shadow: 0 1px 2px rgb(0 0 0 / 0.06), 0 0 0 0.5px rgb(0 0 0 / 0.08);
     --link: #0068da;
     --scrim: rgb(0 0 0 / 0.15);
 
@@ -224,7 +219,6 @@
       --fill-strong: rgb(255 255 255 / 0.12);
       --selected: color-mix(in srgb, var(--tint) 26%, transparent);
       --code-bg: #1a1a1c;
-      --shadow: 0 1px 2px rgb(0 0 0 / 0.4), 0 0 0 0.5px rgb(255 255 255 / 0.08);
       --link: #419cff;
       --scrim: rgb(0 0 0 / 0.3);
 
@@ -377,14 +371,6 @@
   pre,
   code {
     cursor: text;
-  }
-  /* Native <select>: Tailwind preflight gives it a background and radius, which makes WebKit
-     drop the AppKit bezel. Revert to the UA style so WebKit draws the real pop-up button and
-     opens a real NSMenu; 13px selects the regular control size. Utilities still win. */
-  select {
-    all: revert;
-    font-family: inherit;
-    font-size: var(--text-sm);
   }
   /* No ::-webkit-scrollbar rules: WKWebView then draws native scrollbars that follow System
      Settings > Appearance > Show scroll bars (overlay with a trackpad, a 15px classic scroller

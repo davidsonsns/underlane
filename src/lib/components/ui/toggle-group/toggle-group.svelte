@@ -69,7 +69,7 @@ get along, so we shut typescript up by casting `value` to `never`.
 	data-spacing={spacing}
 	style={`--gap: ${spacing}`}
 	class={cn(
-		"group/toggle-group flex w-fit flex-row items-center gap-[--spacing(var(--gap))] data-vertical:flex-col data-vertical:items-stretch data-[spacing=0]:h-[22px] data-[spacing=0]:gap-px data-[spacing=0]:rounded-md data-[spacing=0]:bg-fill data-[spacing=0]:p-px data-[spacing=0]:shadow-[inset_0_0_0_0.5px_var(--line)]",
+		"group/toggle-group flex w-fit flex-row items-center gap-[--spacing(var(--gap))] data-vertical:flex-col data-vertical:items-stretch data-[spacing=0]:h-[22px] data-[spacing=0]:gap-px data-[spacing=0]:rounded-md data-[spacing=0]:bg-fill data-[spacing=0]:p-px data-[spacing=0]:border-[0.5px] data-[spacing=0]:border-border",
 		className
 	)}
 	{...restProps}

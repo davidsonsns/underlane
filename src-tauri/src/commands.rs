@@ -425,13 +425,15 @@ pub async fn detect_cloudflared(core: CoreState<'_>) -> Res<Option<Binary>> {
     Ok(core.rediscover().await)
 }
 
+// async = off the main thread: SMAppService calls are blocking XPC round-trips, and a
+// blocked main thread freezes the webview's animations (the Switch thumb jumps).
 #[tauri::command]
-pub fn login_item_status() -> LoginItem {
+pub async fn login_item_status() -> LoginItem {
     platform::login_item()
 }
 
 #[tauri::command]
-pub fn set_launch_at_login(enabled: bool) -> LoginItem {
+pub async fn set_launch_at_login(enabled: bool) -> LoginItem {
     platform::set_login_item(enabled)
 }
 

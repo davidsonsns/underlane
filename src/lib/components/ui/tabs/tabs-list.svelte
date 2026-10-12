@@ -6,7 +6,7 @@
 		base: "group/tabs-list inline-flex w-fit items-center justify-center text-sm group-data-horizontal/tabs:h-[22px] group-data-vertical/tabs:h-fit group-data-vertical/tabs:flex-col data-[variant=line]:rounded-none",
 		variants: {
 			variant: {
-				default: "gap-px rounded-md bg-fill p-px shadow-[inset_0_0_0_0.5px_var(--line)]",
+				default: "gap-px rounded-md bg-fill p-px border-[0.5px] border-border",
 				line: "gap-1 bg-transparent",
 			},
 		},

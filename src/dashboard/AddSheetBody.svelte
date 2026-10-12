@@ -133,7 +133,7 @@
     <!-- A form for the submit button; it has no text field, so Return doesn't import (as before). -->
     <form class="flex flex-col gap-3" onsubmit={(e) => { e.preventDefault(); importPaths(selectedPaths); }}>
       <p class="text-callout text-muted-foreground">Burrow reads existing cloudflared config files and never modifies them.</p>
-      <div class="rounded-lg bg-card shadow-(--shadow)">
+      <div class="rounded-lg bg-card border-[0.5px] border-border">
         <div class="border-b-[0.5px] border-border px-3 py-2 text-xs text-muted-foreground">In <span class="font-mono">~/.cloudflared</span></div>
         {#if candidates === null && !scanError}
           <StatePanel kind="loading" title="Looking for config files…" />

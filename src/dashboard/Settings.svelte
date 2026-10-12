@@ -18,6 +18,7 @@
   import { Input } from "$lib/components/ui/input/index.js";
   import { Switch } from "$lib/components/ui/switch/index.js";
   import * as InputGroup from "$lib/components/ui/input-group/index.js";
+  import * as Select from "$lib/components/ui/select/index.js";
 
   let draft = $state<Settings | null>(null);
   let login = $state<LoginItem | null>(null);
@@ -146,10 +147,12 @@
         </SettingsRow>
         <SettingsRow label="Default log level" help="Used for newly added tunnels.">
           {#snippet control({ id, describedBy })}
-            <!-- A plain native select: the real AppKit pop-up (01 §5.11). No bg/border/radius/appearance utilities. -->
-            <select {id} aria-describedby={describedBy} value={draft!.default_loglevel} onchange={(e) => save({ default_loglevel: e.currentTarget.value })}>
-              {#each ["debug", "info", "warn", "error"] as l (l)}<option value={l}>{l}</option>{/each}
-            </select>
+            <Select.Root type="single" value={draft!.default_loglevel} onValueChange={(default_loglevel) => save({ default_loglevel })}>
+              <Select.Trigger {id} aria-describedby={describedBy} class="w-55">{draft!.default_loglevel}</Select.Trigger>
+              <Select.Content>
+                {#each ["debug", "info", "warn", "error"] as l (l)}<Select.Item value={l} label={l} />{/each}
+              </Select.Content>
+            </Select.Root>
           {/snippet}
         </SettingsRow>
       </SettingsGroup>

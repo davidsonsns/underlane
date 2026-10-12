@@ -113,7 +113,7 @@
     </p>
   {:else}
     <!-- routes-grid / routes-row (app.css): rows are subgrids, so every service sits in one right-hand column. -->
-    <ul class="routes-grid rounded-lg bg-card shadow-(--shadow)">
+    <ul class="routes-grid rounded-lg bg-card border-[0.5px] border-border">
       {#each routes as m, i (i)}
         {@const host = hostOf(m)}
         {@const r = reachOf(m.service)}

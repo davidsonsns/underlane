@@ -16,17 +16,17 @@
 <Sonner
 	{theme}
 	class="toaster group"
-	style="--normal-bg: var(--popover); --normal-text: var(--popover-foreground); --normal-border: transparent; --border-radius: var(--radius-xl); --width: 320px;"
+	style="--normal-bg: var(--popover); --normal-text: var(--popover-foreground); --normal-border: var(--input); --border-radius: var(--radius-xl); --width: 320px;"
 	toastOptions={{
 		classes: {
-			toast: "!font-sans !text-sm !shadow-menu !backdrop-blur-xl !backdrop-saturate-150 !gap-2 !px-3 !py-2.5",
+			toast: "!font-sans !text-sm !border-[0.5px] !shadow-none !backdrop-blur-xl !backdrop-saturate-150 !gap-2 !px-3 !py-2.5",
 			title: "!text-sm !font-semibold",
 			description: "!text-callout !text-muted-foreground",
 			success: "[&_[data-icon]]:!text-ok",
 			error: "[&_[data-icon]]:!text-bad",
 			warning: "[&_[data-icon]]:!text-degraded",
 			actionButton: "!h-[22px] !rounded-md !bg-primary !px-2.5 !text-sm !font-normal !text-primary-foreground",
-			cancelButton: "!h-[22px] !rounded-md !bg-control !px-2.5 !text-sm !font-normal !text-foreground !shadow-control",
+			cancelButton: "!h-[22px] !rounded-md !bg-control !px-2.5 !text-sm !font-normal !text-foreground !border-[0.5px] !border-solid !border-input",
 		},
 	}}
 	{...restProps}

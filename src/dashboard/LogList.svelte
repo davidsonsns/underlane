@@ -344,7 +344,7 @@
   {#if !follow}
     <!-- An opaque base under the push button: its dark-mode fill is translucent, and the lines
          scroll underneath. -->
-    <div class="absolute right-[18px] bottom-3.5 z-20 rounded-md bg-background shadow-(--shadow)">
+    <div class="absolute right-[18px] bottom-3.5 z-20 rounded-md bg-background">
       <Button variant="outline" onclick={jump}>Jump to latest</Button>
     </div>
   {/if}

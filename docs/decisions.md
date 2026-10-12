@@ -367,11 +367,12 @@ unchanged. No `mode-watcher`: the toast component gets the theme setting as a pr
 `set_theme`, so a CSS fade disagreed with it for 240ms, and the fade's `!important` would have
 beaten every `!` utility once inside a cascade layer.
 
-**Selects.** A plain native `<select>` everywhere, with Tailwind's reset undone by
-`select { all: revert }`, so WebKit draws the real AppKit pop-up and opens a real NSMenu that
-matches the running macOS. Rejected: Bits UI `Select` (a custom trigger can't match each macOS
-version's pop-up) and shadcn's `native-select` (it sets `appearance: none` and draws its own
-chevron).
+**Selects.** shadcn's `Select` (`ui/select`, Bits UI) everywhere: the tunnel picker and both
+log-level pickers. Its trigger is drawn like the Project combobox's (outline button, plain
+up/down chevron) and its list uses the same menu material and rows (`mac.ts`), so every pop-up in
+the app looks the same. This replaced the native `<select>` that Phase 3 shipped: the native
+NSMenu looked nothing like the combobox's popover next to it. Rejected: shadcn's `native-select`
+(it still opens the native menu).
 
 **Tooltips at 250ms.** AppKit waits about a second; the owner chose fast tooltips (`c3a3775`).
 
@@ -639,9 +640,10 @@ tooltip content). Not done, follow-ups: O1 (resizable dashboard, fluid Requests 
 (confirm before Clear), O4 (⌘1–4, ⌘N, ⌘F shortcuts with Kbd hints), O5 (⌘K palette), O7 (Copy on
 error toasts). O8 (tighter CSP `style-src`) is deliberately not done (R14).
 
-**After Phase 3: what changed with base.css gone.** The native `<select>` is now fully the
-browser's default pop-up (base.css's `font: inherit; color` override is gone; app.css sets only
-the family and the 13px size), which is what F5 wanted. Scrollbars are native: overlay with a
+**After Phase 3: what changed with base.css gone.** The native `<select>` was then fully the
+browser's default pop-up (base.css's `font: inherit; color` override was gone; app.css set only
+the family and the 13px size), which is what F5 wanted; it has since been replaced by `ui/select`
+(see Selects above). Scrollbars are native: overlay with a
 trackpad, a 15px classic scroller with a mouse attached and "Show scroll bars: automatically", so
 the Requests column headers can sit up to 15px off their columns when the list scrolls (it was
 10px with the old custom scrollbar). The Phase 3 `title=` gate allows these six native titles,

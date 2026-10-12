@@ -21,7 +21,7 @@
 	bind:ref
 	data-slot="checkbox"
 	class={cn(
-		"peer relative flex size-[14px] shrink-0 items-center justify-center rounded-[3px] bg-control text-white shadow-control transition-shadow duration-100 data-checked:bg-tint data-checked:shadow-none data-[state=indeterminate]:bg-tint data-[state=indeterminate]:shadow-none disabled:cursor-default disabled:opacity-45 aria-invalid:ring-[3px] aria-invalid:ring-destructive/40 after:absolute after:-inset-x-1.5 after:-inset-y-1",
+		"peer relative flex size-[14px] shrink-0 items-center justify-center rounded-[3px] bg-control text-white border-[0.5px] border-input transition-colors duration-100 data-checked:border-transparent data-checked:bg-tint data-[state=indeterminate]:border-transparent data-[state=indeterminate]:bg-tint disabled:cursor-default disabled:opacity-45 aria-invalid:ring-[3px] aria-invalid:ring-destructive/40 after:absolute after:-inset-x-1.5 after:-inset-y-1",
 		kbRing,
 		className
 	)}

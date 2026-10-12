@@ -28,6 +28,7 @@
   import { Button } from "$lib/components/ui/button/index.js";
   import { Input } from "$lib/components/ui/input/index.js";
   import { Switch } from "$lib/components/ui/switch/index.js";
+  import * as Select from "$lib/components/ui/select/index.js";
   import * as AlertDialog from "$lib/components/ui/alert-dialog/index.js";
   import Routes from "./Routes.svelte";
 
@@ -61,11 +62,11 @@
     stopped: "text-muted-foreground",
   };
   const border: Record<Status, string> = {
-    connected: "border-ok",
-    starting: "border-starting",
-    degraded: "border-degraded",
-    crashed: "border-bad",
-    stopped: "border-off",
+    connected: "border-s-ok",
+    starting: "border-s-starting",
+    degraded: "border-s-degraded",
+    crashed: "border-s-bad",
+    stopped: "border-s-off",
   };
 
   async function run(fn: () => Promise<unknown>) {
@@ -169,7 +170,7 @@
      looser line height of today's notices. -->
 {#snippet notice(status: Status, body: Snippet, role?: "status" | "alert")}
   <div
-    class="mb-3.5 rounded-lg border-s-[3px] bg-card px-3 py-2.5 text-callout leading-[1.45] shadow-(--shadow) {border[status]}"
+    class="mb-3.5 rounded-lg border-[0.5px] border-s-[3px] border-border bg-card px-3 py-2.5 text-callout leading-[1.45] {border[status]}"
     {role}
     transition:slide={{ duration: motion(180) }}
   >
@@ -277,10 +278,12 @@
   </SettingsRow>
   <SettingsRow label="Log level" help="Debug logs every request's headers (redacted before storage).">
     {#snippet control({ id, describedBy })}
-      <!-- A plain native select: the real AppKit pop-up (01 §5.11). No bg/border/radius/appearance utilities. -->
-      <select {id} aria-describedby={describedBy} value={tunnel.loglevel} onchange={(e) => patch({ loglevel: e.currentTarget.value })}>
-        {#each ["debug", "info", "warn", "error"] as l (l)}<option value={l}>{l}</option>{/each}
-      </select>
+      <Select.Root type="single" value={tunnel.loglevel} onValueChange={(loglevel) => patch({ loglevel })}>
+        <Select.Trigger {id} aria-describedby={describedBy} class="w-55">{tunnel.loglevel}</Select.Trigger>
+        <Select.Content>
+          {#each ["debug", "info", "warn", "error"] as l (l)}<Select.Item value={l} label={l} />{/each}
+        </Select.Content>
+      </Select.Root>
     {/snippet}
   </SettingsRow>
   <SettingsRow label="Project">

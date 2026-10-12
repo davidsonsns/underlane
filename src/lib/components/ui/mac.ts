@@ -6,7 +6,7 @@ export const kbRing = "outline-none kb-focus:ring-[3px] kb-focus:ring-ring/50 kb
 
 /** Floating menu surface (dropdown, context, select): translucent material, no zoom. */
 export const menuContent =
-  "z-50 min-w-[10rem] overflow-x-hidden overflow-y-auto rounded-lg bg-popover p-[5px] text-sm text-popover-foreground shadow-menu outline-none backdrop-blur-xl backdrop-saturate-150 " +
+  "z-50 min-w-[10rem] overflow-x-hidden overflow-y-auto rounded-lg bg-popover p-[5px] text-sm text-popover-foreground border-[0.5px] border-input outline-none backdrop-blur-xl backdrop-saturate-150 " +
   // Open instantly like NSMenu; fade out quickly on close.
   "data-closed:animate-out data-closed:fade-out-0 data-closed:duration-150";
 

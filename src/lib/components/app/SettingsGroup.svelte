@@ -28,7 +28,7 @@
       {#if aside}<div class="text-xs text-muted-foreground">{@render aside()}</div>{/if}
     </div>
   {/if}
-  <div class={cn("rounded-lg bg-card shadow-(--shadow) *:not-first:border-t-[0.5px] *:not-first:border-border")}>
+  <div class={cn("rounded-lg bg-card border-[0.5px] border-border *:not-first:border-t-[0.5px] *:not-first:border-border")}>
     {@render children()}
   </div>
   {#if footer}<div class="mt-1.5 ms-0.5 text-xs text-muted-foreground">{@render footer()}</div>{/if}

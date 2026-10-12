@@ -14,7 +14,7 @@
 				// "Truncated" and other cautions.
 				warning: "bg-starting/15 text-starting-text",
 				destructive: "bg-bad/10 text-bad-text",
-				outline: "text-muted-foreground shadow-[inset_0_0_0_0.5px_var(--line-strong)]",
+				outline: "text-muted-foreground border-[0.5px] border-input",
 			},
 		},
 		defaultVariants: {

@@ -42,7 +42,7 @@
 		class={cn(
 			// NSAlert presented as a window sheet: the same geometry and motion as the dialog sheet
 			// (§5.6), narrower. No icon, no close button; Cancel is the Escape action.
-			"group/alert-dialog-content fixed top-(--sheet-top) left-1/2 z-50 grid max-h-[calc(100vh-var(--sheet-top)-24px)] -translate-x-1/2 gap-4 overflow-auto rounded-xl bg-background p-5 text-sm text-foreground shadow-sheet outline-none data-[size=default]:w-[min(420px,calc(100vw-48px))] data-[size=sm]:w-[min(320px,calc(100vw-48px))]",
+			"group/alert-dialog-content fixed top-(--sheet-top) left-1/2 z-50 grid max-h-[calc(100vh-var(--sheet-top)-24px)] -translate-x-1/2 gap-4 overflow-auto rounded-xl bg-background p-5 text-sm text-foreground border-[0.5px] border-input outline-none data-[size=default]:w-[min(420px,calc(100vw-48px))] data-[size=sm]:w-[min(320px,calc(100vw-48px))]",
 			"data-open:animate-in data-open:fade-in-0 data-open:slide-in-from-top-4 data-open:duration-200 data-open:ease-out data-closed:animate-out data-closed:fade-out-0 data-closed:slide-out-to-top-2 data-closed:duration-150",
 			className
 		)}

@@ -17,7 +17,7 @@
 	role="group"
 	class={cn(
 		// The 22px NSTextField from input.svelte; the ring sits on the group, not the inner control.
-		"group/input-group relative flex h-[22px] w-full min-w-0 items-center rounded-[5px] bg-control text-sm shadow-[inset_0_0_0_0.5px_var(--line-strong)] transition-[box-shadow] duration-100 outline-none has-[[data-slot=input-group-control]:focus-visible]:ring-[3px] has-[[data-slot=input-group-control]:focus-visible]:ring-ring/40 has-[[data-slot][aria-invalid=true]]:ring-[3px] has-[[data-slot][aria-invalid=true]]:ring-destructive/40 has-[>textarea]:h-auto has-[>[data-align=block-end]]:h-auto has-[>[data-align=block-end]]:flex-col has-[>[data-align=block-start]]:h-auto has-[>[data-align=block-start]]:flex-col has-[>[data-align=inline-end]]:[&>input]:pr-0.5 has-[>[data-align=inline-start]]:[&>input]:pl-0.5",
+		"group/input-group relative flex h-[22px] w-full min-w-0 items-center rounded-[5px] bg-control text-sm border-[0.5px] border-input has-[[data-slot=input-group-control]:focus-visible]:border-ring transition-[box-shadow] duration-100 outline-none has-[[data-slot][aria-invalid=true]]:ring-[3px] has-[[data-slot][aria-invalid=true]]:ring-destructive/40 has-[>textarea]:h-auto has-[>[data-align=block-end]]:h-auto has-[>[data-align=block-end]]:flex-col has-[>[data-align=block-start]]:h-auto has-[>[data-align=block-start]]:flex-col has-[>[data-align=inline-end]]:[&>input]:pr-0.5 has-[>[data-align=inline-start]]:[&>input]:pl-0.5",
 		className
 	)}
 	{...props}

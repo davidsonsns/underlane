@@ -7,7 +7,7 @@
 		variants: {
 			variant: {
 				default: "bg-transparent",
-				outline: "bg-control shadow-control hover:bg-control",
+				outline: "bg-control border-[0.5px] border-input hover:bg-control",
 			},
 			size: {
 				default: "h-[22px] min-w-[22px] px-2",
