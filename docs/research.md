@@ -1,6 +1,6 @@
 # Research
 
-Working name: **Burrow**, a menu bar app that supervises `cloudflared` tunnels.
+Working name: **Underlane**, a menu bar app that supervises `cloudflared` tunnels.
 
 Everything here about `cloudflared` was checked against **cloudflared 2026.9.1** on this Mac
 (`/opt/homebrew/bin/cloudflared`), either with `--help` or by running it. Where a claim comes from
@@ -165,7 +165,7 @@ So capture has to happen on the path between cloudflared and the origin.
 ### 3.2 Design: an inspecting reverse proxy owned by the app
 
 ```
-edge ─▶ cloudflared ──(derived config: service = http://127.0.0.1:P_i)──▶ Burrow proxy :P_i ──▶ real origin (http/https)
+edge ─▶ cloudflared ──(derived config: service = http://127.0.0.1:P_i)──▶ Underlane proxy :P_i ──▶ real origin (http/https)
                                                                               │
                                                                               └─▶ capture → SQLite (requests table)
 ```
@@ -251,7 +251,7 @@ service. Non-inspected rules keep their `originRequest` exactly as written.
 
 **Relative paths.** cloudflared resolves a relative `credentials-file` (and other paths) against
 the **process working directory**, not the YAML file's directory (verified by the reviewers against
-cloudflared source and behavior). Burrow always spawns cloudflared, for validation and every run,
+cloudflared source and behavior). Underlane always spawns cloudflared, for validation and every run,
 with its working directory set to the **original config's directory**. It also writes absolute
 paths, resolved against that same directory, into the derived file. The original and derived
 configs therefore resolve to identical files. A preflight check shows a clear error if the
@@ -268,7 +268,7 @@ nothing.
 
 #### 3.6.1 Measured
 
-Measured with `cargo test --release -p burrow-core --test proxy_capture -- --ignored --nocapture`
+Measured with `cargo test --release -p underlane-core --test proxy_capture -- --ignored --nocapture`
 (`bench_added_latency`): 1,000 sequential POSTs with a small JSON body after a 200-request warm-up,
 on this Mac (Apple Silicon, macOS 27), loopback origin, capture on.
 
@@ -291,13 +291,13 @@ The proxy runs inside the app process as tokio tasks:
   port. cloudflared retries the origin, so clients see 502s for the gap.
 - **If the app process dies** (crash, force-quit, SIGKILL), the proxy is gone. On macOS, child
   processes do *not* die with their parent, so each cloudflared is launched through a tiny
-  **watchdog shim**: Burrow's own binary re-executed as `burrow --cloudflared-shim`. The shim
+  **watchdog shim**: Underlane's own binary re-executed as `underlane --cloudflared-shim`. The shim
   spawns cloudflared, holds the read end of a pipe from the app on its stdin, and on EOF (the app
   died) sends SIGTERM to cloudflared, then SIGKILL after 5 s. Tunnels therefore go down within
   seconds of an app crash rather than serving 502s indefinitely. As a second line of defence, the
   next launch kills leftovers found by pidfile. Every launch mode, including uninspected named
-  tunnels, runs from a config file inside Burrow's data dir, so the command line always carries a
-  Burrow marker that identifies the process.
+  tunnels, runs from a config file inside Underlane's data dir, so the command line always carries a
+  Underlane marker that identifies the process.
 - **Fail-open option:** if a listener can't be rebound, the supervisor restarts that tunnel with
   the original config (inspection off) and shows a warning. It favors traffic over capture.
 

@@ -265,13 +265,13 @@
     label="Inspect requests"
     help={tunnel.kind === "token"
       ? "Not available for token tunnels: their routes live in the Cloudflare dashboard."
-      : `Routes traffic through Burrow's local proxy and stores request and response bodies (up to ${store.overview?.settings.max_body_kb ?? 1024} KB each). Bodies may contain secrets.`}
+      : `Routes traffic through Underlane's local proxy and stores request and response bodies (up to ${store.overview?.settings.max_body_kb ?? 1024} KB each). Bodies may contain secrets.`}
   >
     {#snippet control({ id, describedBy })}
       <Switch {id} aria-describedby={describedBy} disabled={tunnel.kind === "token" || busy} bind:checked={() => tunnel.inspect, (v) => patch({ inspect: v })} />
     {/snippet}
   </SettingsRow>
-  <SettingsRow label="Start automatically" help="Start this tunnel whenever Burrow launches.">
+  <SettingsRow label="Start automatically" help="Start this tunnel whenever Underlane launches.">
     {#snippet control({ id, describedBy })}
       <Switch {id} aria-describedby={describedBy} disabled={busy} bind:checked={() => tunnel.autostart, (v) => patch({ autostart: v })} />
     {/snippet}
@@ -303,7 +303,7 @@
 
 {#snippet sourceNote()}
   {#if tunnel.kind === "config"}
-    Burrow reads this file and never changes it. Edits are picked up the next time the tunnel starts.
+    Underlane reads this file and never changes it. Edits are picked up the next time the tunnel starts.
   {:else}
     Quick tunnels get a new random hostname every time they start, and don't support server-sent events.
   {/if}

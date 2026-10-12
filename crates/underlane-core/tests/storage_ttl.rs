@@ -1,6 +1,6 @@
-use burrow_core::db::{Db, LogQuery};
-use burrow_core::model::{LogLine, Settings, Tunnel, TunnelKind};
-use burrow_core::proxy::capture::{BodyCapture, CapturedExchange, ExchangeKind};
+use underlane_core::db::{Db, LogQuery};
+use underlane_core::model::{LogLine, Settings, Tunnel, TunnelKind};
+use underlane_core::proxy::capture::{BodyCapture, CapturedExchange, ExchangeKind};
 
 const DAY: i64 = 86_400_000;
 
@@ -56,7 +56,7 @@ fn ttl_sweep_deletes_only_expired_rows() {
 #[test]
 fn size_cap_removes_oldest_rows_and_shrinks_the_file() {
     let dir = tempfile::tempdir().unwrap();
-    let path = dir.path().join("burrow.db");
+    let path = dir.path().join("underlane.db");
     let db = Db::open(&path).unwrap();
     let now = 10 * DAY;
     for i in 0..200 {

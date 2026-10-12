@@ -256,7 +256,7 @@ impl Shared {
             Ok(u) => u,
             Err(e) => {
                 pending.lock().unwrap().commit(Some(format!("bad upstream URI: {e}")));
-                return text_response(StatusCode::BAD_GATEWAY, format!("Burrow inspector: bad upstream URI: {e}\n"));
+                return text_response(StatusCode::BAD_GATEWAY, format!("Underlane inspector: bad upstream URI: {e}\n"));
             }
         };
 
@@ -285,7 +285,7 @@ impl Shared {
                 let mut p = pending.lock().unwrap();
                 p.record.status = Some(502);
                 p.commit(Some(msg.clone()));
-                return text_response(StatusCode::BAD_GATEWAY, format!("Burrow inspector: {msg}\n"));
+                return text_response(StatusCode::BAD_GATEWAY, format!("Underlane inspector: {msg}\n"));
             }
         };
 

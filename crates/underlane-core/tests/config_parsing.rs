@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use burrow_core::config::{scan_dir, TunnelConfig};
+use underlane_core::config::{scan_dir, TunnelConfig};
 
 const NAMED: &str = r#"
 tunnel: 00000000-0000-4000-8000-000000000101

@@ -12,9 +12,9 @@ use hyper::body::{Frame, Incoming};
 use hyper::{Request, Response};
 use hyper_util::rt::TokioIo;
 
-use burrow_core::derived::Upstream;
-use burrow_core::proxy::capture::{CaptureOptions, CapturedExchange};
-use burrow_core::proxy::{self, ProxyContext, ProxyHandle};
+use underlane_core::derived::Upstream;
+use underlane_core::proxy::capture::{CaptureOptions, CapturedExchange};
+use underlane_core::proxy::{self, ProxyContext, ProxyHandle};
 
 type Body = http_body_util::combinators::BoxBody<Bytes, Infallible>;
 

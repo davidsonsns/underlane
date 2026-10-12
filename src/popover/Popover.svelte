@@ -134,7 +134,7 @@
 <main bind:this={root} class="relative flex h-screen flex-col overflow-hidden rounded-[12px] bg-(--popover-tint)">
   <header class="flex items-center justify-between pt-3 pr-3 pb-2 pl-3.5">
     <div class="flex flex-col">
-      <strong class="text-sm font-semibold">Burrow</strong>
+      <strong class="text-sm font-semibold">Underlane</strong>
       <span class="text-xs text-muted-foreground">{summary}</span>
     </div>
     {#if store.tunnels.length}
@@ -222,7 +222,7 @@
 
   <footer class="flex justify-between border-t-[0.5px] border-border px-2 pt-1.5 pb-2">
     <Button variant="ghost" class="text-foreground" onclick={() => api.openDashboard()}><PanelLeft class="size-3.5" /> Open Dashboard</Button>
-    <Tip text="Quit Burrow and stop all tunnels" side="top">
+    <Tip text="Quit Underlane and stop all tunnels" side="top">
       {#snippet children({ props })}<Button {...mergeProps(props, { onclick: () => api.quit() })} variant="ghost" class="text-foreground">Quit</Button>{/snippet}
     </Tip>
   </footer>

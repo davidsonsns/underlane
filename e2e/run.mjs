@@ -1,13 +1,13 @@
 #!/usr/bin/env node
 // End-to-end check, no Cloudflare account needed:
 //   1. start a local echo server
-//   2. launch the real Burrow app (debug build with the e2e control server) on a throwaway data dir
+//   2. launch the real Underlane app (debug build with the e2e control server) on a throwaway data dir
 //   3. expose the echo server as a quick tunnel with inspection on
 //   4. curl the trycloudflare.com URL with a JSON body
 //   5. assert the bodies are in SQLite and in the dashboard's request viewer, and that the
 //      menu bar count (read from the real NSStatusItem) goes 0 -> 1 -> 0
 //
-// usage: node e2e/run.mjs path/to/Burrow.app
+// usage: node e2e/run.mjs path/to/Underlane.app
 import { spawn, execFile, execFileSync } from "node:child_process";
 import { promisify } from "node:util";
 import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
@@ -16,10 +16,10 @@ import { Resolver } from "node:dns/promises";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
-const app = resolve(process.argv[2] ?? "target/debug/bundle/macos/Burrow.app");
-const bin = join(app, "Contents/MacOS/Burrow");
+const app = resolve(process.argv[2] ?? "target/debug/bundle/macos/Underlane.app");
+const bin = join(app, "Contents/MacOS/Underlane");
 const CONTROL = 47000 + Math.floor(Math.random() * 900);
-const marker = `burrow-e2e-${Date.now().toString(36)}`;
+const marker = `underlane-e2e-${Date.now().toString(36)}`;
 const outDir = resolve("e2e/out");
 mkdirSync(outDir, { recursive: true });
 const evidence = { marker, steps: [] };
@@ -57,9 +57,9 @@ const echoPort = echo.address().port;
 log(`echo server on 127.0.0.1:${echoPort}`);
 
 // --- 2. launch the app ------------------------------------------------------------------
-const dataDir = mkdtempSync(join(tmpdir(), "burrow-e2e-"));
+const dataDir = mkdtempSync(join(tmpdir(), "underlane-e2e-"));
 const child = spawn(bin, [], {
-  env: { ...process.env, BURROW_DATA_DIR: dataDir, BURROW_E2E_PORT: String(CONTROL), BURROW_LOG: "info" },
+  env: { ...process.env, UNDERLANE_DATA_DIR: dataDir, UNDERLANE_E2E_PORT: String(CONTROL), UNDERLANE_LOG: "info" },
   stdio: ["ignore", "pipe", "pipe"],
 });
 let appLog = "";
@@ -142,7 +142,7 @@ try {
   const ip = await waitFor("DNS for the quick tunnel", async () => (await resolver.resolve4(host))[0], 120000, 2000);
   log(`${host} resolves to ${ip} (via 1.1.1.1)`);
 
-  const payload = JSON.stringify({ hello: "burrow", marker, items: [1, 2, 3] });
+  const payload = JSON.stringify({ hello: "underlane", marker, items: [1, 2, 3] });
   // Real curl, pinned to the IP from 1.1.1.1 with --resolve (the system resolver may have
   // cached NXDOMAIN for the brand-new hostname).
   const curlArgs = [
@@ -185,7 +185,7 @@ try {
     async () => {
       const out = execFileSync("sqlite3", [
         "-json",
-        join(dataDir, "burrow.db"),
+        join(dataDir, "underlane.db"),
         `SELECT method, path, status, req_headers, CAST(req_body AS TEXT) AS req_body, CAST(resp_body AS TEXT) AS resp_body FROM requests WHERE tunnel_id='${tunnelId}' AND path LIKE '/e2e%' AND duration_ms IS NOT NULL`,
       ]).toString();
       const parsed = out.trim() ? JSON.parse(out) : [];
@@ -211,7 +211,7 @@ try {
   const reqUi = await ctl("GET", `/ui?view=${encodeURIComponent(`requests:${tunnelId}`)}&select=first&tab=req`);
   const reqText = reqUi.body.text ?? "";
   writeFileSync(join(outDir, "request-viewer-request-tab.txt"), reqText);
-  assert(reqText.includes(`"marker": "${marker}"`) && reqText.includes(`"hello": "burrow"`), "request viewer shows the (pretty-printed) request body");
+  assert(reqText.includes(`"marker": "${marker}"`) && reqText.includes(`"hello": "underlane"`), "request viewer shows the (pretty-printed) request body");
   assert(reqText.includes("[redacted]") && !reqText.includes("e2e-secret-token"), "request viewer shows the Authorization header redacted");
 
   const logsUi = await ctl("GET", `/ui?view=${encodeURIComponent(`logs:${tunnelId}`)}`);

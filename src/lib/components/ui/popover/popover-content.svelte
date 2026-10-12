@@ -1,5 +1,5 @@
 <script lang="ts">
-	// burrow: macOS overrides, see .scratch/shadcn-luma/01-theming.md §5.19 (stock Luma: shadcn-svelte@1.7.0 add).
+	// underlane: macOS overrides, see .scratch/shadcn-luma/01-theming.md §5.19 (stock Luma: shadcn-svelte@1.7.0 add).
 	import { Popover as PopoverPrimitive } from "bits-ui";
 	import { cn, type WithoutChildrenOrChild } from "$lib/utils.js";
 	import PopoverPortal from "./popover-portal.svelte";

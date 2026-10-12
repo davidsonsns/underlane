@@ -1,6 +1,6 @@
-//! Watchdog shim: `burrow --cloudflared-shim <cloudflared> <args...>`.
+//! Watchdog shim: `underlane --cloudflared-shim <cloudflared> <args...>`.
 //!
-//! macOS doesn't kill children when their parent dies, so Burrow starts cloudflared through
+//! macOS doesn't kill children when their parent dies, so Underlane starts cloudflared through
 //! this shim. The shim's stdin is a pipe from the app. When it reaches EOF the app is gone
 //! (crash, force quit), and the shim terminates cloudflared. stdout/stderr are inherited, so
 //! log lines go straight to the app. Normal stops signal the whole process group; the shim
@@ -15,7 +15,7 @@ pub const SHIM_FLAG: &str = "--cloudflared-shim";
 /// Run the shim. `args[0]` is the cloudflared binary. Returns the exit code to use.
 pub fn run(args: &[String]) -> i32 {
     let Some((bin, rest)) = args.split_first() else {
-        eprintln!("burrow shim: missing cloudflared path");
+        eprintln!("underlane shim: missing cloudflared path");
         return 2;
     };
 

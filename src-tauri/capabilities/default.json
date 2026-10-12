@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Permissions for Burrow's popover and dashboard",
+  "description": "Permissions for Underlane's popover and dashboard",
   "windows": ["popover", "dashboard"],
   "permissions": [
     "core:default",

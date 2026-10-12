@@ -1,5 +1,5 @@
 <script lang="ts">
-	// burrow: macOS overrides, see .scratch/shadcn-luma/01-theming.md §5.20 (stock Luma: shadcn-svelte@1.7.0 add).
+	// underlane: macOS overrides, see .scratch/shadcn-luma/01-theming.md §5.20 (stock Luma: shadcn-svelte@1.7.0 add).
 	import { AlertDialog as AlertDialogPrimitive } from "bits-ui";
 	import { cn, type WithoutChild, type WithoutChildrenOrChild } from "$lib/utils.js";
 	import AlertDialogOverlay from "./alert-dialog-overlay.svelte";
@@ -18,7 +18,7 @@
 		portalProps?: WithoutChildrenOrChild<ComponentProps<typeof AlertDialogPortal>>;
 	} = $props();
 
-	// burrow: open with focus on Cancel (Bits focuses the content itself). WebKit's plain Tab skips
+	// underlane: open with focus on Cancel (Bits focuses the content itself). WebKit's plain Tab skips
 	// buttons, and Return must never hit the destructive action by default. Deferred like Bits'
 	// own initial focus, so the content is in the DOM.
 	function focusCancel(e: Event) {

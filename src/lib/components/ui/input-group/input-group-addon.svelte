@@ -1,6 +1,6 @@
 <script lang="ts" module>
-	// burrow: macOS overrides, see .scratch/shadcn-luma/01-theming.md §5.25 (stock Luma: shadcn-svelte@1.7.0 add).
-	import { tv, type VariantProps } from "$lib/utils.js"; // burrow: tv without its own merge (01 §5)
+	// underlane: macOS overrides, see .scratch/shadcn-luma/01-theming.md §5.25 (stock Luma: shadcn-svelte@1.7.0 add).
+	import { tv, type VariantProps } from "$lib/utils.js"; // underlane: tv without its own merge (01 §5)
 	export const inputGroupAddonVariants = tv({
 		// Unit/icon addon: 12px muted text, tight padding inside a 22px field.
 		base: "flex h-auto cursor-text items-center justify-center gap-1 text-callout text-muted-foreground select-none group-data-[disabled=true]/input-group:opacity-45 [&>svg:not([class*='size-'])]:size-3.5",

@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
-use burrow_core::db::Db;
-use burrow_core::import::{import_configs, project_name_for};
+use underlane_core::db::Db;
+use underlane_core::import::{import_configs, project_name_for};
 
 #[test]
 fn project_names_come_from_the_folder() {

@@ -1,5 +1,5 @@
 <script lang="ts" module>
-	// burrow: macOS overrides, see .scratch/shadcn-luma/01-theming.md §5 (stock Luma: commit 9f0aa7b).
+	// underlane: macOS overrides, see .scratch/shadcn-luma/01-theming.md §5 (stock Luma: commit 9f0aa7b).
 	import { getContext, setContext } from "svelte";
 	import { toggleVariants } from "$lib/components/ui/toggle/index.js";
 	import type { VariantProps } from "$lib/utils.js";
@@ -9,7 +9,7 @@
 	interface ToggleGroupContext extends ToggleVariants {
 		spacing?: number;
 		orientation?: "horizontal" | "vertical";
-		/** burrow: single-select segmented group; the selection is a sliding thumb, not item backgrounds. */
+		/** underlane: single-select segmented group; the selection is a sliding thumb, not item backgrounds. */
 		sliding?: boolean;
 	}
 
@@ -62,7 +62,7 @@
 		},
 	});
 
-	// burrow: the selected segment's background is one thumb that slides to the new item
+	// underlane: the selected segment's background is one thumb that slides to the new item
 	// (NSSegmentedControl). It follows data-state rather than `value`, so it tracks any change
 	// bits makes, and re-measures on resize. The first placement doesn't animate.
 	let thumb = $state<{ x: number; y: number; w: number; h: number } | null>(null);

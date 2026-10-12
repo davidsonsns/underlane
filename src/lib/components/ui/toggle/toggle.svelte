@@ -1,6 +1,6 @@
 <script lang="ts" module>
-	// burrow: macOS overrides, see .scratch/shadcn-luma/01-theming.md §5 (stock Luma: commit 9f0aa7b).
-	import { tv, type VariantProps } from "$lib/utils.js"; // burrow: tv without its own merge (01 §5)
+	// underlane: macOS overrides, see .scratch/shadcn-luma/01-theming.md §5 (stock Luma: commit 9f0aa7b).
+	import { tv, type VariantProps } from "$lib/utils.js"; // underlane: tv without its own merge (01 §5)
 
 	export const toggleVariants = tv({
 		base: "group/toggle inline-flex items-center justify-center gap-1 rounded-md text-sm font-normal whitespace-nowrap text-foreground outline-none select-none kb-focus:ring-[3px] kb-focus:ring-ring/50 hover:bg-fill aria-pressed:bg-fill-strong data-[state=on]:bg-fill-strong disabled:pointer-events-none disabled:opacity-45 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-[15px]",

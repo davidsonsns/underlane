@@ -1,11 +1,11 @@
-# Burrow
+# Underlane
 
 A macOS menu bar app that runs your `cloudflared` tunnels for you. Set them up once, then stop
 thinking about them: no terminal windows, no juggling `config.yml` files.
 
 ![Popover with three tunnels running](docs/screenshots/04-popover-three-tunnels.png)
 
-- **Import what you already have.** Burrow scans `~/.cloudflared` for config files, and you can
+- **Import what you already have.** Underlane scans `~/.cloudflared` for config files, and you can
   add files or project folders. It also supports token (dashboard-managed) tunnels and
   `trycloudflare.com` quick tunnels.
 - **One click per tunnel**, or all at once, with live status: starting, connected, degraded,
@@ -16,33 +16,48 @@ thinking about them: no terminal windows, no juggling `config.yml` files.
   on, it also has a request inspector with headers, pretty-printed JSON, a hex view and
   "copy as curl".
 - **Launch at login** (native `SMAppService`) and per-tunnel **start automatically**.
-- **Your config files are never modified.** Request inspection uses a derived copy in Burrow's data
+- **Your config files are never modified.** Request inspection uses a derived copy in Underlane's data
   folder.
 
-Burrow drives the `cloudflared` binary; it does not reimplement the tunnel protocol. It isn't
+Underlane drives the `cloudflared` binary; it does not reimplement the tunnel protocol. It isn't
 affiliated with Cloudflare.
+
+## Why "Underlane"
+
+A tunnel is a lane that runs under everything else. That's what `cloudflared` gives you: your
+Mac dials out to Cloudflare's edge, and traffic for your public hostname comes back along that
+connection to `localhost`. No port is opened on your router and no firewall rule is added. The
+traffic goes underneath them. Underlane is the app that keeps those lanes open, quietly, from
+the menu bar, so you don't have to think about them.
+
+The name is also easy to say and to spell: two everyday words, no doubled letters, nothing to
+guess. It deliberately leaves out "Cloudflare" and "cloudflared", because the app isn't an
+official Cloudflare product and shouldn't look like one.
+
+It was called Burrow at first. That name was already taken by other open-source projects,
+including another Mac app, so it was renamed before the first release.
 
 ## Setup
 
 Requirements: macOS 13.3 or later (built and tested on macOS 27, Apple Silicon), plus:
 
 ```sh
-brew install cloudflared   # Burrow finds it on PATH or in Homebrew's folders
+brew install cloudflared   # Underlane finds it on PATH or in Homebrew's folders
 ```
 
 To build from source you also need Xcode command-line tools, Node 20+ and Rust (via
 [rustup](https://rustup.rs)).
 
 ```sh
-make build      # npm ci + tauri build -> target/release/bundle/macos/Burrow.app
+make build      # npm ci + tauri build -> target/release/bundle/macos/Underlane.app
 make install    # same, then copies it to ~/Applications (needed for launch at login)
 ```
 
-Open `Burrow.app`. On first run it opens the dashboard. Choose **Add tunnel** to import config
+Open `Underlane.app`. On first run it opens the dashboard. Choose **Add tunnel** to import config
 files, paste a tunnel token, or share a local port as a quick tunnel.
 
 If you use a menu bar manager (Hidden Bar, Ice, Bartender), new items may land in its hidden
-section. Drag Burrow's arch icon into the visible part.
+section. Drag Underlane's arch icon into the visible part.
 
 ## Dev loop
 
@@ -56,16 +71,16 @@ Useful environment variables:
 
 | Variable | Effect |
 | --- | --- |
-| `BURROW_DATA_DIR` | Use another data folder (tests, experiments). It also disables the single-instance lock. |
-| `BURROW_LOG` | Log filter for the app's own stdout logs, e.g. `debug` or `burrow_core=debug`. |
-| `BURROW_E2E_PORT` | Start the loopback control server. Only in builds with `--features e2e`; release builds don't contain it. |
+| `UNDERLANE_DATA_DIR` | Use another data folder (tests, experiments). It also disables the single-instance lock. |
+| `UNDERLANE_LOG` | Log filter for the app's own stdout logs, e.g. `debug` or `underlane_core=debug`. |
+| `UNDERLANE_E2E_PORT` | Start the loopback control server. Only in builds with `--features e2e`; release builds don't contain it. |
 
-`Burrow --login-item enable|disable|status`, run from the app bundle, manages launch at login from
+`Underlane --login-item enable|disable|status`, run from the app bundle, manages launch at login from
 a script.
 
 ### Tests
 
-- `crates/burrow-core/tests/` holds the integration tests:
+- `crates/underlane-core/tests/` holds the integration tests:
   - config parsing and folder scanning
   - derived configs (only inspected services change, paths become absolute, the original stays
     untouched)
@@ -86,19 +101,19 @@ a script.
   - the menu bar count, read from the real `NSStatusItem`, goes 0 → 1 → 0
 
   Evidence lands in `e2e/out/`.
-- `cargo test --release -p burrow-core --test proxy_capture -- --ignored --nocapture` measures the
+- `cargo test --release -p underlane-core --test proxy_capture -- --ignored --nocapture` measures the
   latency the proxy adds (about 0.03 ms at p50 on loopback).
 
 ## Architecture
 
 ```
-┌──────────────────────────── Burrow.app (one process) ─────────────────────────────┐
+┌──────────────────────────── Underlane.app (one process) ─────────────────────────────┐
 │  WKWebView: popover.html + index.html (Svelte 5)        tray icon (NSStatusItem)   │
 │        │  invoke / events                                    ▲ count              │
 │  src-tauri  (commands, tray & windows, SMAppService, App Nap, e2e control server)  │
 │        │                                                                          │
-│  burrow-core (plain Rust, no Tauri)                                               │
-│   ├─ supervisor ── spawns ──▶ Burrow --cloudflared-shim ──▶ cloudflared tunnel …  │
+│  underlane-core (plain Rust, no Tauri)                                               │
+│   ├─ supervisor ── spawns ──▶ Underlane --cloudflared-shim ──▶ cloudflared tunnel …  │
 │   │      │  stderr JSON logs, /ready /quicktunnel /config polling, backoff        │
 │   ├─ proxy (hyper) ◀── cloudflared (derived config: service → 127.0.0.1:port)     │
 │   │      └──▶ real origin (http/https, originRequest TLS options)                 │
@@ -107,13 +122,13 @@ a script.
 └───────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-- **`crates/burrow-core`** contains everything platform-independent:
+- **`crates/underlane-core`** contains everything platform-independent:
   - `config.rs` parses cloudflared YAML.
   - `derived.rs` decides which rules can be inspected and writes the derived copy.
   - `proxy/` is the inspecting reverse proxy. It streams frames through untouched while copying up
     to the cap, redacts before storage, and passes WebSocket and SSE through.
   - `supervisor.rs` handles process lifecycle, health, restarts, orphan reaping and detecting the
-    same tunnel running outside Burrow.
+    same tunnel running outside Underlane.
   - `db.rs` is the SQLite layer.
   - `shim.rs` is the watchdog that kills cloudflared if the app dies.
   - `decode.rs` handles display-time gzip/br/deflate decoding.
@@ -127,15 +142,15 @@ a script.
 - **`src/`** is the Svelte 5 UI, styled with Tailwind v4 and shadcn-svelte (Luma style, tuned to
   macOS). `popover/` is the menu bar panel. `dashboard/` has the Tunnels, Requests, Logs and
   Settings views. `lib/` holds the API, store and formatting helpers, and `lib/components/` the
-  components: `ui/` are the shadcn-svelte copies (with Burrow's macOS edits), `app/` are Burrow's
+  components: `ui/` are the shadcn-svelte copies (with Underlane's macOS edits), `app/` are Underlane's
   own (StatusDot, Toolbar, Tip, Combobox, …). `styles/app.css` is the only stylesheet: the design
   tokens for light and dark, and the base rules.
 
-Where state lives: `~/Library/Application Support/com.davidsonsns.burrow/`.
+Where state lives: `~/Library/Application Support/com.davidsonsns.underlane/`.
 
 | Path | Contents |
 | --- | --- |
-| `burrow.db` | SQLite: settings, tunnels, logs, captured requests |
+| `underlane.db` | SQLite: settings, tunnels, logs, captured requests |
 | `derived/` | Generated configs |
 | `run/` | pidfiles |
 | `neutral.yml` | Keeps quick and token tunnels from loading a default config |
@@ -148,7 +163,7 @@ verification log with screenshots is in [`docs/verification.md`](docs/verificati
 
 ## Limitations (v1)
 
-- Tunnels run as children of the app, so quitting Burrow stops them. Use launch at login plus
+- Tunnels run as children of the app, so quitting Underlane stops them. Use launch at login plus
   "start automatically", or `cloudflared service install` for tunnels that must survive without
   the app.
 - Inspection isn't available for token tunnels, for rules with `http2Origin`/`matchSNItoHost`, or

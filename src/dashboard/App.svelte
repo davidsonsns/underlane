@@ -136,7 +136,7 @@
     <div class="h-[46px] flex-none" data-tauri-drag-region></div>
     <div class="flex items-center gap-[7px] px-1.5 pb-2.5 text-lg font-semibold" data-tauri-drag-region>
       <img src={logo} alt="" width="22" height="22" draggable="false" class="pointer-events-none" />
-      <span>Burrow</span>
+      <span>Underlane</span>
     </div>
     <nav class="relative isolate flex flex-col gap-px" aria-label="Sections">
       <!-- The selection is one pill that slides to the current item, like the segmented

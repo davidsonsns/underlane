@@ -62,11 +62,11 @@
     return live ? "down" : "idle";
   }
 
-  // Burrow never starts or stops these services, so the tips say what the dot means for traffic.
+  // Underlane never starts or stops these services, so the tips say what the dot means for traffic.
   function reachTip(service: string, r: Reach): string | undefined {
     const addr = shortService(service);
     if (r === "up") return `Live. Traffic to this route reaches ${addr}.`;
-    if (r === "ready") return `Something is listening on ${addr}, but the tunnel is stopped. Start it to route traffic here. Burrow doesn't manage this service.`;
+    if (r === "ready") return `Something is listening on ${addr}, but the tunnel is stopped. Start it to route traffic here. Underlane doesn't manage this service.`;
     if (r === "down") return `Nothing is listening on ${addr}. Visitors get a 502 error until it starts.`;
     if (r === "idle") return `Nothing is listening on ${addr}. Start it before starting the tunnel.`;
     return undefined;

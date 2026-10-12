@@ -132,7 +132,7 @@
   <Tabs.Content value="import" tabindex={-1}>
     <!-- A form for the submit button; it has no text field, so Return doesn't import (as before). -->
     <form class="flex flex-col gap-3" onsubmit={(e) => { e.preventDefault(); importPaths(selectedPaths); }}>
-      <p class="text-callout text-muted-foreground">Burrow reads existing cloudflared config files and never modifies them.</p>
+      <p class="text-callout text-muted-foreground">Underlane reads existing cloudflared config files and never modifies them.</p>
       <div class="rounded-lg bg-card border-[0.5px] border-border">
         <div class="border-b-[0.5px] border-border px-3 py-2 text-xs text-muted-foreground">In <span class="font-mono">~/.cloudflared</span></div>
         {#if candidates === null && !scanError}
@@ -195,7 +195,7 @@
           <Switch id={id("q-inspect")} aria-describedby={id("q-inspect-help")} disabled={busy} bind:checked={quick.inspect} />
           <div class="flex flex-col">
             <Label for={id("q-inspect")}>Inspect requests</Label>
-            <span id={id("q-inspect-help")} class="text-xs text-muted-foreground">Capture request and response bodies through Burrow's local proxy.</span>
+            <span id={id("q-inspect-help")} class="text-xs text-muted-foreground">Capture request and response bodies through Underlane's local proxy.</span>
           </div>
         </div>
       </div>
@@ -209,7 +209,7 @@
 
   <Tabs.Content value="token" tabindex={-1}>
     <form class="flex flex-col gap-3" onsubmit={(e) => { e.preventDefault(); addToken(); }}>
-      <p class="text-callout text-muted-foreground">For tunnels created in the Cloudflare dashboard. Copy the token from the tunnel's install command; Burrow keeps it in your keychain.</p>
+      <p class="text-callout text-muted-foreground">For tunnels created in the Cloudflare dashboard. Copy the token from the tunnel's install command; Underlane keeps it in your keychain.</p>
       <!-- 120px: the right-aligned label column of an AppKit form ("Local address:" fits). -->
       <div class="grid grid-cols-[120px_1fr] items-center gap-x-3 gap-y-2.5">
         <Label for={id("t-token")} class="self-start justify-self-end pt-1">Token:</Label>

@@ -6,12 +6,12 @@ use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::Duration;
 
-use burrow_core::cloudflared::{self, Binary};
-use burrow_core::db::{Db, RequestSummary};
-use burrow_core::model::{LogLine, Settings, Tunnel, TunnelKind};
-use burrow_core::proxy::capture::{CaptureOptions, CapturedExchange, SharedOptions};
-use burrow_core::proxy::now_ms;
-use burrow_core::supervisor::{Event, RunSpec, Status, Supervisor, SupervisorConfig, TunnelState};
+use underlane_core::cloudflared::{self, Binary};
+use underlane_core::db::{Db, RequestSummary};
+use underlane_core::model::{LogLine, Settings, Tunnel, TunnelKind};
+use underlane_core::proxy::capture::{CaptureOptions, CapturedExchange, SharedOptions};
+use underlane_core::proxy::now_ms;
+use underlane_core::supervisor::{Event, RunSpec, Status, Supervisor, SupervisorConfig, TunnelState};
 use serde::Serialize;
 use tauri::{AppHandle, Emitter};
 use tokio::sync::mpsc;
@@ -65,7 +65,7 @@ pub struct TunnelView {
 
 #[derive(Debug, Clone, Serialize)]
 pub struct Overview {
-    pub projects: Vec<burrow_core::model::Project>,
+    pub projects: Vec<underlane_core::model::Project>,
     pub tunnels: Vec<TunnelView>,
     pub cloudflared: Option<Binary>,
     pub settings: Settings,
@@ -87,11 +87,11 @@ pub fn capture_options(s: &Settings) -> CaptureOptions {
 impl Core {
     pub async fn init(handle: AppHandle, data_dir: PathBuf, shim: Option<PathBuf>) -> anyhow::Result<Arc<Core>> {
         std::fs::create_dir_all(&data_dir)?;
-        let killed = burrow_core::supervisor::reap_orphans(&data_dir);
+        let killed = underlane_core::supervisor::reap_orphans(&data_dir);
         if !killed.is_empty() {
             tracing::warn!("stopped {} cloudflared process(es) left over from a previous run", killed.len());
         }
-        let db = Arc::new(Db::open(&data_dir.join("burrow.db"))?);
+        let db = Arc::new(Db::open(&data_dir.join("underlane.db"))?);
         let settings = db.settings()?;
         let capture: SharedOptions = Arc::new(RwLock::new(capture_options(&settings)));
         let binary = cloudflared::discover(settings.cloudflared_path.as_deref()).await;
@@ -158,7 +158,7 @@ impl Core {
     fn state_with_routes(&self, t: &Tunnel) -> TunnelState {
         let mut s = self.state_of(&t.id);
         if s.mappings.is_empty() && t.kind == TunnelKind::Config {
-            let loaded = t.config_path.as_deref().map(|p| burrow_core::config::TunnelConfig::load(std::path::Path::new(p)));
+            let loaded = t.config_path.as_deref().map(|p| underlane_core::config::TunnelConfig::load(std::path::Path::new(p)));
             if let Some(Err(e)) = &loaded {
                 if s.status == Status::Stopped && s.detail.is_none() {
                     s.detail = Some(format!("The config file can't be read: {e}"));
@@ -168,7 +168,7 @@ impl Core {
                 s.mappings = c
                     .ingress
                     .iter()
-                    .map(|r| burrow_core::supervisor::RouteMapping {
+                    .map(|r| underlane_core::supervisor::RouteMapping {
                         hostname: r.hostname.clone(),
                         path: r.path.clone(),
                         service: r.service.clone(),

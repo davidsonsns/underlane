@@ -1,5 +1,5 @@
 //! End-to-end control server. Compiled in only with `--features e2e` and started only when
-//! `BURROW_E2E_PORT` is set; it listens on loopback and drives the real app the same way the UI
+//! `UNDERLANE_E2E_PORT` is set; it listens on loopback and drives the real app the same way the UI
 //! does, plus it can read the actual menu bar title and the dashboard's rendered text.
 
 use std::collections::HashMap;
@@ -106,12 +106,12 @@ mod server {
             ("POST", "/quick") => {
                 let level = core.settings.read().unwrap().default_loglevel.clone();
                 let origin = q.get("origin").cloned().unwrap_or_default();
-                match burrow_core::import::add_simple(
+                match underlane_core::import::add_simple(
                     &core.db,
-                    burrow_core::model::TunnelKind::Quick,
+                    underlane_core::model::TunnelKind::Quick,
                     q.get("name").map(String::as_str).unwrap_or("e2e"),
                     "E2E",
-                    Some(burrow_core::supervisor::normalize_origin(&origin)),
+                    Some(underlane_core::supervisor::normalize_origin(&origin)),
                     &level,
                 ) {
                     Ok(mut t) => {
@@ -157,7 +157,7 @@ mod server {
                 Err(e) => reply(500, json!({"error": e.to_string()})),
             },
             ("GET", "/logs") => {
-                let logs = core.db.query_logs(&burrow_core::db::LogQuery { tunnel_id: Some(id), limit: 1000, ..Default::default() });
+                let logs = core.db.query_logs(&underlane_core::db::LogQuery { tunnel_id: Some(id), limit: 1000, ..Default::default() });
                 match logs {
                     Ok(l) => reply(200, json!(l)),
                     Err(e) => reply(500, json!({"error": e.to_string()})),
@@ -201,7 +201,7 @@ mod server {
             ("POST", "/import") => {
                 let level = core.settings.read().unwrap().default_loglevel.clone();
                 let path = q.get("path").cloned().unwrap_or_default();
-                let r = burrow_core::import::import_configs(&core.db, &[std::path::PathBuf::from(path)], &level);
+                let r = underlane_core::import::import_configs(&core.db, &[std::path::PathBuf::from(path)], &level);
                 core.notify_changed();
                 reply(200, json!(r))
             }

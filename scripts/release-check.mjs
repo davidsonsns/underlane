@@ -14,19 +14,19 @@ import { Resolver } from "node:dns/promises";
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const run = promisify(execFile);
-const APP = join(homedir(), "Applications/Burrow.app");
-const BIN = join(APP, "Contents/MacOS/Burrow");
-const DB = join(homedir(), "Library/Application Support/com.davidsonsns.burrow/burrow.db");
+const APP = join(homedir(), "Applications/Underlane.app");
+const BIN = join(APP, "Contents/MacOS/Underlane");
+const DB = join(homedir(), "Library/Application Support/com.davidsonsns.underlane/underlane.db");
 const OUT = "docs/screenshots";
 const log = (m) => console.log(`[release-check] ${m}`);
 const sh = (cmd, args) => execFileSync(cmd, args).toString().trim();
-// .timeout: wait up to 5s for Burrow's write lock instead of failing with "database is locked".
+// .timeout: wait up to 5s for Underlane's write lock instead of failing with "database is locked".
 const sql = (q) => sh("sqlite3", ["-cmd", ".timeout 5000", DB, q]);
 const extras = (app) => sh("swift", ["scripts/menubar-extras.swift", app]).split("\n")
   .map((l) => l.match(/^(\d+) x=(-?\d+) w=(\d+)/)).filter(Boolean).map((m) => ({ x: +m[2], w: +m[3] }));
 const click = (x, y) => execFileSync("swift", ["scripts/click.swift", String(Math.round(x)), String(Math.round(y))]);
-const windows = () => sh("swift", ["scripts/window-bounds.swift", "Burrow"]).split("\n").filter(Boolean).map((l) => JSON.parse(l));
-const capture = (name, min = 300, max = 4000) => execFileSync("swift", ["scripts/capture-window.swift", "Burrow", join(OUT, name), String(min), String(max)], { stdio: "inherit" });
+const windows = () => sh("swift", ["scripts/window-bounds.swift", "Underlane"]).split("\n").filter(Boolean).map((l) => JSON.parse(l));
+const capture = (name, min = 300, max = 4000) => execFileSync("swift", ["scripts/capture-window.swift", "Underlane", join(OUT, name), String(min), String(max)], { stdio: "inherit" });
 const theme = () => sql("SELECT json_extract(value,'$.theme') FROM settings WHERE key='settings'");
 
 // Click targets in the dashboard, in points relative to the window's top-left corner. The
@@ -51,13 +51,13 @@ const theme = () => sql("SELECT json_extract(value,'$.theme') FROM settings WHER
 //   point in the e2e debug build: the dashboard opened and the popover hid.
 const AT = { tunnels: [60, 92], settings: [60, 179], system: [864, 368], light: [922, 368], dark: [973, 368] };
 
-if (execFileSync("sh", ["-c", "pgrep -f 'MacOS/Burrow$' || true"]).toString().trim()) {
-  throw new Error("quit Burrow first");
+if (execFileSync("sh", ["-c", "pgrep -f 'MacOS/Underlane$' || true"]).toString().trim()) {
+  throw new Error("quit Underlane first");
 }
 
 // A local origin for the auto-start tunnel. It serves an empty temp folder with just the file the
 // curl below asks for, not the repo: the tunnel makes it public on a trycloudflare URL.
-const originDir = mkdtempSync(join(tmpdir(), "burrow-release-origin-"));
+const originDir = mkdtempSync(join(tmpdir(), "underlane-release-origin-"));
 writeFileSync(join(originDir, "release-check"), "ok\n");
 const origin = spawn("python3", ["-m", "http.server", "18777", "--bind", "127.0.0.1", "--directory", originDir], { stdio: "ignore", detached: true });
 const TID = "release-check-tunnel";
@@ -82,9 +82,9 @@ try {
     if (m) url = m[0];
   }
   if (!url) throw new Error("auto-start tunnel never got a public URL");
-  const app = sh("sh", ["-c", "pgrep -f 'Applications/Burrow.app/Contents/MacOS/Burrow$'"]);
+  const app = sh("sh", ["-c", "pgrep -f 'Applications/Underlane.app/Contents/MacOS/Underlane$'"]);
   log(`app pid ${app}, parent: ${sh("sh", ["-c", `ps -o comm= -p $(ps -o ppid= -p ${app})`])}, tty: ${sh("ps", ["-o", "tty=", "-p", app])}`);
-  log("process tree:\n" + sh("sh", ["-c", `ps -axo pid,ppid,tty,command | grep -E '[B]urrow.app/Contents/MacOS/Burrow|[c]loudflared tunnel --config ${DB.replace("/burrow.db", "").replace(/ /g, ".")}' | cut -c1-170`]));
+  log("process tree:\n" + sh("sh", ["-c", `ps -axo pid,ppid,tty,command | grep -E '[B]urrow.app/Contents/MacOS/Underlane|[c]loudflared tunnel --config ${DB.replace("/underlane.db", "").replace(/ /g, ".")}' | cut -c1-170`]));
   log(`auto-started tunnel public URL: ${url}`);
 
   const host = new URL(url).hostname;
@@ -104,8 +104,8 @@ try {
   log(`captured in SQLite by the release app: ${sql(`SELECT method, path, status FROM requests WHERE tunnel_id='${TID}' ORDER BY ts DESC LIMIT 1`)}`);
 
   // Menu bar (Hidden Bar may have collapsed the item) and the popover, by real clicks.
-  let item = extras("Burrow")[0];
-  if (item.x < 0) { const c = extras("Hidden Bar")[0]; click(c.x + c.w / 2, 12); expanded = true; await sleep(1200); item = extras("Burrow")[0]; }
+  let item = extras("Underlane")[0];
+  if (item.x < 0) { const c = extras("Hidden Bar")[0]; click(c.x + c.w / 2, 12); expanded = true; await sleep(1200); item = extras("Underlane")[0]; }
   execFileSync("screencapture", ["-x", "-R", `${item.x - 110},0,${item.w + 220},30`, join(OUT, "18-release-menu-bar.png")]);
   click(item.x + item.w / 2, 12);
   await sleep(1500);
@@ -147,10 +147,10 @@ try {
       log(`CLEANUP FAILED (${name}): ${e.message}`);
     }
   };
-  await step("quit Burrow", async () => {
-    execFileSync("osascript", ["-e", 'quit app "Burrow"']);
+  await step("quit Underlane", async () => {
+    execFileSync("osascript", ["-e", 'quit app "Underlane"']);
     await sleep(5000);
-    log(`after quit, Burrow/cloudflared processes left: ${execFileSync("sh", ["-c", "ps -axo command | grep -cE '[B]urrow.app/Contents/MacOS|[c]om.davidsonsns.burrow/neutral' || true"]).toString().trim()}`);
+    log(`after quit, Underlane/cloudflared processes left: ${execFileSync("sh", ["-c", "ps -axo command | grep -cE '[B]urrow.app/Contents/MacOS|[c]om.davidsonsns.underlane/neutral' || true"]).toString().trim()}`);
   });
   await step("stop the origin server", () => {
     try { process.kill(-origin.pid); } catch { origin.kill(); }
@@ -163,7 +163,7 @@ try {
     sql(`DELETE FROM tunnels WHERE id='${TID}'; DELETE FROM logs WHERE tunnel_id='${TID}'; DELETE FROM requests WHERE tunnel_id='${TID}'; DELETE FROM projects WHERE id NOT IN (SELECT project_id FROM tunnels);`);
     log(`tunnels left in the real data folder: ${sql("SELECT name, autostart FROM tunnels")}`);
   });
-  // The run ends on System; put the owner's theme back (Burrow has quit, so write the row).
+  // The run ends on System; put the owner's theme back (Underlane has quit, so write the row).
   await step("restore the theme", () => {
     if (themeBefore && theme() !== themeBefore) {
       sql(`UPDATE settings SET value=json_set(value,'$.theme','${themeBefore}') WHERE key='settings'`);

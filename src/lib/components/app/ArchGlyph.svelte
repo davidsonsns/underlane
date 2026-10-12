@@ -1,5 +1,5 @@
 <script lang="ts">
-  // Burrow's arch, the brand mark (02 §1.3): lucide has no equivalent. Used by StatePanel's
+  // Underlane's arch, the brand mark (02 §1.3): lucide has no equivalent. Used by StatePanel's
   // empty state (40px) and, from Phase 2h, the Tunnels nav item. Colour is currentColor.
   import { cn } from "$lib/utils";
   let { size = 40, strokeWidth = 2.5, class: className }: { size?: number; strokeWidth?: number; class?: string } = $props();

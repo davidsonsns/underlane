@@ -174,7 +174,7 @@
     </div>
   {:else if tunnel && !tunnel.inspect}
     <div class="grid flex-1 place-items-center">
-      <StatePanel kind="empty" title="Inspection is off" message="Turn it on to capture each request's headers and bodies through Burrow's local proxy. The tunnel restarts to apply it.">
+      <StatePanel kind="empty" title="Inspection is off" message="Turn it on to capture each request's headers and bodies through Underlane's local proxy. The tunnel restarts to apply it.">
         <Button onclick={async () => { await api.updateTunnel(tunnel.id, { inspect: true }); await store.refresh(); }}>Turn on inspection</Button>
       </StatePanel>
     </div>

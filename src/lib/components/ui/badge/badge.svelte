@@ -1,6 +1,6 @@
 <script lang="ts" module>
-	// burrow: macOS overrides, see .scratch/shadcn-luma/01-theming.md §5.22 (stock Luma: shadcn-svelte@1.7.0 add).
-	import { tv, type VariantProps } from "$lib/utils.js"; // burrow: tv without its own merge (01 §5)
+	// underlane: macOS overrides, see .scratch/shadcn-luma/01-theming.md §5.22 (stock Luma: shadcn-svelte@1.7.0 add).
+	import { tv, type VariantProps } from "$lib/utils.js"; // underlane: tv without its own merge (01 §5)
 
 	export const badgeVariants = tv({
 		// Small label: 16px tall, 4px corners, 10px medium text, no border, no hover.

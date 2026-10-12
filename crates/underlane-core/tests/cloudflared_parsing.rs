@@ -1,7 +1,7 @@
 use std::collections::HashSet;
 
-use burrow_core::cloudflared::*;
-use burrow_core::proxy::capture::{redact_query_in_text, CaptureOptions};
+use underlane_core::cloudflared::*;
+use underlane_core::proxy::capture::{redact_query_in_text, CaptureOptions};
 
 #[test]
 fn parses_json_log_lines_and_redacts_debug_headers() {
@@ -72,21 +72,21 @@ fn version_metrics_and_quick_url_parsing() {
 }
 
 #[test]
-fn detects_cloudflared_running_outside_burrow() {
+fn detects_cloudflared_running_outside_underlane() {
     let ps = "\
   48752 node /Users/me/.cloudflared/example-tunnels.mjs
   48763 cloudflared tunnel --config /Users/me/.cloudflared/example.yml --loglevel debug --output json run
-  50001 /opt/homebrew/bin/cloudflared tunnel --config /Users/me/Library/Application Support/com.davidsonsns.burrow/derived/x.yml run
+  50001 /opt/homebrew/bin/cloudflared tunnel --config /Users/me/Library/Application Support/com.davidsonsns.underlane/derived/x.yml run
   50002 /opt/homebrew/bin/cloudflared tunnel run 00000000-0000-4000-8000-000000000101
 ";
-    let marker = "/Users/me/Library/Application Support/com.davidsonsns.burrow";
+    let marker = "/Users/me/Library/Application Support/com.davidsonsns.underlane";
     let id = TunnelIdentity {
         config_path: Some("/Users/me/.cloudflared/example.yml".into()),
         tunnel: Some("00000000-0000-4000-8000-000000000101".into()),
         is_default_config: false,
     };
     let pids: Vec<u32> = external_from_ps(ps, &id, marker).iter().map(|p| p.pid).collect();
-    assert_eq!(pids, vec![48763, 50002], "node script and Burrow's own process are ignored");
+    assert_eq!(pids, vec![48763, 50002], "node script and Underlane's own process are ignored");
 
     // Tunnel names only match whole arguments.
     let named = TunnelIdentity { config_path: Some("/x/api.yml".into()), tunnel: Some("api".into()), is_default_config: false };

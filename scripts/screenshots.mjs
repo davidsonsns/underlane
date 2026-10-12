@@ -2,7 +2,7 @@
 // Drives the real app (debug build with the e2e control server) through the manual
 // verification scenarios and captures window-only screenshots into docs/screenshots/.
 //
-// usage: node scripts/screenshots.mjs target/debug/bundle/macos/Burrow.app
+// usage: node scripts/screenshots.mjs target/debug/bundle/macos/Underlane.app
 import { spawn, execFileSync } from "node:child_process";
 import { mkdtempSync, mkdirSync, writeFileSync } from "node:fs";
 import http from "node:http";
@@ -11,12 +11,12 @@ import { Resolver } from "node:dns/promises";
 import { homedir, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
-const app = resolve(process.argv[2] ?? "target/debug/bundle/macos/Burrow.app");
-const bin = join(app, "Contents/MacOS/Burrow");
+const app = resolve(process.argv[2] ?? "target/debug/bundle/macos/Underlane.app");
+const bin = join(app, "Contents/MacOS/Underlane");
 const out = resolve("docs/screenshots");
 mkdirSync(out, { recursive: true });
 const CONTROL = 48100 + Math.floor(Math.random() * 500);
-const dataDir = mkdtempSync(join(tmpdir(), "burrow-shots-"));
+const dataDir = mkdtempSync(join(tmpdir(), "underlane-shots-"));
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const notes = [];
 const note = (s) => {
@@ -54,11 +54,11 @@ async function waitFor(what, fn, ms = 90000, every = 1000) {
 }
 function capture(name, minW = 700, maxW = 4000) {
   const file = join(out, name);
-  execFileSync("swift", ["scripts/capture-window.swift", "Burrow", file, String(minW), String(maxW)], { stdio: "inherit" });
+  execFileSync("swift", ["scripts/capture-window.swift", "Underlane", file, String(minW), String(maxW)], { stdio: "inherit" });
   return file;
 }
 // The menu bar may be managed by an app like Hidden Bar that collapses new items. Reveal
-// Burrow's item for the capture, then put the menu bar back the way it was.
+// Underlane's item for the capture, then put the menu bar back the way it was.
 function extras(app) {
   try {
     const out = execFileSync("swift", ["scripts/menubar-extras.swift", app]).toString();
@@ -71,7 +71,7 @@ function extras(app) {
   }
 }
 async function captureMenuBar(name) {
-  let item = extras("Burrow")[0];
+  let item = extras("Underlane")[0];
   let expanded = false;
   if (!item || item.x < 0) {
     const chevron = extras("Hidden Bar")[0];
@@ -79,7 +79,7 @@ async function captureMenuBar(name) {
       execFileSync("swift", ["scripts/click.swift", String(chevron.x + chevron.w / 2), "12"]);
       expanded = true;
       await sleep(1200);
-      item = extras("Burrow")[0];
+      item = extras("Underlane")[0];
     }
   }
   if (item && item.x >= 0) {
@@ -87,7 +87,7 @@ async function captureMenuBar(name) {
     execFileSync("screencapture", ["-x", "-R", `${x},0,${w},30`, join(out, name)]);
     note(`menu bar strip captured around x=${item.x} -> ${name}`);
   } else {
-    note(`could not reveal Burrow's menu bar item for ${name}`);
+    note(`could not reveal Underlane's menu bar item for ${name}`);
   }
   if (expanded) {
     const chevron = extras("Hidden Bar")[0];
@@ -96,7 +96,7 @@ async function captureMenuBar(name) {
 }
 
 function launch() {
-  const child = spawn(bin, [], { env: { ...process.env, BURROW_DATA_DIR: dataDir, BURROW_E2E_PORT: String(CONTROL) }, stdio: "ignore" });
+  const child = spawn(bin, [], { env: { ...process.env, UNDERLANE_DATA_DIR: dataDir, UNDERLANE_E2E_PORT: String(CONTROL) }, stdio: "ignore" });
   return child;
 }
 function echoServer(label) {

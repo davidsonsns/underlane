@@ -3,7 +3,7 @@
 // Drives the real app (debug build with the e2e control server) on a throwaway data dir,
 // so it works on any machine and never touches the user's settings.
 //
-// usage: node scripts/ui-shots.mjs target/debug/bundle/macos/Burrow.app --label <name> [--offline]
+// usage: node scripts/ui-shots.mjs target/debug/bundle/macos/Underlane.app --label <name> [--offline]
 //   writes e2e/out/ui/<label>/{light,dark}-{tunnels,requests,logs,settings,add,popover}.png,
 //   plus system-{tunnels,popover}.png (theme "system": whatever the OS appearance is) and notes.txt.
 //   --offline skips starting tunnels (stopped states only, no requests) for machines without network.
@@ -22,7 +22,7 @@ const opt = (name, dflt) => {
   const i = args.indexOf(name);
   return i >= 0 && args[i + 1] ? args[i + 1] : dflt;
 };
-const app = resolve(args.find((a, i) => !a.startsWith("--") && args[i - 1] !== "--label") ?? "target/debug/bundle/macos/Burrow.app");
+const app = resolve(args.find((a, i) => !a.startsWith("--") && args[i - 1] !== "--label") ?? "target/debug/bundle/macos/Underlane.app");
 const label = opt("--label", "latest");
 // The label names one folder under e2e/out/ui, which is deleted and rewritten below.
 if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(label) || label.includes("..")) {
@@ -30,12 +30,12 @@ if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(label) || label.includes("..")) {
   process.exit(2);
 }
 const offline = flag("--offline");
-const bin = join(app, "Contents/MacOS/Burrow");
+const bin = join(app, "Contents/MacOS/Underlane");
 const out = resolve("e2e/out/ui", label);
 rmSync(out, { recursive: true, force: true });
 mkdirSync(out, { recursive: true });
 const CONTROL = 48600 + Math.floor(Math.random() * 400);
-const dataDir = mkdtempSync(join(tmpdir(), "burrow-ui-shots-"));
+const dataDir = mkdtempSync(join(tmpdir(), "underlane-ui-shots-"));
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const notes = [];
 const note = (s) => {
@@ -77,8 +77,8 @@ async function capture(name, minW = 700, maxW = 4000) {
   const file = join(out, name);
   for (let attempt = 1; ; attempt++) {
     try {
-      // Pass our child's PID so a running copy of the user's own Burrow is never captured.
-      execFileSync("swift", ["scripts/capture-window.swift", "Burrow", file, String(minW), String(maxW), String(child.pid)], { stdio: "inherit" });
+      // Pass our child's PID so a running copy of the user's own Underlane is never captured.
+      execFileSync("swift", ["scripts/capture-window.swift", "Underlane", file, String(minW), String(maxW), String(child.pid)], { stdio: "inherit" });
       if (existsSync(file)) return file;
     } catch {}
     if (attempt === 4) throw new Error(`could not capture ${name}`);
@@ -128,7 +128,7 @@ function osAppearance() {
 }
 const nav = (view) => ctl("POST", `/navigate?view=${encodeURIComponent(view)}`);
 
-const child = spawn(bin, [], { env: { ...process.env, BURROW_DATA_DIR: dataDir, BURROW_E2E_PORT: String(CONTROL) }, stdio: "ignore" });
+const child = spawn(bin, [], { env: { ...process.env, UNDERLANE_DATA_DIR: dataDir, UNDERLANE_E2E_PORT: String(CONTROL) }, stdio: "ignore" });
 const servers = [];
 let failed = false;
 try {

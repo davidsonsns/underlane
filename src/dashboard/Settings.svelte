@@ -141,7 +141,7 @@
       </SettingsGroup>
 
       <SettingsGroup title="General">
-        <SettingsRow label="Launch at login" help={login?.message ?? "Opens Burrow in the menu bar when you log in. Tunnels marked “Start automatically” come up with it."}>
+        <SettingsRow label="Launch at login" help={login?.message ?? "Opens Underlane in the menu bar when you log in. Tunnels marked “Start automatically” come up with it."}>
           {#snippet control({ id, describedBy })}
             <Switch {id} aria-describedby={describedBy} disabled={!login || login.status === "unsupported"} bind:checked={() => login?.enabled ?? false, setLogin} />
           {/snippet}
@@ -187,7 +187,7 @@
         </SettingsRow>
         <SettingsRow label="Data folder">
           {@render path(store.overview?.data_dir)}
-          <IconAction label="Show in Finder" onclick={() => store.overview && revealItemInDir(store.overview.data_dir + "/burrow.db").catch((e) => notify.error(e, "Couldn't show the data folder"))}><FolderOpen /></IconAction>
+          <IconAction label="Show in Finder" onclick={() => store.overview && revealItemInDir(store.overview.data_dir + "/underlane.db").catch((e) => notify.error(e, "Couldn't show the data folder"))}><FolderOpen /></IconAction>
         </SettingsRow>
       </SettingsGroup>
 

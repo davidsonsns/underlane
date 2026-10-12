@@ -10,7 +10,7 @@ use tauri::window::{Effect, EffectState};
 use tauri::{AppHandle, Emitter, Manager, Runtime, WebviewUrl, WebviewWindow, WebviewWindowBuilder, WindowEvent};
 use tauri_plugin_positioner::{Position, WindowExt};
 
-pub const TRAY_ID: &str = "burrow";
+pub const TRAY_ID: &str = "underlane";
 pub const POPOVER: &str = "popover";
 pub const DASHBOARD: &str = "dashboard";
 
@@ -22,13 +22,13 @@ pub fn create<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
     let start_all = MenuItem::with_id(app, "start_all", "Start All Tunnels", true, None::<&str>)?;
     let stop_all = MenuItem::with_id(app, "stop_all", "Stop All Tunnels", true, None::<&str>)?;
     let restart_all = MenuItem::with_id(app, "restart_all", "Restart Running Tunnels", true, None::<&str>)?;
-    let quit = MenuItem::with_id(app, "quit", "Quit Burrow", true, Some("CmdOrCtrl+Q"))?;
+    let quit = MenuItem::with_id(app, "quit", "Quit Underlane", true, Some("CmdOrCtrl+Q"))?;
     let menu = Menu::with_items(app, &[&open, &PredefinedMenuItem::separator(app)?, &start_all, &stop_all, &restart_all, &PredefinedMenuItem::separator(app)?, &quit])?;
 
     TrayIconBuilder::with_id(TRAY_ID)
         .icon(Image::from_bytes(include_bytes!("../icons/tray-template@2x.png"))?)
         .icon_as_template(true)
-        .tooltip("Burrow")
+        .tooltip("Underlane")
         .menu(&menu)
         .show_menu_on_left_click(false)
         .on_menu_event(|app, event| match event.id().as_ref() {
@@ -59,9 +59,9 @@ pub fn set_count<R: Runtime>(app: &AppHandle<R>, count: usize) {
     if let Some(tray) = app.tray_by_id(TRAY_ID) {
         let _ = tray.set_title(if title.is_empty() { None } else { Some(title.as_str()) });
         let tip = match count {
-            0 => "Burrow: no tunnels running".to_string(),
-            1 => "Burrow: 1 tunnel running".to_string(),
-            n => format!("Burrow: {n} tunnels running"),
+            0 => "Underlane: no tunnels running".to_string(),
+            1 => "Underlane: 1 tunnel running".to_string(),
+            n => format!("Underlane: {n} tunnels running"),
         };
         let _ = tray.set_tooltip(Some(tip));
     }
@@ -123,7 +123,7 @@ fn popover<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<WebviewWindow<R>> {
         return Ok(w);
     }
     let w = WebviewWindowBuilder::new(app, POPOVER, WebviewUrl::App("popover.html".into()))
-        .title("Burrow")
+        .title("Underlane")
         .inner_size(360.0, 500.0)
         .resizable(false)
         .decorations(false)
@@ -185,7 +185,7 @@ pub fn open_dashboard<R: Runtime>(app: &AppHandle<R>, view: Option<String>) {
         None => "index.html".into(),
     };
     let builder = WebviewWindowBuilder::new(app, DASHBOARD, WebviewUrl::App(url.into()))
-        .title("Burrow")
+        .title("Underlane")
         .inner_size(1080.0, 700.0)
         .resizable(false)
         .maximizable(false)

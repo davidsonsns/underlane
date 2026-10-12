@@ -4,14 +4,14 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use base64::Engine;
-use burrow_core::cloudflared::{self, Binary, Validation};
-use burrow_core::config::{home_dir, scan_dir, TunnelConfig};
-use burrow_core::db::{LogQuery, RequestSummary};
-use burrow_core::decode::{decode_body, is_probably_text};
-use burrow_core::import::{self, ImportReport};
-use burrow_core::model::{LogLine, Settings, TunnelKind};
-use burrow_core::proxy::capture::{BodyCapture, CapturedExchange};
-use burrow_core::supervisor::normalize_origin;
+use underlane_core::cloudflared::{self, Binary, Validation};
+use underlane_core::config::{home_dir, scan_dir, TunnelConfig};
+use underlane_core::db::{LogQuery, RequestSummary};
+use underlane_core::decode::{decode_body, is_probably_text};
+use underlane_core::import::{self, ImportReport};
+use underlane_core::model::{LogLine, Settings, TunnelKind};
+use underlane_core::proxy::capture::{BodyCapture, CapturedExchange};
+use underlane_core::supervisor::normalize_origin;
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager, Runtime, State};
 
@@ -85,7 +85,7 @@ pub async fn import_paths(core: CoreState<'_>, paths: Vec<String>) -> Res<Import
 #[tauri::command]
 pub fn add_quick_tunnel(core: CoreState<'_>, name: String, origin: String, project: String, inspect: bool) -> Res<String> {
     let origin = normalize_origin(&origin);
-    if burrow_core::derived::split_service(&origin).is_none() {
+    if underlane_core::derived::split_service(&origin).is_none() {
         return Err(format!("`{origin}` isn't a local http:// or https:// address."));
     }
     let level = core.settings.read().unwrap().default_loglevel.clone();
@@ -153,7 +153,7 @@ fn update_tunnel_inner(core: &Core, id: String, patch: TunnelPatch) -> Res<()> {
     }
     if let Some(o) = patch.origin_url.filter(|_| t.kind == TunnelKind::Quick) {
         let o = normalize_origin(&o);
-        if burrow_core::derived::split_service(&o).is_none() {
+        if underlane_core::derived::split_service(&o).is_none() {
             return Err(format!("`{o}` isn't a local http:// or https:// address."));
         }
         needs_restart |= Some(&o) != t.origin_url.as_ref();
@@ -262,7 +262,7 @@ pub async fn probe_services(services: Vec<String>) -> Vec<Option<bool>> {
 }
 
 async fn probe_service(service: String) -> Option<bool> {
-    let authority = match burrow_core::derived::split_service(&service) {
+    let authority = match underlane_core::derived::split_service(&service) {
         Some((_, a)) => a,
         None => {
             let (scheme, rest) = service.trim().split_once("://")?;

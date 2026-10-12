@@ -1,7 +1,7 @@
 import { createCn } from "cn/config";
 import { tv as tvLite } from "tailwind-variants/lite";
 
-// Class merging that knows Burrow's custom text sizes. Unconfigured, `cn` treats text-2xs,
+// Class merging that knows Underlane's custom text sizes. Unconfigured, `cn` treats text-2xs,
 // text-callout and text-code as colours and drops them next to a real colour
 // (cn("text-callout text-muted-foreground") -> "text-muted-foreground"). See utils.test.ts.
 export const cn = createCn({ extend: { classGroups: { "font-size": [{ text: ["2xs", "callout", "code"] }] } } });

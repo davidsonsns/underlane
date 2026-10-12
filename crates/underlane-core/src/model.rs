@@ -53,9 +53,9 @@ pub struct Tunnel {
     pub config_path: Option<String>,
     /// Local origin URL (kind = quick).
     pub origin_url: Option<String>,
-    /// Inspect requests through Burrow's proxy (captures bodies). Off by default.
+    /// Inspect requests through Underlane's proxy (captures bodies). Off by default.
     pub inspect: bool,
-    /// Start when Burrow launches.
+    /// Start when Underlane launches.
     pub autostart: bool,
     /// cloudflared --loglevel.
     pub loglevel: String,

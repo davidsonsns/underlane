@@ -1,4 +1,4 @@
-// Draws Burrow's icons with CoreGraphics: the template tray glyph and the app icon source.
+// Draws Underlane's icons with CoreGraphics: the template tray glyph and the app icon source.
 // Usage: swift scripts/make-icons.swift <out-dir>
 import AppKit
 
@@ -15,7 +15,7 @@ func png(_ size: Int, _ path: String, _ draw: (CGContext, CGFloat) -> Void) {
     try! rep.representation(using: .png, properties: [:])!.write(to: URL(fileURLWithPath: path))
 }
 
-/// The burrow mark: an arch opening with a ground line, drawn in a unit square (origin bottom-left).
+/// The arch mark: an arch opening with a ground line, drawn in a unit square (origin bottom-left).
 func archPath(in r: CGRect, stroke: CGFloat) -> CGPath {
     let p = CGMutablePath()
     let w = r.width, h = r.height

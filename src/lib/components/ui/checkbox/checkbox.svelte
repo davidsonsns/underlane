@@ -1,5 +1,5 @@
 <script lang="ts">
-	// burrow: macOS overrides, see .scratch/shadcn-luma/01-theming.md §5.21 (stock Luma: shadcn-svelte@1.7.0 add).
+	// underlane: macOS overrides, see .scratch/shadcn-luma/01-theming.md §5.21 (stock Luma: shadcn-svelte@1.7.0 add).
 	// NSButton checkbox: 14px, 3px corners, control bezel; checked/mixed fill with the tint and
 	// a white glyph; ring only for keyboard navigation (kbRing).
 	import { Checkbox as CheckboxPrimitive } from "bits-ui";

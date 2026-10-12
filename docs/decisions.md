@@ -3,10 +3,15 @@
 Each entry gives the decision, why it was made, and the alternatives. Evidence is in
 [research.md](research.md).
 
-## 1. Name: Burrow
+## 1. Name: Underlane
 
 The name is short, suggests tunnels, and doesn't use "Cloudflare" in the product name or icon. The
-icon is an abstract arch/burrow mark, not the Cloudflare cloud. Bundle id: `com.davidsonsns.burrow`.
+icon is an abstract arch mark, not the Cloudflare cloud. Bundle id: `com.davidsonsns.underlane`.
+
+The app was first called Burrow. It was renamed on 2026-10-11 because an open-source Mac app with
+that name already exists (caezium/Burrow), as do linkedin/Burrow and hyperledger/burrow. The
+candidates were checked against GitHub, Homebrew, the Mac App Store, crates.io, npm and domains;
+Underlane was free on all of them. The README says why the name fits.
 
 ## 2. Stack: Tauri 2 (Rust core + Svelte 5 / TypeScript UI)
 
@@ -16,7 +21,7 @@ icon is an abstract arch/burrow mark, not the Cloudflare cloud. Bundle id: `com.
 - **The owner plans a Windows/Linux release later** (said during research). That rules out native
   Swift, which would mean a rewrite, and moves cross-platform reach from "nice to have" to a real
   weight in the score.
-- The hard parts (supervisor, streaming proxy, SQLite) are a plain Rust crate, `burrow-core`, with
+- The hard parts (supervisor, streaming proxy, SQLite) are a plain Rust crate, `underlane-core`, with
   no Tauri dependency. It's testable with `cargo test` and portable.
 - UI: **Svelte 5** + Vite + TypeScript. It compiles to a small bundle and has built-in `flip`,
   `fly`, and `fade` transitions for purposeful animation without an animation library.
@@ -28,7 +33,7 @@ no Go toolchain here; fewer reference tray apps).
 
 ## 3. Process model: tunnels are children of the app
 
-- Tunnels run as child processes of Burrow. Quitting Burrow stops them (gracefully: SIGTERM, then
+- Tunnels run as child processes of Underlane. Quitting Underlane stops them (gracefully: SIGTERM, then
   SIGKILL after 5 s).
 - They come back without a terminal through **launch at login** (`SMAppService.mainApp`) plus
   per-tunnel **start automatically**.
@@ -37,23 +42,23 @@ no Go toolchain here; fewer reference tray apps).
   much simpler and more accurate in-process, nothing gets installed in
   `~/Library/LaunchAgents`, and the same model works on Windows/Linux.
 - Crash safety (revised after review):
-  - Each cloudflared is launched through a **watchdog shim**, `Burrow --cloudflared-shim`. The shim
+  - Each cloudflared is launched through a **watchdog shim**, `Underlane --cloudflared-shim`. The shim
     kills cloudflared when the app's pipe closes, so a crashed or force-quit app takes its tunnels
     down within seconds.
   - Pids are also written to `<data>/run/<tunnel-id>.pid`, and leftovers are reaped on the next
     launch.
   - Every launch mode runs from a file in `<data>/` (a derived copy, even with inspection off). The
-    command line therefore always contains Burrow's data directory, and that marker is how
+    command line therefore always contains Underlane's data directory, and that marker is how
     ownership is checked before killing anything.
   - Each child runs in its own process group.
-- **Tunnels already running outside Burrow:** before starting a config tunnel, Burrow scans for
+- **Tunnels already running outside Underlane:** before starting a config tunnel, Underlane scans for
   cloudflared processes that reference the same config path or tunnel UUID and aren't its own. If
-  it finds one, it refuses to start and shows "already running outside Burrow (pid N)". A second
+  it finds one, it refuses to start and shows "already running outside Underlane (pid N)". A second
   connector would split traffic, so captures would miss requests and Stop wouldn't really stop the
   tunnel. (The owner's `example.yml` is running like this through a script right now.)
-- Shutdown: Burrow passes `--grace-period 4s`, and on quit it SIGTERMs every tunnel and waits for
+- Shutdown: Underlane passes `--grace-period 4s`, and on quit it SIGTERMs every tunnel and waits for
   them synchronously before exiting.
-- App Nap: while any tunnel runs, Burrow holds an `NSProcessInfo` activity (user-initiated, idle
+- App Nap: while any tunnel runs, Underlane holds an `NSProcessInfo` activity (user-initiated, idle
   sleep allowed), so timers and the proxy aren't throttled.
 - Trade-off accepted: tunnels are down while the app isn't running. A user who needs
   24/7 tunnels independent of a GUI should use `cloudflared service install`, and the README says so.
@@ -93,7 +98,7 @@ no Go toolchain here; fewer reference tray apps).
 
 ## 5. Health and status
 
-- `--metrics 127.0.0.1:0`: cloudflared picks a free port and Burrow reads it from the
+- `--metrics 127.0.0.1:0`: cloudflared picks a free port and Underlane reads it from the
   `Starting metrics server on 127.0.0.1:N/metrics` log line. This avoids a pick-then-bind race.
 - `/ready` is polled every 2 s. Status meanings:
   - **starting**: the process is alive and `/ready` hasn't returned 200 yet.
@@ -117,7 +122,7 @@ no Go toolchain here; fewer reference tray apps).
 
 ## 7. Storage
 
-- SQLite at `~/Library/Application Support/com.davidsonsns.burrow/burrow.db` (Tauri's
+- SQLite at `~/Library/Application Support/com.davidsonsns.underlane/underlane.db` (Tauri's
   `app_data_dir`), using `rusqlite` with the `bundled` feature and WAL mode.
 - Tables: `settings`, `projects`, `tunnels`, `logs`, `requests`.
 - A background sweep every 10 minutes (and once at startup) deletes `logs` and `requests` older
@@ -140,7 +145,7 @@ Unknown messages are shown verbatim.
 ## 8a. Single-origin configs
 
 Single-origin configs (a top-level `url:`, no `ingress:`) fail `ingress validate` even though
-cloudflared can run them. For these files Burrow skips the validate step and shows the single
+cloudflared can run them. For these files Underlane skips the validate step and shows the single
 mapping.
 
 ## 9. Menu bar
@@ -152,7 +157,7 @@ mapping.
 - Left click toggles a **popover** (a borderless, always-on-top webview positioned under the icon
   with `tauri-plugin-positioner` `TrayCenter`; it hides on blur). Right click shows a native menu
   with Open Dashboard, Start All, Stop All, and Quit, so there's always a non-webview path.
-- Burrow runs as an accessory app with no Dock icon. The dashboard window is a normal window that is
+- Underlane runs as an accessory app with no Dock icon. The dashboard window is a normal window that is
   **destroyed on close**, which frees its WebContent process. The popover is built on first use.
 - "Copy public URL" uses the quick tunnel URL, or the first non-wildcard hostname, as `https://`.
   The dashboard lists every hostname with its own copy and open buttons.
@@ -165,7 +170,7 @@ mapping.
 - Other platforms (future): `tauri-plugin-autostart`.
 - Ad-hoc signing risk: Background Task Management identifies login items by code signature, and an
   ad-hoc signature changes on every rebuild. Register only the copy installed at
-  `~/Applications/Burrow.app` (`make install`), never a bundle inside `target/`. If registration
+  `~/Applications/Underlane.app` (`make install`), never a bundle inside `target/`. If registration
   keeps failing for an ad-hoc build, fall back to a LaunchAgent plist (what `tauri-plugin-autostart`
   does) and record that here.
 - Verification without logging out: register, confirm with `sfltool dumpbtm`/System Settings, quit
@@ -202,7 +207,7 @@ comes from `cloudflared --version`. If none is found, the UI shows
 ## 12. Build and test
 
 - `make build` is the one command. It runs `npm ci` and `npx tauri build --bundles app`, and the
-  output lands in `target/release/bundle/macos/Burrow.app`.
+  output lands in `target/release/bundle/macos/Underlane.app`.
 - `make dev` runs the dev loop, `make test` runs the Rust and frontend tests, and `make e2e` runs
   the end-to-end check.
 - Releases are ad-hoc signed (`signingIdentity: "-"`). Notarization needs a Developer ID that isn't
@@ -210,7 +215,7 @@ comes from `cloudflared --version`. If none is found, the UI shows
 
 ## 13. E2E automation hook
 
-The e2e test drives the **real built app**. When launched with `BURROW_E2E_PORT=<port>`, Burrow
+The e2e test drives the **real built app**. When launched with `UNDERLANE_E2E_PORT=<port>`, Underlane
 starts a loopback-only control server. The endpoints are:
 
 - add a quick tunnel
@@ -230,8 +235,8 @@ they landed:
 | Finding | Source | Resolution |
 | --- | --- | --- |
 | Children survive an app crash; docs contradicted themselves | both | Watchdog shim plus pidfile reap, and the docs were corrected (§3, research §3.7) |
-| Uninspected named tunnels weren't identifiable as Burrow's | both | Always run from a file in the data dir (§3) |
-| The same tunnel already running outside Burrow | opus | Detect it and refuse, with an explanation (§3) |
+| Uninspected named tunnels weren't identifiable as Underlane's | both | Always run from a file in the data dir (§3) |
+| The same tunnel already running outside Underlane | opus | Detect it and refuse, with an explanation (§3) |
 | Compressed bodies unreadable | opus | Raw storage, truncation-tolerant decode at display (research §3.3.1) |
 | E2E DNS/NXDOMAIN flakiness, 429s | opus | e2e resolves through 1.1.1.1 and pins that IP for the HTTPS request (the `curl --resolve` technique, done in Node), retries with a budget and a marker (README) |
 | h2 upstream breaks WebSocket/Host; `http2Origin`, `matchSNItoHost`, `tlsTimeout` | both | HTTP/1.1 upstream; those rules aren't inspected; `tlsTimeout` is applied (§4) |
@@ -258,7 +263,7 @@ The finished code was reviewed by opus-5.5 and gpt-6-astra (Codex). Accepted fin
 | Finding | Source | Fix |
 | --- | --- | --- |
 | Stop followed by a quick Start overlapped two runs; the old run's late `Stopped` and pidfile removal clobbered the new one | both | A stopping run stays registered until its process is gone, and a Start is deferred until then. Every state carries a run number, and stale ones are dropped. A pidfile is only removed if it names this run's pid. Regression test `stop_then_immediate_start_does_not_overlap`. |
-| Killing only the shim, or a panic, could orphan cloudflared | both | After the direct child exits, its whole process group is swept (SIGTERM, then SIGKILL), and a drop guard kills the group on unwind. `kill_on_drop` on the shim is gone. At startup Burrow also reaps any cloudflared carrying its data-dir marker. Test `killing_only_the_shim_does_not_orphan_cloudflared`. |
+| Killing only the shim, or a panic, could orphan cloudflared | both | After the direct child exits, its whole process group is swept (SIGTERM, then SIGKILL), and a drop guard kills the group on unwind. `kill_on_drop` on the shim is gone. At startup Underlane also reaps any cloudflared carrying its data-dir marker. Test `killing_only_the_shim_does_not_orphan_cloudflared`. |
 | Sync commands blocked the main thread on SQLite | opus | Database-backed commands are `async` and run in `spawn_blocking`. TTL deletes run in small batches. Base64 is only sent for binary bodies (64 KB max for the hex view). |
 | Captured bodies escaped the memory budget once queued | both | The write queue has its own 64 MB byte budget; overflow is dropped and counted. A size-cap sweep runs after every 32 MB written, not only every 10 minutes. |
 | Capture could resume after a gap (`AAA`+`CCC`) | Codex | After the first skipped byte, a side only counts bytes and stores nothing more. |
@@ -274,7 +279,7 @@ The finished code was reviewed by opus-5.5 and gpt-6-astra (Codex). Accepted fin
 | No bulk restart | Codex | "Restart all" in the dashboard and the tray menu. |
 | Log view duplicates, all levels off showing everything, missed events on load, settings overwriting typing, stale request detail, label-wrapped toggles, listbox roles without keyboard support | opus/Codex | All fixed in the Svelte views. |
 
-| `tlsTimeout` was folded into one combined connect deadline | Codex | Burrow's own origin connector applies `connectTimeout` to TCP connect and then a separate `tlsTimeout` to the TLS handshake. Test `tls_timeout_is_a_separate_handshake_deadline`: an origin that accepts TCP but never handshakes fails after the 300 ms TLS deadline, even with a 30 s `connectTimeout`. |
+| `tlsTimeout` was folded into one combined connect deadline | Codex | Underlane's own origin connector applies `connectTimeout` to TCP connect and then a separate `tlsTimeout` to the TLS handshake. Test `tls_timeout_is_a_separate_handshake_deadline`: an origin that accepts TCP but never handshakes fails after the 300 ms TLS deadline, even with a 30 s `connectTimeout`. |
 
 ## 16. Verifying launch at login: simulation instead of a log-out/log-in
 
@@ -293,15 +298,15 @@ How the simulation was made faithful, rather than just "the app was opened":
    and no terminal.
 3. Evidence that this is the same mechanism (verification.md §6c): apps started by this Mac's real
    login (Raycast, Warp) run as LaunchServices jobs `application.<bundle-id>.<n>`, parented by
-   `/sbin/launchd`. Burrow's simulated launch produced the identical job type
-   (`application.com.davidsonsns.burrow.198522606.198522611`, parent `/sbin/launchd`, no TTY).
+   `/sbin/launchd`. Underlane's simulated launch produced the identical job type
+   (`application.com.davidsonsns.underlane.198522606.198522611`, parent `/sbin/launchd`, no TTY).
 4. Tunnels marked **Start automatically** came up with no start command (screenshots 18–19). They
    logged `Registered tunnel connection` and served a public `curl`.
 
 5. The launch carried the same Apple event macOS sends when it opens login items
-   (`keyAELaunchedAsLogInItem`), and Burrow itself recognised it as a login launch (Settings: "This
+   (`keyAELaunchedAsLogInItem`), and Underlane itself recognised it as a login launch (Settings: "This
    launch: Opened by macOS at login"). A plain `open` was recorded as a normal launch, as the
-   control. On the login launch Burrow opened no window, and its "start automatically" tunnel
+   control. On the login launch Underlane opened no window, and its "start automatically" tunnel
    connected (verification.md §6d, screenshots 24–26). A real log-out would also have quit every
    other app in the owner's session and left the Mac at the login window unattended, so it was
    deliberately not done.
@@ -349,7 +354,7 @@ Tailwind's and app.css's tokens from inside the `legacy` layer (`text-sm` came o
 19% (`h-9` = 29.25px). So app.css owns every token from Phase 0, the root font size stays 16px
 (13px is set on `body`), and five same-pixel renames free the names Tailwind uses:
 `--text-sm→--text-callout`, `--text→--text-sm`, `--accent→--tint`, `--radius-lg→--radius-xl`,
-`--font/--mono→--font-sans/--font-mono`. Burrow's names are the source of truth and shadcn's
+`--font/--mono→--font-sans/--font-mono`. Underlane's names are the source of truth and shadcn's
 names alias them. The only intended visual changes were `--text-3` (contrast fix) and `--hover`
 (+0.5–1%). Measured in WebKit after the change: html 16px, body 13px, `text-sm` 13px, `h-9`
 36px, `rounded-lg` 8px, a `bg-primary` button white on the selected-content blue with its
@@ -492,7 +497,7 @@ assertions stay as they are.
 layers, `color-mix`), which macOS 13.3 ships. `minimumSystemVersion` is 13.3 and Vite's
 `build.target` is `safari16.4` (owner decision, 2026-10-11).
 
-**Class merging (Phase 1).** `cn` is `createCn` with Burrow's `text-2xs`/`text-callout`/`text-code`
+**Class merging (Phase 1).** `cn` is `createCn` with Underlane's `text-2xs`/`text-callout`/`text-code`
 in the font-size group: unconfigured, it read them as colours and dropped them next to one
 (`cn("text-callout text-muted-foreground")` → `text-muted-foreground`). `tv` is
 tailwind-variants' lite build, which never merges; `cn(variants(…), className)` merges once.
@@ -602,7 +607,7 @@ accessibility fixes the port brings would have to be hand-built).
 **System accent colour (2h real-window check, 2026-10-11).** Measured in the e2e debug build by
 switching System Settings › Appearance › Color to green (restored to Multicolor afterwards): the
 tint (`AccentColor` → `--tint`) stayed rgb(0,122,255) live, after remounting the view, and after a
-fresh launch with green set. So Burrow's WKWebView never reflects the system accent colour, and the
+fresh launch with green set. So Underlane's WKWebView never reflects the system accent colour, and the
 01 §4 fallback (force a style recalc) can't fix it: the web process doesn't have the new value.
 `main` before the migration used the same `AccentColor` keyword, so this isn't a regression.
 Follow-up (not done): have Rust read `NSColor.controlAccentColor` at launch and on

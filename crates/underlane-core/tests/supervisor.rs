@@ -5,9 +5,9 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::Duration;
 
-use burrow_core::model::{Tunnel, TunnelKind};
-use burrow_core::proxy::capture::CaptureOptions;
-use burrow_core::supervisor::{reap_orphans, Event, RunSpec, Status, Supervisor, SupervisorConfig, TunnelState};
+use underlane_core::model::{Tunnel, TunnelKind};
+use underlane_core::proxy::capture::CaptureOptions;
+use underlane_core::supervisor::{reap_orphans, Event, RunSpec, Status, Supervisor, SupervisorConfig, TunnelState};
 
 const FAKE: &str = r#"#!/usr/bin/env python3
 import json, os, signal, sys, threading, time
@@ -240,7 +240,7 @@ async fn shim_kills_cloudflared_when_the_app_goes_away() {
     use std::io::Read;
     use std::process::{Command, Stdio};
     let f = fake("ok");
-    let shim = env!("CARGO_BIN_EXE_burrow-shim");
+    let shim = env!("CARGO_BIN_EXE_underlane-shim");
     let mut child = Command::new(shim)
         .arg("--cloudflared-shim")
         .arg(&f.bin)
@@ -345,7 +345,7 @@ async fn stop_then_immediate_start_does_not_overlap() {
 #[tokio::test]
 async fn killing_only_the_shim_does_not_orphan_cloudflared() {
     let f = fake("ok");
-    let shim = std::path::PathBuf::from(env!("CARGO_BIN_EXE_burrow-shim"));
+    let shim = std::path::PathBuf::from(env!("CARGO_BIN_EXE_underlane-shim"));
     let (sup, states, _) = supervisor(&f, |c| {
         c.shim = Some(shim.clone());
         c.max_failures = 1;

@@ -1,9 +1,9 @@
 [package]
-name = "burrow-core"
+name = "underlane-core"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-description = "Platform-independent core of Burrow: cloudflared supervision, config handling, inspecting proxy, storage."
+description = "Platform-independent core of Underlane: cloudflared supervision, config handling, inspecting proxy, storage."
 
 [dependencies]
 anyhow = "1"

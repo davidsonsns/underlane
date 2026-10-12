@@ -1,4 +1,4 @@
-//! Burrow: a menu bar app that runs and supervises cloudflared tunnels.
+//! Underlane: a menu bar app that runs and supervises cloudflared tunnels.
 
 mod commands;
 mod e2e;
@@ -14,12 +14,12 @@ use tauri::{Manager, RunEvent};
 
 use crate::state::Core;
 
-/// Data directory: `BURROW_DATA_DIR` (tests, e2e) or the platform app-data dir.
+/// Data directory: `UNDERLANE_DATA_DIR` (tests, e2e) or the platform app-data dir.
 fn data_dir(app: &tauri::AppHandle) -> PathBuf {
-    if let Some(d) = std::env::var_os("BURROW_DATA_DIR") {
+    if let Some(d) = std::env::var_os("UNDERLANE_DATA_DIR") {
         return PathBuf::from(d);
     }
-    app.path().app_data_dir().unwrap_or_else(|_| burrow_core::config::home_dir().join(".burrow"))
+    app.path().app_data_dir().unwrap_or_else(|_| underlane_core::config::home_dir().join(".underlane"))
 }
 
 /// CLI entry for `--login-item`. Prints the resulting status as JSON.
@@ -39,11 +39,11 @@ pub fn login_item_cli(action: &str) -> i32 {
 
 pub fn run() {
     tracing_subscriber::fmt()
-        .with_env_filter(tracing_subscriber::EnvFilter::try_from_env("BURROW_LOG").unwrap_or_else(|_| "info".into()))
+        .with_env_filter(tracing_subscriber::EnvFilter::try_from_env("UNDERLANE_LOG").unwrap_or_else(|_| "info".into()))
         .init();
 
     platform::disable_state_restoration();
-    let isolated = std::env::var_os("BURROW_DATA_DIR").is_some();
+    let isolated = std::env::var_os("UNDERLANE_DATA_DIR").is_some();
     let mut builder = tauri::Builder::default();
     if !isolated {
         // A second launch (e.g. from Finder) just opens the dashboard of the running instance.
@@ -102,7 +102,7 @@ pub fn run() {
             let shim = std::env::current_exe().ok();
             let core = tauri::async_runtime::block_on(Core::init(handle.clone(), dir, shim))?;
             app.manage(core.clone());
-            let launch = serde_json::json!({ "at": burrow_core::proxy::now_ms(), "reason": if at_login { "login_item" } else { "normal" } });
+            let launch = serde_json::json!({ "at": underlane_core::proxy::now_ms(), "reason": if at_login { "login_item" } else { "normal" } });
             let _ = core.db.kv_set("last_launch", &launch.to_string());
             tracing::info!("launched {}", if at_login { "as a login item" } else { "normally" });
             tray::create(&handle)?;
@@ -110,19 +110,19 @@ pub fn run() {
             core.start_autostart_tunnels();
 
             #[cfg(all(feature = "e2e", debug_assertions))]
-            if let Some(port) = std::env::var("BURROW_E2E_PORT").ok().and_then(|p| p.parse().ok()) {
+            if let Some(port) = std::env::var("UNDERLANE_E2E_PORT").ok().and_then(|p| p.parse().ok()) {
                 e2e::start(handle.clone(), port);
             }
 
             // First run (nothing imported yet): open the dashboard so there's something to see.
-            // Never pop a window when macOS opened Burrow at login.
-            if !at_login && core.db.tunnels().map(|t| t.is_empty()).unwrap_or(false) && std::env::var_os("BURROW_E2E_PORT").is_none() {
+            // Never pop a window when macOS opened Underlane at login.
+            if !at_login && core.db.tunnels().map(|t| t.is_empty()).unwrap_or(false) && std::env::var_os("UNDERLANE_E2E_PORT").is_none() {
                 tray::open_dashboard(&handle, None);
             }
             Ok(())
         })
         .build(tauri::generate_context!())
-        .expect("failed to build Burrow");
+        .expect("failed to build Underlane");
 
     app.run(|handle, event| match event {
         // Closing the dashboard must not quit a menu bar app; only an explicit quit does.

@@ -11,8 +11,8 @@ use hyper::Request;
 use hyper_util::client::legacy::Client;
 use hyper_util::rt::TokioExecutor;
 
-use burrow_core::decode::decode_body;
-use burrow_core::proxy::capture::{self, CaptureOptions, ExchangeKind, REDACTED};
+use underlane_core::decode::decode_body;
+use underlane_core::proxy::capture::{self, CaptureOptions, ExchangeKind, REDACTED};
 
 type AnyBody = http_body_util::combinators::BoxBody<Bytes, Infallible>;
 
@@ -208,8 +208,8 @@ async fn upstream_down_returns_502_and_is_recorded() {
     let h = Harness::new(CaptureOptions::default()).await;
     // Point a second proxy at a port nothing listens on.
     let dead = std::net::TcpListener::bind("127.0.0.1:0").unwrap().local_addr().unwrap();
-    let up = burrow_core::derived::Upstream::from_service(0, None, &format!("http://{dead}")).unwrap();
-    let ctx = burrow_core::proxy::ProxyContext {
+    let up = underlane_core::derived::Upstream::from_service(0, None, &format!("http://{dead}")).unwrap();
+    let ctx = underlane_core::proxy::ProxyContext {
         tunnel_id: "t2".into(),
         options: std::sync::Arc::new(std::sync::RwLock::new(CaptureOptions::default())),
         sink: {
@@ -217,7 +217,7 @@ async fn upstream_down_returns_502_and_is_recorded() {
             std::sync::Arc::new(move |x| c.lock().unwrap().push(x))
         },
     };
-    let p = burrow_core::proxy::start(0, up, ctx).await.unwrap();
+    let p = underlane_core::proxy::start(0, up, ctx).await.unwrap();
     let (head, body) = raw_request(p.port(), "GET /down HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n").await;
     assert!(head.starts_with("HTTP/1.1 502"), "{head}");
     assert!(String::from_utf8_lossy(&body).contains("connection refused"));
@@ -227,7 +227,7 @@ async fn upstream_down_returns_502_and_is_recorded() {
 }
 
 /// Measures the latency the proxy adds on loopback. Run with
-/// `cargo test --release -p burrow-core --test proxy_capture -- --ignored --nocapture`.
+/// `cargo test --release -p underlane-core --test proxy_capture -- --ignored --nocapture`.
 #[tokio::test]
 #[ignore]
 async fn bench_added_latency() {
@@ -299,17 +299,17 @@ async fn tls_timeout_is_a_separate_handshake_deadline() {
             held.push(s);
         }
     });
-    let mut up = burrow_core::derived::Upstream::from_service(0, None, &format!("https://{addr}")).unwrap();
+    let mut up = underlane_core::derived::Upstream::from_service(0, None, &format!("https://{addr}")).unwrap();
     up.connect_timeout = Duration::from_secs(30);
     up.tls_timeout = Duration::from_millis(300);
     let captured = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
     let c2 = captured.clone();
-    let ctx = burrow_core::proxy::ProxyContext {
+    let ctx = underlane_core::proxy::ProxyContext {
         tunnel_id: "t".into(),
         options: std::sync::Arc::new(std::sync::RwLock::new(CaptureOptions::default())),
         sink: std::sync::Arc::new(move |x| c2.lock().unwrap().push(x)),
     };
-    let p = burrow_core::proxy::start(0, up, ctx).await.unwrap();
+    let p = underlane_core::proxy::start(0, up, ctx).await.unwrap();
     let t = Instant::now();
     let (head, body) = raw_request(p.port(), "GET / HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n").await;
     let elapsed = t.elapsed();

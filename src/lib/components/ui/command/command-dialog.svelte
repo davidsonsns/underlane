@@ -1,5 +1,5 @@
 <script lang="ts">
-	// burrow: macOS overrides, see .scratch/shadcn-luma/01-theming.md §5 (stock Luma: commit 9f0aa7b).
+	// underlane: macOS overrides, see .scratch/shadcn-luma/01-theming.md §5 (stock Luma: commit 9f0aa7b).
 	import * as Dialog from "$lib/components/ui/dialog/index.js";
 	import { cn, type WithoutChildrenOrChild } from "$lib/utils.js";
 	import Command from "./command.svelte";

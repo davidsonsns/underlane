@@ -103,7 +103,7 @@
     </div>
   {:else if store.tunnels.length === 0}
     <div class="grid flex-1 place-items-center">
-      <StatePanel kind="empty" title="Set up your first tunnel" message="Burrow runs cloudflared for you. Import the config files you already have, paste a token from the Cloudflare dashboard, or share a local port with a quick tunnel; no account needed for that one.">
+      <StatePanel kind="empty" title="Set up your first tunnel" message="Underlane runs cloudflared for you. Import the config files you already have, paste a token from the Cloudflare dashboard, or share a local port with a quick tunnel; no account needed for that one.">
         <Button bind:ref={emptyAdd} onclick={onadd}>Add tunnel</Button>
       </StatePanel>
     </div>

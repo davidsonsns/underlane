@@ -1,6 +1,6 @@
 <script lang="ts">
-	// burrow: macOS overrides, see .scratch/shadcn-luma/01-theming.md §5.18 (stock Luma: shadcn-svelte@1.7.0 add; the spike tuned only command and command-item).
-	// burrow: the input keeps data-slot="input-group-control" (stock: "command-input"), like the
+	// underlane: macOS overrides, see .scratch/shadcn-luma/01-theming.md §5.18 (stock Luma: shadcn-svelte@1.7.0 add; the spike tuned only command and command-item).
+	// underlane: the input keeps data-slot="input-group-control" (stock: "command-input"), like the
 	// other input-group controls.
 	import { Command as CommandPrimitive } from "bits-ui";
 	import * as InputGroup from "$lib/components/ui/input-group/index.js";

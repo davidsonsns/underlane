@@ -1,4 +1,4 @@
-/* Burrow design system: Tailwind v4 + shadcn-svelte (Luma), tuned to macOS.
+/* Underlane design system: Tailwind v4 + shadcn-svelte (Luma), tuned to macOS.
    One file is the source of truth for tokens; both windows (dashboard, popover) import it.
 
    Theme model (unchanged from today, see src/lib/theme.ts and src-tauri tray.rs):
@@ -48,7 +48,7 @@
 
   /* macOS text styles. text-sm is the 13px body/control size, so every stock shadcn
      `text-sm` lands on the native size. Line heights follow AppKit's (13/16 is NSFont's
-     default; 18px keeps Burrow's current 1.38 rhythm for running text). */
+     default; 18px keeps Underlane's current 1.38 rhythm for running text). */
   --text-2xs: 10px;
   --text-2xs--line-height: 13px;
   --text-xs: 11px;
@@ -66,7 +66,7 @@
   --text-xl: 20px;
   --text-xl--line-height: 25px;
 
-  /* Radius: Burrow's existing scale. 2xl-4xl are clamped so Luma classes that slip
+  /* Radius: Underlane's existing scale. 2xl-4xl are clamped so Luma classes that slip
      through a future `shadcn-svelte add` come out as 12px corners, not pills. */
   --radius-xs: 3px;
   --radius-sm: 5px;
@@ -122,7 +122,7 @@
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
 
-  /* Burrow / macOS additions */
+  /* Underlane / macOS additions */
   --color-tint: var(--tint);
   --color-control: var(--control);
   --color-segment: var(--segment);
@@ -145,7 +145,7 @@
 }
 
 /* ---------------------------------------------------------------------------------------------
-   4. Tokens. Burrow names are the source of truth; shadcn names alias them. */
+   4. Tokens. Underlane names are the source of truth; shadcn names alias them. */
 @layer base {
   :root {
     color-scheme: light dark;
@@ -330,7 +330,7 @@
    !important except the reduced-motion override. */
 @layer base {
   html {
-    /* Leave the root font size at 16px: Tailwind's spacing scale is rem-based. Burrow's
+    /* Leave the root font size at 16px: Tailwind's spacing scale is rem-based. Underlane's
        13px goes on body. */
     height: 100%;
     overflow: hidden; /* no rubber-band scrolling of the whole page */

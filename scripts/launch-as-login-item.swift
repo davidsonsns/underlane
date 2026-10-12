@@ -3,7 +3,7 @@
 // Usage: swift scripts/launch-as-login-item.swift /path/to/App.app
 import AppKit
 
-let path = CommandLine.arguments.count > 1 ? CommandLine.arguments[1] : "\(NSHomeDirectory())/Applications/Burrow.app"
+let path = CommandLine.arguments.count > 1 ? CommandLine.arguments[1] : "\(NSHomeDirectory())/Applications/Underlane.app"
 let event = NSAppleEventDescriptor(
     eventClass: AEEventClass(kCoreEventClass), eventID: AEEventID(kAEOpenApplication),
     targetDescriptor: nil, returnID: AEReturnID(kAutoGenerateReturnID), transactionID: AETransactionID(kAnyTransactionID))

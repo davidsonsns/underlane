@@ -322,7 +322,7 @@ pub fn metrics_addr_from_message(msg: &str) -> Option<String> {
     (!addr.is_empty()).then(|| addr.to_string())
 }
 
-/// A cloudflared process that Burrow didn't start.
+/// A cloudflared process that Underlane didn't start.
 #[derive(Debug, Clone, Serialize, PartialEq)]
 pub struct ExternalProcess {
     pub pid: u32,
@@ -370,7 +370,7 @@ impl TunnelIdentity {
     }
 }
 
-/// cloudflared processes not started by Burrow (their command line doesn't mention
+/// cloudflared processes not started by Underlane (their command line doesn't mention
 /// `data_marker`) that run the given tunnel.
 pub fn find_external(id: &TunnelIdentity, data_marker: &str) -> Vec<ExternalProcess> {
     let out = match std::process::Command::new("ps").args(["-axww", "-o", "pid=,command="]).output() {

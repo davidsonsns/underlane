@@ -3,8 +3,8 @@
 fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let args = match args.first().map(String::as_str) {
-        Some(burrow_core::shim::SHIM_FLAG) => &args[1..],
+        Some(underlane_core::shim::SHIM_FLAG) => &args[1..],
         _ => &args[..],
     };
-    std::process::exit(burrow_core::shim::run(args));
+    std::process::exit(underlane_core::shim::run(args));
 }

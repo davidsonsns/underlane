@@ -1,6 +1,6 @@
 //! Tunnel tokens live in the system keychain, never in SQLite or on a command line.
 
-const SERVICE: &str = "com.davidsonsns.burrow.tunnel-token";
+const SERVICE: &str = "com.davidsonsns.underlane.tunnel-token";
 
 fn entry(id: &str) -> Option<keyring::Entry> {
     keyring::Entry::new(SERVICE, id).ok()

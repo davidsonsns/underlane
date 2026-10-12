@@ -1,9 +1,9 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Burrow",
-  "mainBinaryName": "Burrow",
+  "productName": "Underlane",
+  "mainBinaryName": "Underlane",
   "version": "0.1.0",
-  "identifier": "com.davidsonsns.burrow",
+  "identifier": "com.davidsonsns.underlane",
   "build": {
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:1420",
