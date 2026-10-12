@@ -13,7 +13,8 @@
   }: { kind: "empty" | "loading" | "error"; title: string; message?: string; children?: Snippet } = $props();
 </script>
 
-<Empty.Root class="animate-rise" role={kind === "error" ? "alert" : "status"}>
+<!-- flex-1: in a flex-column pane (Logs, the request list) it fills the pane and centres there. -->
+<Empty.Root class="flex-1 animate-rise"role={kind === "error" ? "alert" : "status"}>
   {#if kind === "loading"}
     <!-- The panel is the status region and its title the announcement: the spinner is decoration. -->
     <Spinner role="presentation" aria-hidden="true" />
