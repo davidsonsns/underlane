@@ -187,9 +187,11 @@ pub fn open_dashboard<R: Runtime>(app: &AppHandle<R>, view: Option<String>) {
     let builder = WebviewWindowBuilder::new(app, DASHBOARD, WebviewUrl::App(url.into()))
         .title("Underlane")
         .inner_size(1080.0, 700.0)
-        .resizable(false)
-        .maximizable(false)
+        // 960 = sidebar (200) + the Requests split's column minimums (420 + 340).
+        .min_inner_size(960.0, 560.0)
         .center()
+        // Shown after build, once the window-state plugin has restored the last size and position.
+        .visible(false)
         .theme(current_theme(app))
         .transparent(true)
         .effects(WindowEffectsConfig { effects: vec![Effect::Sidebar], state: Some(EffectState::FollowsWindowActiveState), radius: None, color: None, ..Default::default() });
@@ -206,6 +208,7 @@ pub fn open_dashboard<R: Runtime>(app: &AppHandle<R>, view: Option<String>) {
                     let _ = &app2;
                 }
             });
+            let _ = w.show();
             let _ = w.set_focus();
         }
         Err(e) => tracing::error!("could not open dashboard: {e}"),

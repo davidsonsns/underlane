@@ -30,7 +30,7 @@ const capture = (name, min = 300, max = 4000) => execFileSync("swift", ["scripts
 const theme = () => sql("SELECT json_extract(value,'$.theme') FROM settings WHERE key='settings'");
 
 // Click targets in the dashboard, in points relative to the window's top-left corner. The
-// window is a fixed 1080x700 with an overlay title bar, so the webview fills it and these are
+// window opens at 1080x700 (resizable, not restored) with an overlay title bar, so the webview fills it and these are
 // also CSS pixels. They assume cloudflared is found (no "Install it with Homebrew" row above
 // Appearance) and a "This launch" row (always there after a launch).
 // - Sidebar (re-measured in Phase 2h on the e2e debug build, from the selected item's highlight

@@ -61,6 +61,13 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_dialog::init())
+        // The dashboard is destroyed on close; this brings back its size and position next time.
+        .plugin(
+            tauri_plugin_window_state::Builder::default()
+                .with_state_flags(tauri_plugin_window_state::StateFlags::SIZE | tauri_plugin_window_state::StateFlags::POSITION)
+                .with_denylist(&[tray::POPOVER])
+                .build(),
+        )
         .invoke_handler(tauri::generate_handler![
             commands::overview,
             commands::scan_default,
