@@ -38,7 +38,7 @@
     try {
       await writeText(text);
     } catch (e) {
-      // Outside Tauri (ui-lab, the dev browser) the plugin isn't there.
+      // Outside Tauri (the dev browser) the plugin isn't there.
       try {
         await navigator.clipboard.writeText(text);
       } catch {

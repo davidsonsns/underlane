@@ -4,7 +4,7 @@
   // lines in view, with measured (variable) heights: wrapped messages and expanded fields render
   // inside the row so virtua measures them. The active line is tracked by id, never by index.
   // The list tails the newest line while the view is at the bottom ("follow") and stops when the
-  // user scrolls up. ui-lab (src/lab/LogsLab.svelte) drives this same component for the R-49 check.
+  // user scrolls up.
   import { tick, untrack } from "svelte";
   import { VList } from "virtua/svelte";
   import { next } from "$lib/listnav";
@@ -65,11 +65,6 @@
     const min = lines[0]?.id ?? Infinity;
     for (const k in open) if (+k < min) delete open[k];
   }
-  /** ui-lab only (dev builds): the expansion map's size and virtua's cached row heights. */
-  export const lab = import.meta.env.DEV
-    ? { openCount: () => Object.keys(open).length, sizes: () => lines.map((_, i) => list?.getItemSize(i) ?? -1), trimming: () => trimming }
-    : undefined;
-
   // aria-activedescendant only once the row exists: virtua mounts a row one animation frame
   // after scrollToIndex, not on the next tick (decisions.md §17).
   let descendant = $state<string | undefined>();
