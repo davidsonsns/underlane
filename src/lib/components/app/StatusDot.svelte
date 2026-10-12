@@ -1,13 +1,10 @@
 <script lang="ts">
   import type { Status } from "$lib/types";
-  import { statusHint, statusLabel } from "$lib/format";
-  import { tooltip } from "$lib/tooltip";
+  import { statusLabel } from "$lib/format";
   import { cn } from "$lib/utils";
-  // Ported screens put the hint in a Tip around the dot and pass `hint={false}`:
-  //   <Tip text={statusHint[status]}>{#snippet children({ props })}<span {...{ ...props, tabindex: undefined }}><StatusDot {status} hint={false} /></span>{/snippet}</Tip>
-  // The popover keeps use:tooltip until 2i: Tip in here would put ui/tooltip (floating-ui,
-  // ~20 KB) into the popover, past its JS budget.
-  let { status, size = 8, hint = true }: { status: Status; size?: number; hint?: boolean } = $props();
+  // The hint is the caller's: wrap the dot in a Tip (no tab stop; the status word is text nearby):
+  //   <Tip text={statusHint[status]}>{#snippet children({ props })}<span {...{ ...props, tabindex: undefined }} class="flex"><StatusDot {status} /></span>{/snippet}</Tip>
+  let { status, size = 8 }: { status: Status; size?: number } = $props();
 
   const look: Record<Status, string> = {
     stopped: "bg-transparent shadow-[inset_0_0_0_1.5px_var(--off)]",
@@ -29,5 +26,4 @@
   style="--size: {size}px"
   role="img"
   aria-label={statusLabel[status]}
-  use:tooltip={hint ? statusHint[status] : undefined}
 ></span>

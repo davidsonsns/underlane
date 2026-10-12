@@ -1,38 +1,85 @@
 <script lang="ts">
-  import { onMount } from "svelte";
+  import { onMount, tick } from "svelte";
   import { flip } from "svelte/animate";
   import { fly, fade } from "svelte/transition";
-  import { writeText } from "@tauri-apps/plugin-clipboard-manager";
   import { openUrl } from "@tauri-apps/plugin-opener";
   import { listen } from "@tauri-apps/api/event";
+  import ExternalLink from "@lucide/svelte/icons/external-link";
+  import PanelLeft from "@lucide/svelte/icons/panel-left";
+  import TriangleAlert from "@lucide/svelte/icons/triangle-alert";
   import { store } from "../lib/store.svelte";
-  import { api, errorText } from "../lib/api";
+  import { api } from "../lib/api";
   import { motion } from "../lib/theme";
-  import { isOn, publicUrl, statusLabel } from "../lib/format";
+  import { isOn, publicUrl, statusHint, statusLabel } from "../lib/format";
+  import { next } from "../lib/listnav";
   import type { Tunnel } from "../lib/types";
-  import StatusDot from "$lib/components/app/StatusDot.svelte";
-  import Toggle from "$lib/components/app/Toggle.svelte";
-  import RouteLine from "$lib/components/app/RouteLine.svelte";
-  import Icon from "$lib/components/app/Icon.svelte";
-  import StatePanel from "$lib/components/app/StatePanel.svelte";
-  // The provider alone, not the ui/tooltip barrel: the barrel puts Tooltip.Content and
-  // floating-ui (used by the dashboard) in the shared chunk, about +20 kB gzip for the popover.
+  import { mergeProps } from "bits-ui";
+  import { cn } from "$lib/utils";
+  import { kbRing } from "$lib/components/ui/mac.js";
+  import { Button } from "$lib/components/ui/button/index.js";
+  import { Switch } from "$lib/components/ui/switch/index.js";
+  import * as Alert from "$lib/components/ui/alert/index.js";
+  // The provider alone, not the ui/tooltip barrel (Tip brings the rest).
   import TooltipProvider from "$lib/components/ui/tooltip/tooltip-provider.svelte";
-  import { Toaster } from "$lib/components/ui/sonner/index.js";
+  import StatusDot from "$lib/components/app/StatusDot.svelte";
+  import RouteLine from "$lib/components/app/RouteLine.svelte";
+  import StatePanel from "$lib/components/app/StatePanel.svelte";
+  import CopyButton from "$lib/components/app/CopyButton.svelte";
+  import IconAction from "$lib/components/app/IconAction.svelte";
+  import Tip from "$lib/components/app/Tip.svelte";
   import { notify } from "$lib/toast";
 
   let busy = $state<Record<string, boolean>>({});
-  let toast = $state<string | null>(null);
-  let toastTimer: ReturnType<typeof setTimeout>;
+  let root = $state<HTMLElement | null>(null);
+
+  // svelte-sonner and the Toaster load on the first toast (02 O10), so the popover's first open
+  // doesn't pay for them. The toast list is global, so the toast that loaded it still shows.
+  let toaster = $state(false);
+  notify.onLoad(() => (toaster = true));
+
+  /** Focus the first tunnel row (or "Add a tunnel" when there are none), without a ring:
+   *  AppKit shows none until the first key (02 §4.4). */
+  function focusFirst() {
+    delete document.documentElement.dataset.kbNav;
+    root?.querySelector<HTMLElement>("[data-row-main], [data-empty-add]")?.focus();
+  }
 
   onMount(() => {
-    store.init();
+    // The first open creates this webview, and tray.rs emits popover-shown right after show(),
+    // which can be before the listener below exists. So focus after the first load too (R-27).
+    store.init().then(tick).then(focusFirst);
     // Refresh when shown, in case tunnels were added in the dashboard.
-    const un = listen("popover-shown", () => store.refresh());
+    const un = listen("popover-shown", async () => {
+      await store.refresh();
+      await tick();
+      focusFirst();
+    });
     return () => {
       un.then((f) => f());
     };
   });
+
+  const NAV_KEYS = new Set(["ArrowDown", "ArrowUp", "Home", "End"]);
+
+  // Escape hides the popover; Up/Down/Home/End move between the rows (F12). Tab order inside a
+  // row stays native: main, copy, open, switch.
+  function onkeydown(e: KeyboardEvent) {
+    const el = e.target as HTMLElement | null;
+    if (el?.closest("input, textarea, select, [contenteditable]")) return;
+    if (e.key === "Escape") {
+      api.hidePopover();
+      return;
+    }
+    if (!NAV_KEYS.has(e.key) || e.metaKey || e.ctrlKey || e.altKey || !root) return;
+    const rows = [...root.querySelectorAll<HTMLElement>("[data-row-main]")];
+    const current = document.activeElement?.closest("[data-row]")?.querySelector<HTMLElement>("[data-row-main]");
+    const i = next(e.key, current ? rows.indexOf(current) : -1, rows.length);
+    if (i === null || i < 0) return;
+    e.preventDefault();
+    // installFocusModality only reacts to Tab; the arrows are keyboard navigation too (R-13).
+    document.documentElement.dataset.kbNav = "";
+    rows[i].focus();
+  }
 
   const groups = $derived.by(() => {
     const map = new Map<string, { name: string; tunnels: Tunnel[] }>();
@@ -44,30 +91,16 @@
     return [...map.entries()].map(([id, g]) => ({ id, ...g }));
   });
 
-
-  function flash(msg: string) {
-    toast = msg;
-    clearTimeout(toastTimer);
-    toastTimer = setTimeout(() => (toast = null), 1600);
-  }
-
   async function toggle(t: Tunnel, on: boolean) {
     busy[t.id] = true;
     try {
       if (on) await api.start(t.id);
       else await api.stop(t.id);
     } catch (e) {
-      flash(errorText(e));
+      notify.error(e, on ? `Couldn't start ${t.name}` : `Couldn't stop ${t.name}`);
     } finally {
       busy[t.id] = false;
     }
-  }
-
-  async function copy(t: Tunnel) {
-    const url = publicUrl(t);
-    if (!url) return;
-    await writeText(url);
-    flash("Copied " + url.replace("https://", ""));
   }
 
   const anyOn = $derived(store.tunnels.some(isOn));
@@ -80,78 +113,98 @@
     if (starting) parts.push(`${starting} starting`);
     return parts.join(", ");
   });
+
+  const detail = "truncate text-code text-muted-foreground";
 </script>
 
 <!-- The popover hides on blur (tray.rs); drop toasts so a stale one doesn't reappear. -->
-<svelte:window onblur={() => notify.dismiss()} />
+<svelte:window onblur={() => notify.dismiss()} {onkeydown} />
 
 <TooltipProvider delayDuration={250} ignoreNonKeyboardFocus>
-<main class="popover">
-  <header>
-    <div class="title">
-      <strong>Burrow</strong>
-      <span class="summary">{summary}</span>
+<!-- The radius must equal `radius: Some(12.0)` in tray.rs (the popover window's vibrancy corner).
+     The tint sits on this root; html and body stay transparent (app.css). -->
+<main bind:this={root} class="relative flex h-screen flex-col overflow-hidden rounded-[12px] bg-(--popover-tint)">
+  <header class="flex items-center justify-between pt-3 pr-3 pb-2 pl-3.5">
+    <div class="flex flex-col">
+      <strong class="text-sm font-semibold">Burrow</strong>
+      <span class="text-xs text-muted-foreground">{summary}</span>
     </div>
     {#if store.tunnels.length}
       {#if anyOn}
-        <button class="btn ghost small" onclick={() => api.stopAll()}>Stop all</button>
+        <Button variant="ghost" class="text-callout" onclick={() => api.stopAll()}>Stop all</Button>
       {:else}
-        <button class="btn ghost small" onclick={() => api.startAll()}>Start all</button>
+        <Button variant="ghost" class="text-callout" onclick={() => api.startAll()}>Start all</Button>
       {/if}
     {/if}
   </header>
 
   {#if store.overview && !store.overview.cloudflared}
-    <div class="banner" role="alert">
-      <Icon name="warn" size={13} />
-      <span>cloudflared isn't installed. Run <code>brew install cloudflared</code>, then open Settings.</span>
-    </div>
+    <Alert.Root variant="warning" class="mx-2.5 mb-1.5 w-auto">
+      <TriangleAlert />
+      <Alert.Description>cloudflared isn't installed. Run <code class="font-mono text-xs">brew install cloudflared</code>, then open Settings.</Alert.Description>
+    </Alert.Root>
   {/if}
 
-  <section class="list">
+  <section class="flex-1 overflow-y-auto px-1.5 pb-1.5">
     {#if store.loading}
       <StatePanel kind="loading" title="Loading tunnels…" />
     {:else if store.error}
       <StatePanel kind="error" title="Couldn't load tunnels" message={store.error}>
-        <button class="btn" onclick={() => store.refresh()}>Try again</button>
+        <Button variant="outline" onclick={() => store.refresh()}>Try again</Button>
       </StatePanel>
     {:else if store.tunnels.length === 0}
       <StatePanel kind="empty" title="No tunnels yet" message="Import a config.yml, paste a tunnel token, or share a local port with a quick tunnel.">
-        <button class="btn primary" onclick={() => api.openDashboard("add")}>Add a tunnel</button>
+        <Button data-empty-add onclick={() => api.openDashboard("add")}>Add a tunnel</Button>
       </StatePanel>
     {:else}
       {#each groups as g (g.id)}
-        <div class="group" animate:flip={{ duration: motion(220) }}>
-          <div class="group-name">{g.name}</div>
+        <div class="not-first:mt-1.5" animate:flip={{ duration: motion(220) }}>
+          <div class="px-2 pt-1.5 pb-[3px] text-xs font-semibold text-muted-foreground">{g.name}</div>
           {#each g.tunnels as t (t.id)}
             {@const m = t.state.mappings.find((m) => m.hostname) ?? t.state.mappings[0]}
             {@const url = publicUrl(t)}
             <div
-              class="row"
+              class="group/row flex items-center gap-[9px] rounded-lg px-2 py-1.5 transition-colors duration-120 hover:bg-fill"
+              data-row
               animate:flip={{ duration: motion(220) }}
               in:fly={{ y: -6, duration: motion(200) }}
               out:fade={{ duration: motion(120) }}
             >
-              <StatusDot status={t.state.status} />
-              <button class="main" onclick={() => api.openDashboard(`tunnels:${t.id}`)} title="Show in dashboard">
-                <span class="name">{t.name}</span>
+              <!-- The status shows in words in the row when it matters, so the dot's hint is hover-only (no tab stop). -->
+              <Tip text={statusHint[t.state.status]}>
+                {#snippet children({ props })}<span {...{ ...props, tabindex: undefined }} class="flex"><StatusDot status={t.state.status} /></span>{/snippet}
+              </Tip>
+              <button
+                class={cn("flex min-w-0 flex-1 flex-col gap-px rounded-sm text-left", kbRing)}
+                data-row-main
+                onclick={() => api.openDashboard(`tunnels:${t.id}`)}
+              >
+                <span class="truncate font-medium">{t.name}</span>
                 {#if t.state.status === "crashed" || t.state.status === "degraded"}
-                  <span class="detail" class:bad={t.state.status === "crashed"}>{t.state.detail ?? statusLabel[t.state.status]}</span>
+                  <span class={cn(detail, t.state.status === "crashed" && "text-bad-text")}>{t.state.detail ?? statusLabel[t.state.status]}</span>
                 {:else if m}
                   <RouteLine hostname={t.kind === "quick" ? (t.state.public_url?.replace("https://", "") ?? null) : m.hostname} service={m.service} inspected={m.inspected} pulse={store.pulses[t.id] ?? 0} compact />
                 {:else if t.kind === "token"}
-                  <span class="detail">Routes come from the Cloudflare dashboard</span>
+                  <span class={detail}>Routes come from the Cloudflare dashboard</span>
                 {:else if t.kind === "quick"}
-                  <span class="detail mono">{t.origin_url}</span>
+                  <span class={cn(detail, "font-mono")}>{t.origin_url}</span>
                 {/if}
               </button>
-              <div class="actions">
+              <!-- Shown on hover, and while a control inside has keyboard focus. -->
+              <div class="flex opacity-0 transition-opacity duration-120 group-hover/row:opacity-100 focus-within:opacity-100">
                 {#if url && t.state.status === "connected"}
-                  <button class="icon-btn" title="Copy public URL" aria-label="Copy public URL" onclick={() => copy(t)}><Icon name="copy" /></button>
-                  <button class="icon-btn" title="Open in browser" aria-label="Open in browser" onclick={() => openUrl(url)}><Icon name="open" /></button>
+                  <CopyButton value={url} what={url.replace("https://", "")} tip="Copy public URL" />
+                  <IconAction label="Open in browser" onclick={() => openUrl(url)}><ExternalLink /></IconAction>
                 {/if}
               </div>
-              <Toggle checked={isOn(t)} busy={busy[t.id]} label={isOn(t) ? `Stop ${t.name}` : `Start ${t.name}`} onchange={(v) => toggle(t, v)} />
+              <!-- Busy while a start/stop is in flight: disabled, announced, and the thumb pulses. -->
+              <Switch
+                bind:checked={() => isOn(t), (v) => toggle(t, v)}
+                disabled={busy[t.id]}
+                aria-busy={busy[t.id] || undefined}
+                aria-label={isOn(t) ? `Stop ${t.name}` : `Start ${t.name}`}
+                class={cn(busy[t.id] && "*:animate-pulse")}
+              />
             </div>
           {/each}
         </div>
@@ -159,156 +212,24 @@
     {/if}
   </section>
 
-  <footer>
-    <button class="btn ghost" onclick={() => api.openDashboard()}><Icon name="dashboard" size={14} /> Open Dashboard</button>
-    <button class="btn ghost" onclick={() => api.quit()} title="Quit Burrow and stop all tunnels">Quit</button>
+  <footer class="flex justify-between border-t-[0.5px] border-border px-2 pt-1.5 pb-2">
+    <Button variant="ghost" onclick={() => api.openDashboard()}><PanelLeft class="size-3.5" /> Open Dashboard</Button>
+    <Tip text="Quit Burrow and stop all tunnels" side="top">
+      {#snippet children({ props })}<Button {...mergeProps(props, { onclick: () => api.quit() })} variant="ghost">Quit</Button>{/snippet}
+    </Tip>
   </footer>
-
-  {#if toast}
-    <div class="toast" transition:fly={{ y: 8, duration: motion(180) }}>{toast}</div>
-  {/if}
 </main>
 
-<!-- Above the footer; the window is 360px wide, so sonner uses mobileOffset (<= 600px). -->
-<Toaster
-  theme={store.overview?.settings.theme ?? "system"}
-  position="bottom-center"
-  visibleToasts={1}
-  offset={{ bottom: 52 }}
-  mobileOffset={{ bottom: 52, left: 20, right: 20 }}
-/>
+{#if toaster}
+  {#await import("$lib/lazy") then { Toaster }}
+    <!-- Above the footer; the window is 360px wide, so sonner uses mobileOffset (<= 600px). -->
+    <Toaster
+      theme={store.overview?.settings.theme ?? "system"}
+      position="bottom-center"
+      visibleToasts={1}
+      offset={{ bottom: 52 }}
+      mobileOffset={{ bottom: 52, left: 20, right: 20 }}
+    />
+  {/await}
+{/if}
 </TooltipProvider>
-
-<style>
-  :global(.popover-body) {
-    background: transparent;
-  }
-  .popover {
-    display: flex;
-    flex-direction: column;
-    height: 100vh;
-    background: var(--popover-tint);
-    border-radius: 12px;
-    overflow: hidden;
-    position: relative;
-  }
-  header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 12px 12px 8px 14px;
-  }
-  .title {
-    display: flex;
-    flex-direction: column;
-  }
-  .title strong {
-    font-size: var(--text-sm);
-    font-weight: 600;
-  }
-  .summary {
-    font-size: var(--text-xs);
-    color: var(--text-2);
-  }
-  .small {
-    height: 22px;
-    font-size: var(--text-callout);
-  }
-  .banner {
-    display: flex;
-    gap: 6px;
-    align-items: flex-start;
-    margin: 0 10px 6px;
-    padding: 8px 10px;
-    border-radius: var(--radius);
-    background: color-mix(in srgb, var(--degraded) 14%, transparent);
-    font-size: var(--text-callout);
-    line-height: 1.35;
-  }
-  .banner code {
-    font-family: var(--font-mono);
-    font-size: 11px;
-  }
-  .list {
-    flex: 1;
-    overflow-y: auto;
-    padding: 0 6px 6px;
-  }
-  .group + .group {
-    margin-top: 6px;
-  }
-  .group-name {
-    padding: 6px 8px 3px;
-    font-size: var(--text-xs);
-    font-weight: 600;
-    color: var(--text-2);
-  }
-  .row {
-    display: flex;
-    align-items: center;
-    gap: 9px;
-    padding: 6px 8px;
-    border-radius: var(--radius);
-    transition: background-color 120ms ease;
-  }
-  .row:hover {
-    background: var(--hover);
-  }
-  .main {
-    display: flex;
-    flex-direction: column;
-    gap: 1px;
-    flex: 1;
-    min-width: 0;
-    padding: 0;
-    border: 0;
-    background: transparent;
-    text-align: left;
-  }
-  .name {
-    font-weight: 500;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-  .detail {
-    font-size: 11.5px;
-    color: var(--text-2);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-  .detail.bad {
-    color: var(--bad);
-  }
-  .actions {
-    display: flex;
-    opacity: 0;
-    transition: opacity 120ms ease;
-  }
-  .row:hover .actions,
-  .row:focus-within .actions {
-    opacity: 1;
-  }
-  footer {
-    display: flex;
-    justify-content: space-between;
-    padding: 6px 8px 8px;
-    border-top: 0.5px solid var(--line);
-  }
-  .toast {
-    position: absolute;
-    left: 50%;
-    bottom: 48px;
-    transform: translateX(-50%);
-    max-width: 90%;
-    padding: 6px 12px;
-    border-radius: 999px;
-    background: var(--text-1);
-    color: var(--bg);
-    font-size: var(--text-callout);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-</style>

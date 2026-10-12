@@ -181,7 +181,7 @@
   <div class="flex items-center gap-2.5">
     <!-- The status word follows in text, so the dot's hint is hover-only (no tab stop). -->
     <Tip text={statusHint[s.status]}>
-      {#snippet children({ props })}<span {...{ ...props, tabindex: undefined }} class="flex"><StatusDot status={s.status} size={10} hint={false} /></span>{/snippet}
+      {#snippet children({ props })}<span {...{ ...props, tabindex: undefined }} class="flex"><StatusDot status={s.status} size={10} /></span>{/snippet}
     </Tip>
     {#if mode === "editing"}
       <Input
