@@ -43,7 +43,11 @@ const theme = () => sql("SELECT json_extract(value,'$.theme') FROM settings WHER
 //   segment (half-widths of 24px or more).
 // Validated in 2h by clicking each point with click.swift in the e2e debug build: Settings then
 // Dark, Light, System, Light (theme read back from the control server each time), then Tunnels
-// (capture shows the Tunnels view). The popover layout changes in Phase 2i; re-measure then.
+// (capture shows the Tunnels view).
+// - Popover "Open Dashboard" (pop.x + 80, pop.y + pop.h - 20), unchanged in Phase 2i: the 360x500
+//   footer has 8px side and bottom padding and 22px ghost buttons, so the button spans x 8 to ~150 and
+//   y 470-492 (h-30 to h-8; the label ends near x 140). Validated in 2i by clicking that
+//   point in the e2e debug build: the dashboard opened and the popover hid.
 const AT = { tunnels: [60, 92], settings: [60, 179], system: [864, 368], light: [922, 368], dark: [973, 368] };
 
 if (execFileSync("sh", ["-c", "pgrep -f 'MacOS/Burrow$' || true"]).toString().trim()) {

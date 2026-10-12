@@ -115,6 +115,8 @@
   });
 
   const detail = "truncate text-code text-muted-foreground";
+  // The popover's text buttons keep the label colour (the old .btn.ghost); icon buttons stay muted.
+  const ghost = "text-callout text-foreground";
 </script>
 
 <!-- The popover hides on blur (tray.rs); drop toasts so a stale one doesn't reappear. -->
@@ -131,9 +133,9 @@
     </div>
     {#if store.tunnels.length}
       {#if anyOn}
-        <Button variant="ghost" class="text-callout" onclick={() => api.stopAll()}>Stop all</Button>
+        <Button variant="ghost" class={ghost} onclick={() => api.stopAll()}>Stop all</Button>
       {:else}
-        <Button variant="ghost" class="text-callout" onclick={() => api.startAll()}>Start all</Button>
+        <Button variant="ghost" class={ghost} onclick={() => api.startAll()}>Start all</Button>
       {/if}
     {/if}
   </header>
@@ -159,12 +161,12 @@
     {:else}
       {#each groups as g (g.id)}
         <div class="not-first:mt-1.5" animate:flip={{ duration: motion(220) }}>
-          <div class="px-2 pt-1.5 pb-[3px] text-xs font-semibold text-muted-foreground">{g.name}</div>
+          <div class="px-2 pt-1.5 pb-0.75 text-xs font-semibold text-muted-foreground">{g.name}</div>
           {#each g.tunnels as t (t.id)}
             {@const m = t.state.mappings.find((m) => m.hostname) ?? t.state.mappings[0]}
             {@const url = publicUrl(t)}
             <div
-              class="group/row flex items-center gap-[9px] rounded-lg px-2 py-1.5 transition-colors duration-120 hover:bg-fill"
+              class="group/row flex items-center gap-2.25 rounded-lg px-2 py-1.5 transition-colors duration-120 hover:bg-fill"
               data-row
               animate:flip={{ duration: motion(220) }}
               in:fly={{ y: -6, duration: motion(200) }}
@@ -175,7 +177,7 @@
                 {#snippet children({ props })}<span {...{ ...props, tabindex: undefined }} class="flex"><StatusDot status={t.state.status} /></span>{/snippet}
               </Tip>
               <button
-                class={cn("flex min-w-0 flex-1 flex-col gap-px rounded-sm text-left", kbRing)}
+                class={cn("-mx-1 -my-0.5 flex min-w-0 flex-1 flex-col gap-px rounded-md px-1 py-0.5 text-left", kbRing)}
                 data-row-main
                 onclick={() => api.openDashboard(`tunnels:${t.id}`)}
               >
@@ -213,9 +215,9 @@
   </section>
 
   <footer class="flex justify-between border-t-[0.5px] border-border px-2 pt-1.5 pb-2">
-    <Button variant="ghost" onclick={() => api.openDashboard()}><PanelLeft class="size-3.5" /> Open Dashboard</Button>
+    <Button variant="ghost" class="text-foreground" onclick={() => api.openDashboard()}><PanelLeft class="size-3.5" /> Open Dashboard</Button>
     <Tip text="Quit Burrow and stop all tunnels" side="top">
-      {#snippet children({ props })}<Button {...mergeProps(props, { onclick: () => api.quit() })} variant="ghost">Quit</Button>{/snippet}
+      {#snippet children({ props })}<Button {...mergeProps(props, { onclick: () => api.quit() })} variant="ghost" class="text-foreground">Quit</Button>{/snippet}
     </Tip>
   </footer>
 </main>
