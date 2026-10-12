@@ -145,7 +145,17 @@
   returnFocus={() =>
     (addedId && document.querySelector<HTMLElement>(`[data-tunnel-id="${addedId}"]`)) ||
     (addTrigger?.isConnected ? addTrigger : document.querySelector<HTMLElement>("[data-add-tunnel]"))}
-  onadded={(id) => { addTrigger = null; addedId = id; adding = false; focusId = id; view = "tunnels"; store.refresh(); }}
+  onadded={async (id) => {
+    addTrigger = null;
+    addedId = id;
+    // Refresh first: Tunnels drops a selection that isn't in the list yet, and the sheet hands
+    // focus to the new row when it closes.
+    await store.refresh();
+    focusId = id;
+    view = "tunnels";
+    await tick();
+    adding = false;
+  }}
 />
 
 <Toaster theme={store.overview?.settings.theme ?? "system"} position="bottom-right" visibleToasts={3} />
