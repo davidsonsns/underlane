@@ -7,7 +7,8 @@
 // usage: node scripts/release-check.mjs
 import { execFileSync, execFile, spawn } from "node:child_process";
 import { promisify } from "node:util";
-import { homedir } from "node:os";
+import { homedir, tmpdir } from "node:os";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { Resolver } from "node:dns/promises";
 
@@ -54,8 +55,11 @@ if (execFileSync("sh", ["-c", "pgrep -f 'MacOS/Burrow$' || true"]).toString().tr
   throw new Error("quit Burrow first");
 }
 
-// A local origin for the auto-start tunnel.
-const origin = spawn("python3", ["-m", "http.server", "18777", "--bind", "127.0.0.1"], { stdio: "ignore", detached: true });
+// A local origin for the auto-start tunnel. It serves an empty temp folder with just the file the
+// curl below asks for, not the repo: the tunnel makes it public on a trycloudflare URL.
+const originDir = mkdtempSync(join(tmpdir(), "burrow-release-origin-"));
+writeFileSync(join(originDir, "release-check"), "ok\n");
+const origin = spawn("python3", ["-m", "http.server", "18777", "--bind", "127.0.0.1", "--directory", originDir], { stdio: "ignore", detached: true });
 const TID = "release-check-tunnel";
 sql(`INSERT OR IGNORE INTO projects(id,name,sort) VALUES ('release-check','Release check',99);
      INSERT OR REPLACE INTO tunnels(id,project_id,name,kind,config_path,origin_url,inspect,autostart,loglevel,created_at,sort)
@@ -150,6 +154,7 @@ try {
   });
   await step("stop the origin server", () => {
     try { process.kill(-origin.pid); } catch { origin.kill(); }
+    rmSync(originDir, { recursive: true, force: true });
   });
   await step("restore the login item", () => {
     log(`login item ${loginBefore.enabled ? "re-enable" : "disable"}: ${sh(BIN, ["--login-item", loginBefore.enabled ? "enable" : "disable"])}`);
