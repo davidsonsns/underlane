@@ -651,8 +651,8 @@ the family and the 13px size), which is what F5 wanted; it has since been replac
 (see Selects above). Scrollbars are native: overlay with a
 trackpad, a 15px classic scroller with a mouse attached and "Show scroll bars: automatically", so
 the Requests column headers can sit up to 15px off their columns when the list scrolls (it was
-10px with the old custom scrollbar). The Phase 3 `title=` gate allows these six native titles,
-all on truncated text: `RequestList.svelte` (path), `Settings.svelte` (path snippet),
+10px with the old custom scrollbar). The Phase 3 `title=` gate allows these seven native titles,
+all on truncated text: `RequestList.svelte` (path, route host), `Settings.svelte` (path snippet),
 `TunnelDetail.svelte` (config path), `Routes.svelte` (host), `AddSheetBody.svelte` (hostnames),
 `RouteLine.svelte` (hostname → service).
 

@@ -28,6 +28,19 @@ export function formatClock(ts: number): string {
   return `${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}.${p(d.getMilliseconds(), 3)}`;
 }
 
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+/** A request's time of day, with its date in front when it isn't today (and the year when it
+ *  isn't this year): `13:06:43`, `Oct 11 13:06:43`, `Dec 31 2025 23:59:59`. */
+export function formatAt(ts: number, now = Date.now()): string {
+  const d = new Date(ts);
+  const n = new Date(now);
+  const time = formatClock(ts).slice(0, 8);
+  if (d.toDateString() === n.toDateString()) return time;
+  const day = `${MONTHS[d.getMonth()]} ${d.getDate()}`;
+  return d.getFullYear() === n.getFullYear() ? `${day} ${time}` : `${day} ${d.getFullYear()} ${time}`;
+}
+
 export function formatUptime(startedAt: number | null, now = Date.now()): string {
   if (!startedAt) return "";
   const s = Math.max(0, Math.floor((now - startedAt) / 1000));

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatBytes, formatDuration, hexDump, jsonTokens, prettyJson, publicUrl, reachSummary, serviceLabel, shortService, toCurl } from "./format";
+import { formatAt, formatBytes, formatDuration, hexDump, jsonTokens, prettyJson, publicUrl, reachSummary, serviceLabel, shortService, toCurl } from "./format";
 import { logFields } from "./logfields";
 
 describe("format", () => {
@@ -21,6 +21,12 @@ describe("format", () => {
     expect(formatBytes(512)).toBe("512 B");
     expect(formatBytes(1536)).toBe("1.5 KB");
     expect(formatBytes(1024 * 1024 * 20)).toBe("20 MB");
+  });
+  it("puts the date in front of a request's time when it isn't today", () => {
+    const now = new Date(2026, 9, 12, 13, 30).getTime();
+    expect(formatAt(new Date(2026, 9, 12, 0, 0, 5).getTime(), now)).toBe("00:00:05");
+    expect(formatAt(new Date(2026, 9, 11, 23, 59, 59).getTime(), now)).toBe("Oct 11 23:59:59");
+    expect(formatAt(new Date(2025, 11, 31, 8, 4, 0).getTime(), now)).toBe("Dec 31 2025 08:04:00");
   });
   it("formats durations", () => {
     expect(formatDuration(null)).toBe("open");

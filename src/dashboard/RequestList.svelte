@@ -1,8 +1,9 @@
 <script lang="ts" module>
   /** Fixed row height: virtua's itemSize, and the unit of the by-hand anchoring below. */
   export const ROW = 28;
-  /** The column template shared by the header and the rows (Method, Path, Status, Time, Size, At). */
-  export const columns = "grid grid-cols-[46px_minmax(90px,1fr)_44px_56px_56px_54px] items-center gap-1.5 px-3";
+  /** The grid shared by the header and the rows; the column template (gridTemplate in
+   *  $lib/columns) goes in their style, since the shown columns and the At width vary. */
+  export const columns = "grid items-center gap-1.5 px-3";
 </script>
 
 <script lang="ts">
@@ -14,13 +15,16 @@
   import { VList } from "virtua/svelte";
   import { next } from "$lib/listnav";
   import { snapshot } from "$lib/snapshot.svelte";
-  import { formatBytes, formatClock, formatDuration, statusClass } from "$lib/format";
+  import { formatAt, formatBytes, formatDuration, statusClass } from "$lib/format";
+  import { columnPrefs } from "$lib/columns.svelte";
   import { cn } from "$lib/utils";
   import type { RequestSummary } from "$lib/types";
 
   let {
     rows = $bindable(),
     selected,
+    template,
+    now,
     cap = 500,
     ceiling = cap * 2,
     onselect,
@@ -28,6 +32,10 @@
     rows: RequestSummary[];
     /** The active request's id. */
     selected: string | null;
+    /** The grid-template-columns, as for the header. */
+    template: string;
+    /** The time At labels are relative to: a request from another day shows its date. */
+    now: number;
     /** Rows kept while the list is at the top. */
     cap?: number;
     /** Rows kept while the user is scrolled away from the top (the trim waits until they're back). */
@@ -195,6 +203,7 @@
         ? // A darkened accent, as before the port (the raw accent is under 4.5:1 on white).
           "text-[color-mix(in_srgb,var(--tint)_80%,var(--foreground))]"
         : "text-muted-foreground";
+  const hidden = $derived(new Set(columnPrefs.hidden));
   const statusText = { ok: "text-ok-text", redirect: "text-muted-foreground", client: "text-degraded-text", server: "text-bad-text", none: "" };
 </script>
 
@@ -205,6 +214,7 @@
     data-id={r.id}
     aria-selected={r.id === selected}
     aria-label="{r.method} {r.path}, status {r.status ?? 'none'}"
+    style:grid-template-columns={template}
     class={cn(
       columns,
       "h-7 text-callout tabular-nums",
@@ -212,12 +222,13 @@
       fresh[r.id] && "animate-arrive",
     )}
   >
-    <span class={cn("text-xs font-semibold", methodText(r.method))}>{r.kind === "websocket" ? "WS" : r.method}</span>
+    {#if !hidden.has("method")}<span class={cn("text-xs font-semibold", methodText(r.method))}>{r.kind === "websocket" ? "WS" : r.method}</span>{/if}
+    {#if !hidden.has("route")}<span class="truncate text-muted-foreground" title={r.host}>{r.host}</span>{/if}
     <span class="truncate font-mono text-code" title={r.path}>{r.path}</span>
-    <span class={cn("text-right font-semibold", statusText[statusClass(r.status)])}>{r.status ?? "—"}</span>
-    <span class="text-right">{formatDuration(r.duration_ms)}</span>
-    <span class="text-right">{formatBytes(r.resp_size)}</span>
-    <span class="text-right text-muted-foreground">{formatClock(r.ts).slice(0, 8)}</span>
+    {#if !hidden.has("status")}<span class={cn("text-right font-semibold", statusText[statusClass(r.status)])}>{r.status ?? "—"}</span>{/if}
+    {#if !hidden.has("time")}<span class="text-right">{formatDuration(r.duration_ms)}</span>{/if}
+    {#if !hidden.has("size")}<span class="text-right">{formatBytes(r.resp_size)}</span>{/if}
+    {#if !hidden.has("at")}<span class="text-right whitespace-nowrap text-muted-foreground">{formatAt(r.ts, now)}</span>{/if}
   </div>
 {/snippet}
 

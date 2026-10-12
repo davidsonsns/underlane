@@ -6,13 +6,19 @@
   import { latest } from "../lib/latest";
   import type { RequestSummary, RequestDetail as Detail } from "../lib/types";
   import SearchIcon from "@lucide/svelte/icons/search";
+  import Columns3 from "@lucide/svelte/icons/columns-3";
   import { Button } from "$lib/components/ui/button/index.js";
   import * as InputGroup from "$lib/components/ui/input-group/index.js";
+  import * as Popover from "$lib/components/ui/popover/index.js";
+  import * as ToggleGroup from "$lib/components/ui/toggle-group/index.js";
+  import IconAction from "$lib/components/app/IconAction.svelte";
   import Toolbar from "$lib/components/app/Toolbar.svelte";
   import StatePanel from "$lib/components/app/StatePanel.svelte";
   import TunnelPicker from "./TunnelPicker.svelte";
   import RequestList, { columns } from "./RequestList.svelte";
   import RequestDetail from "./RequestDetail.svelte";
+  import { COLUMNS, columnPrefs, gridTemplate, setHidden, type ColumnId } from "$lib/columns.svelte";
+  import { formatAt } from "$lib/format";
 
   const CAP = 500;
   let { focusId = null }: { focusId?: string | null } = $props();
@@ -27,6 +33,16 @@
   let detail = $state<Detail | null>(null);
   let detailError = $state<string | null>(null);
   let list = $state<RequestList>();
+
+  // At labels show the date for requests from another day: re-check each minute, so the
+  // labels gain their date once the day turns.
+  let now = $state(Date.now());
+  onMount(() => {
+    const t = setInterval(() => (now = Date.now()), 60_000);
+    return () => clearInterval(t);
+  });
+  const shown = $derived(COLUMNS.filter((c) => !columnPrefs.hidden.includes(c.id)));
+  const template = $derived(gridTemplate(columnPrefs.hidden, rows.reduce((n, r) => Math.max(n, formatAt(r.ts, now).length), 2)));
 
   const inspectable = (t: { kind: string }) => t.kind !== "token";
   $effect(() => {
@@ -165,6 +181,32 @@
       <InputGroup.Addon><SearchIcon /></InputGroup.Addon>
       <InputGroup.Input placeholder="Filter path, method, status" bind:value={search} aria-label="Filter requests" autocorrect="off" autocapitalize="off" spellcheck="false" />
     </InputGroup.Root>
+    <Popover.Root>
+      <Popover.Trigger>
+        {#snippet child({ props })}
+          <IconAction {...props} label="Columns"><Columns3 /></IconAction>
+        {/snippet}
+      </Popover.Trigger>
+      <Popover.Content align="end" class="w-auto max-w-72 gap-1.5 p-2.5">
+        <span id="columns-label" class="text-xs text-muted-foreground">Columns</span>
+        <ToggleGroup.Root
+          type="multiple"
+          spacing={1}
+          aria-labelledby="columns-label"
+          class="flex-wrap"
+          bind:value={
+            () => shown.map((c) => c.id as string),
+            (v: string[]) => setHidden(COLUMNS.filter((c) => !("always" in c) && !v.includes(c.id)).map((c) => c.id as ColumnId))
+          }
+        >
+          {#each COLUMNS as c (c.id)}
+            {#if !("always" in c)}
+              <ToggleGroup.Item value={c.id} class="text-muted-foreground data-[state=on]:text-foreground">{c.label}</ToggleGroup.Item>
+            {/if}
+          {/each}
+        </ToggleGroup.Root>
+      </Popover.Content>
+    </Popover.Root>
     <Button variant="outline" onclick={clear} disabled={!rows.length}>Clear</Button>
   </Toolbar>
 
@@ -181,8 +223,8 @@
   {:else}
     <div class="grid min-h-0 flex-1 grid-cols-[minmax(420px,1.25fr)_minmax(340px,1fr)]">
       <div class="flex min-h-0 flex-col border-r-[0.5px] border-border">
-        <div class="{columns} h-7 flex-none pr-[calc(--spacing(3)+var(--scrollbar-size))] border-b-[0.5px] border-border text-xs text-muted-foreground" aria-hidden="true">
-          <span>Method</span><span>Path</span><span class="text-right">Status</span><span class="text-right">Time</span><span class="text-right">Size</span><span class="text-right">At</span>
+        <div class="{columns} h-7 flex-none pr-[calc(--spacing(3)+var(--scrollbar-size))] border-b-[0.5px] border-border text-xs text-muted-foreground" style:grid-template-columns={template} aria-hidden="true">
+          {#each shown as c (c.id)}<span class:text-right={"end" in c}>{c.label}</span>{/each}
         </div>
         {#if loading && rows.length === 0}
           <StatePanel kind="loading" title="Loading requests…" />
@@ -191,7 +233,7 @@
         {:else if rows.length === 0}
           <StatePanel kind="empty" title={search ? "No matching requests" : "Waiting for requests"} message={search ? "Try a different filter." : tunnel?.state.status === "connected" ? `Requests to ${tunnel.state.public_url ?? "this tunnel"} will appear here as they happen.` : "Start the tunnel, then send it some traffic."} />
         {:else}
-          <RequestList bind:this={list} bind:rows {selected} cap={CAP} onselect={(id) => select(id)} />
+          <RequestList bind:this={list} bind:rows {selected} {template} {now} cap={CAP} onselect={(id) => select(id)} />
         {/if}
       </div>
       <div class="flex min-w-0 flex-col overflow-hidden">
