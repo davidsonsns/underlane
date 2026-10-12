@@ -326,6 +326,22 @@ component moves to utilities in one go. Tailwind only scans `src/` (`source(none
 `@source "../"`), so the HTML files carry no utility classes. Two preflight compat rules
 (placeholder colour, checkbox margin) sit at the bottom of base.css and go with it.
 
+**Phase 3: base.css is gone.** The `legacy` layer and `src/styles/base.css` were deleted, so
+app.css now declares `@layer theme, base, components, utilities`. What was still live in base.css
+either already had an app.css equivalent (html/body, `user-select`, the reduce-motion block;
+preflight covers `box-sizing` and the form-control `font: inherit`) or went with it: the global
+`:focus-visible` outline (per-component `kb-focus:` and field rings draw focus), the custom
+`::-webkit-scrollbar` rules (WKWebView draws native scrollbars that follow System Settings; with a
+mouse attached and "Show scroll bars: automatically" that is the 15px legacy scroller, 5px wider
+than the old 10px one), the `.btn/.icon-btn/.field/.muted/.faint/.mono` classes and the tooltip
+element (no users left), and both preflight compat rules (every field now sets its own placeholder
+colour, and the import list uses the shadcn Checkbox). Body line-height is app.css's 18px instead
+of 1.38 (17.94px). The only rule moved is the text cursor on `pre`/`code`. The `leading-legacy`
+token was dropped too, so StatePanel, RouteLine and Toolbar use their text style's own line
+height (the popover's compact route rows are 1px shorter). Also deleted: `src/lib/tooltip.ts`,
+`Icon.svelte`, `Toggle.svelte` and the dev-only ui-lab (`ui-lab.html`, `src/lab/`); the R-49
+virtua harnesses that drove the lab were one-off measurements and aren't kept.
+
 **Why the tokens moved first (Phase 0).** Any token left in base.css's `:root` would override
 Tailwind's and app.css's tokens from inside the `legacy` layer (`text-sm` came out 12px,
 `rounded-lg` 12px). And base.css's `html { font-size: 13px }` shrank every rem-based utility by
@@ -607,6 +623,14 @@ CSS ≤ 20 kB per page.
 | Dashboard | 148,255 B (entry 57,354 + shared 62,646 + toast/tooltip chunk 28,255, preloaded) | – | 14.0 + 3.0 kB |
 
 Before the migration (`72c52ce`): popover ≈ 27.5 kB, dashboard ≈ 47.3 kB JS.
+
+**Final bundle sizes after Phase 3 (base.css deleted; same method).** JS is unchanged within a
+few bytes; the shared CSS shrinks by 830 B.
+
+| Page | JS on open | Loaded later | CSS |
+|---|---|---|---|
+| Popover | 67,787 B (entry 5,151 + shared 62,636) | 28,255 B JS + 2,974 B CSS on the first toast or tooltip | 13,192 B shared |
+| Dashboard | 148,229 B (entry 57,338 + shared 62,636 + toast/tooltip chunk 28,255, preloaded) | – | 13,192 + 2,974 = 16,166 B |
 
 **Optional items (02 §4.1), end of Phases 0–2i.** Done: O3 (Tunnels list arrow keys), O6
 (`add:quick`/`add:token` links), O9 (inactive window, partly: see above), O10 (lazy toasts and

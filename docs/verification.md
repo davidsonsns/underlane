@@ -272,6 +272,43 @@ tunnels (`429`, error code 1015). The `web` tunnel in screenshots 05 and 10 show
 That is the crash backoff (1 s, 2 s, 4 s … 32 s) retrying until provisioning succeeded, which shows
 the restart-with-backoff behaviour working.
 
+## 9. UI migration (Tailwind v4 + shadcn-svelte)
+
+The UI moved from per-component scoped CSS to Tailwind v4 and shadcn-svelte (Luma, tuned to macOS),
+one screen at a time (decisions.md §17). Both sets were taken the same way, by
+`node scripts/ui-shots.mjs target/debug/bundle/macos/Burrow.app --label <name>` on the e2e debug
+build: two quick tunnels to local echo servers (one inspected), three requests, every view in each
+theme. Before is `72c52ce` (pre-migration), after is the end of Phase 3 (base.css deleted). The
+hostnames, ports and times differ between runs; the `system-*` shots follow the OS appearance
+(Dark for both sets).
+
+- Before: [`screenshots/ui-migration/baseline/`](screenshots/ui-migration/baseline/)
+- After: [`screenshots/ui-migration/final/`](screenshots/ui-migration/final/)
+
+| Before (light) | After (light) |
+| --- | --- |
+| ![](screenshots/ui-migration/baseline/light-tunnels.png) | ![](screenshots/ui-migration/final/light-tunnels.png) |
+| ![](screenshots/ui-migration/baseline/light-requests.png) | ![](screenshots/ui-migration/final/light-requests.png) |
+| ![](screenshots/ui-migration/baseline/light-logs.png) | ![](screenshots/ui-migration/final/light-logs.png) |
+| ![](screenshots/ui-migration/baseline/light-settings.png) | ![](screenshots/ui-migration/final/light-settings.png) |
+| ![](screenshots/ui-migration/baseline/light-add.png) | ![](screenshots/ui-migration/final/light-add.png) |
+| ![](screenshots/ui-migration/baseline/light-popover.png) | ![](screenshots/ui-migration/final/light-popover.png) |
+
+| Before (dark) | After (dark) |
+| --- | --- |
+| ![](screenshots/ui-migration/baseline/dark-tunnels.png) | ![](screenshots/ui-migration/final/dark-tunnels.png) |
+| ![](screenshots/ui-migration/baseline/dark-requests.png) | ![](screenshots/ui-migration/final/dark-requests.png) |
+| ![](screenshots/ui-migration/baseline/dark-logs.png) | ![](screenshots/ui-migration/final/dark-logs.png) |
+| ![](screenshots/ui-migration/baseline/dark-settings.png) | ![](screenshots/ui-migration/final/dark-settings.png) |
+| ![](screenshots/ui-migration/baseline/dark-add.png) | ![](screenshots/ui-migration/final/dark-add.png) |
+| ![](screenshots/ui-migration/baseline/dark-popover.png) | ![](screenshots/ui-migration/final/dark-popover.png) |
+
+Rows, top to bottom: Tunnels, Requests (a request selected), Logs, Settings, Add tunnel sheet, Menu bar popover.
+
+Checked on the final build: `npm run check` 0/0, `npm test`, `make test`, `make e2e` (`E2E PASSED`),
+and the keyboard paths (Tab through the sidebar and toolbar, the Add sheet's tabs and Escape, the
+popover's arrow keys) with a visible focus ring on each.
+
 ## Cleanup after verification
 
 - The `login-demo` tunnel was removed from the real data folder, so no public quick tunnel starts
