@@ -234,11 +234,13 @@
   {onclick}
 >
   {#if snapshot.full}
-    <div class="h-full overflow-y-auto">
+    <!-- overflow-y: scroll keeps the scrollbar gutter even when the rows fit, so the columns line
+         up with the header in Requests.svelte, which pads by the same --scrollbar-size. -->
+    <div class="h-full overflow-y-scroll">
       {#each rows as r, i (r.id)}{@render row(r, i)}{/each}
     </div>
   {:else}
-    <VList bind:this={list} data={rows} getKey={(r) => r.id} itemSize={ROW} {shift} keepMounted={keep} {onscroll}>
+    <VList bind:this={list} data={rows} getKey={(r) => r.id} itemSize={ROW} {shift} keepMounted={keep} {onscroll} style="overflow-y: scroll">
       {#snippet children(r, i)}{@render row(r, i)}{/snippet}
     </VList>
   {/if}
