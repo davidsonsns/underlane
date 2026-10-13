@@ -24,6 +24,15 @@ export interface TunnelState {
   inspecting: boolean;
   supervised: boolean;
   run: number;
+  config_revision: number;
+}
+
+export interface ConfigChange {
+  run: number;
+  config_revision: number;
+  source_path: string;
+  status: "unchanged" | "changed" | "unreadable" | "not_running";
+  message: string | null;
 }
 
 export interface Tunnel {

@@ -1,10 +1,11 @@
 <script lang="ts">
-  import { tick, type Snippet } from "svelte";
+  import { onMount, tick, untrack, type Snippet } from "svelte";
   import { mergeProps } from "bits-ui";
   import { slide } from "svelte/transition";
   import { revealItemInDir } from "@tauri-apps/plugin-opener";
   import Check from "@lucide/svelte/icons/check";
   import FolderOpen from "@lucide/svelte/icons/folder-open";
+  import FilePenLine from "@lucide/svelte/icons/file-pen-line";
   import List from "@lucide/svelte/icons/list";
   import Play from "@lucide/svelte/icons/play";
   import RotateCw from "@lucide/svelte/icons/rotate-cw";
@@ -15,7 +16,8 @@
   import { api, errorText } from "../lib/api";
   import { motion } from "../lib/theme";
   import { formatUptime, isOn, statusHint, statusLabel } from "../lib/format";
-  import type { Status, Tunnel, Validation } from "../lib/types";
+  import type { ConfigChange, Status, Tunnel, Validation } from "../lib/types";
+  import { configChecker } from "$lib/config-change";
   import { notify } from "$lib/toast";
   import { returnFocusTo } from "$lib/focus";
   import StatusDot from "$lib/components/app/StatusDot.svelte";
@@ -34,7 +36,10 @@
 
   let { tunnel, onremove }: { tunnel: Tunnel; onremove: (id: string) => Promise<void> } = $props();
   let busy = $state(false);
+  let restarting = $state(false);
   let error = $state<string | null>(null);
+  let configChange = $state<ConfigChange | null>(null);
+  let configError = $state<string | null>(null);
   let validation = $state<Validation | null>(null);
   let removeOpen = $state(false);
   let removeTrigger = $state<HTMLElement | null>(null);
@@ -52,6 +57,39 @@
 
   const s = $derived(tunnel.state);
   const on = $derived(isOn(tunnel));
+  const configTarget = $derived(tunnel.kind === "config" && tunnel.config_path && on && s.status !== "stopped" && s.config_revision > 0
+    ? { id: tunnel.id, source_path: tunnel.config_path, run: s.run, config_revision: s.config_revision }
+    : null);
+  const configKey = $derived(JSON.stringify(configTarget));
+  let mounted = false;
+  const configCheck = configChecker(
+    () => configTarget,
+    api.checkConfigChange,
+    (result) => { configChange = result; configError = null; },
+    (e) => { configError = `Couldn't check the config file: ${errorText(e)}`; },
+  );
+
+  $effect(() => {
+    configKey;
+    configChange = null;
+    configError = null;
+    configCheck.cancel();
+    untrack(() => { void configCheck.check(); });
+  });
+
+  onMount(() => {
+    mounted = true;
+    const check = () => { void configCheck.check(); };
+    const visible = () => { if (document.visibilityState === "visible") check(); };
+    window.addEventListener("focus", check);
+    document.addEventListener("visibilitychange", visible);
+    return () => {
+      mounted = false;
+      window.removeEventListener("focus", check);
+      document.removeEventListener("visibilitychange", visible);
+      configCheck.cancel();
+    };
+  });
   const kindText = { config: "Named tunnel from a config file", token: "Remotely managed tunnel (token)", quick: "Quick tunnel on trycloudflare.com" };
   // Status words use the AA text shades of the status colours (01 §3.3).
   const statusText: Record<Status, string> = {
@@ -96,6 +134,13 @@
     await run(async () => {
       validation = await api.validate(tunnel.id);
     });
+  }
+
+  async function restart() {
+    restarting = true;
+    await run(() => api.restart(tunnel.id));
+    restarting = false;
+    if (mounted) void configCheck.check();
   }
 
   // Rename (02 F7). Enter commits once, Escape never saves, and a blur commits only while still
@@ -223,7 +268,7 @@
   <div class="mt-2 flex flex-wrap gap-2">
     {#if on}
       <Button variant="outline" disabled={busy} onclick={() => run(() => api.stop(tunnel.id))}><Square class="size-2.5 fill-current" /> Stop</Button>
-      <Button variant="outline" disabled={busy} onclick={() => run(() => api.restart(tunnel.id))}><RotateCw class="size-3.5" /> {s.status === "crashed" ? "Try again now" : "Restart"}</Button>
+      <Button variant="outline" disabled={busy} onclick={restart}><RotateCw class="size-3.5" /> {restarting ? "Restarting…" : s.status === "crashed" ? "Try again now" : "Restart"}</Button>
     {:else}
       <Button disabled={busy || !store.overview?.cloudflared} onclick={() => run(() => api.start(tunnel.id))}>
         <Play class="size-2.5 fill-current" /> {s.status === "crashed" ? "Try again" : "Start"}
@@ -245,6 +290,19 @@
 {#if error}
   {#snippet errorBody()}<div class="whitespace-pre-wrap select-text">{error}</div>{/snippet}
   {@render notice("crashed", errorBody, "alert")}
+{/if}
+{#if configTarget && configChange?.status === "changed"}
+  {#snippet configChangedBody()}
+    <div class="flex flex-wrap items-center justify-between gap-2">
+      <span>Config changed on disk · Restart to apply</span>
+      <Button variant="outline" disabled={busy} onclick={restart}><RotateCw class="size-3.5" /> {restarting ? "Restarting…" : "Restart"}</Button>
+    </div>
+  {/snippet}
+  {@render notice("degraded", configChangedBody, "status")}
+{/if}
+{#if configTarget && (configError || configChange?.status === "unreadable")}
+  {#snippet configErrorBody()}<div class="whitespace-pre-wrap select-text">{configError ?? configChange?.message ?? "Couldn't read the config file. The running config is still loaded."}</div>{/snippet}
+  {@render notice("degraded", configErrorBody, "alert")}
 {/if}
 {#if validation}
   {#snippet validationBody()}
@@ -314,9 +372,9 @@
   <SettingsRow label="Type"><span class="text-muted-foreground">{kindText[tunnel.kind]}</span></SettingsRow>
   {#if tunnel.kind === "config" && tunnel.config_path}
     <SettingsRow label="Config file">
-      <!-- Truncated, so the native title reveals the whole path (02 §2 Tip exception). 55%: leaves
-           the label and the Show in Finder button their room, a one-off. -->
+      <!-- Truncated, so the native title reveals the whole path (02 §2 Tip exception). -->
       <span class="max-w-[55%] truncate font-mono text-callout text-muted-foreground select-text" title={tunnel.config_path}>{tunnel.config_path}</span>
+      <IconAction label="Open in Editor" onclick={() => api.openConfigInEditor(tunnel.id).catch((e) => notify.error(e, "Couldn't open the config file"))}><FilePenLine /></IconAction>
       <IconAction label="Show in Finder" onclick={() => revealItemInDir(tunnel.config_path!).catch((e) => notify.error(e, "Couldn't show the config file"))}><FolderOpen /></IconAction>
     </SettingsRow>
   {/if}
