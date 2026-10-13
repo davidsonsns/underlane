@@ -35,6 +35,13 @@ export interface ConfigChange {
   message: string | null;
 }
 
+export interface IngressMatch {
+  source_path: string;
+  rule_index: number;
+  rules: RouteMapping[];
+  raw: string;
+}
+
 export interface Tunnel {
   id: string;
   project_id: string;

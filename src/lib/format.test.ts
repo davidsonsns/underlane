@@ -11,10 +11,10 @@ describe("format", () => {
   it("summarises local service reachability", () => {
     expect(reachSummary(1, 1)).toBe("Local service running");
     expect(reachSummary(0, 1)).toBe("Local service not running");
-    expect(reachSummary(3, 3)).toBe("All 3 routes reachable");
-    expect(reachSummary(0, 2)).toBe("None of 2 routes reachable");
-    expect(reachSummary(2, 3)).toBe("2 of 3 routes reachable");
-    expect(reachSummary(1, 4, false)).toBe("Local service running for 1 of 4 routes");
+    expect(reachSummary(3, 3)).toBe("All 3 hostnames reachable");
+    expect(reachSummary(0, 2)).toBe("None of 2 hostnames reachable");
+    expect(reachSummary(2, 3)).toBe("2 of 3 hostnames reachable");
+    expect(reachSummary(1, 4, false)).toBe("Local service running for 1 of 4 hostnames");
     expect(reachSummary(1, 1, false)).toBe("Local service running");
   });
   it("formats sizes", () => {

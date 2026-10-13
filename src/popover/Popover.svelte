@@ -193,7 +193,7 @@
                 {:else if m}
                   <RouteLine hostname={t.kind === "quick" ? (t.state.public_url?.replace("https://", "") ?? null) : m.hostname} service={m.service} inspected={m.inspected} pulse={store.pulses[t.id] ?? 0} compact />
                 {:else if t.kind === "token"}
-                  <span class={detail}>Routes come from the Cloudflare dashboard</span>
+                  <span class={detail}>Hostnames come from the Cloudflare dashboard</span>
                 {:else if t.kind === "quick"}
                   <span class={cn(detail, "font-mono")}>{t.origin_url}</span>
                 {/if}

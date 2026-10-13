@@ -322,7 +322,7 @@
   <SettingsRow
     label="Inspect requests"
     help={tunnel.kind === "token"
-      ? "Not available for token tunnels: their routes live in the Cloudflare dashboard."
+      ? "Not available for token tunnels: their hostnames live in the Cloudflare dashboard."
       : `Routes traffic through Underlane's local proxy and stores request and response bodies (up to ${store.overview?.settings.max_body_kb ?? 1024} KB each). Bodies may contain secrets.`}
   >
     {#snippet control({ id, describedBy })}

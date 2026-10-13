@@ -73,10 +73,10 @@ export function serviceLabel(service: string): string {
  *  A stopped tunnel reaches nothing, so it only reports the local services. */
 export function reachSummary(up: number, total: number, live = true): string {
   if (total === 1) return up ? "Local service running" : "Local service not running";
-  if (!live) return `Local service running for ${up} of ${total} routes`;
-  if (up === total) return `All ${total} routes reachable`;
-  if (up === 0) return `None of ${total} routes reachable`;
-  return `${up} of ${total} routes reachable`;
+  if (!live) return `Local service running for ${up} of ${total} hostnames`;
+  if (up === total) return `All ${total} hostnames reachable`;
+  if (up === 0) return `None of ${total} hostnames reachable`;
+  return `${up} of ${total} hostnames reachable`;
 }
 
 /** Public URL a user most likely wants: the quick-tunnel URL or the first concrete hostname. */
@@ -196,7 +196,7 @@ export const statusLabel: Record<string, string> = {
 
 /** What each tunnel status means, for the status dot's tooltip. */
 export const statusHint: Record<string, string> = {
-  stopped: "Stopped. cloudflared isn't running, so no traffic reaches these routes.",
+  stopped: "Stopped. cloudflared isn't running, so no traffic reaches these hostnames.",
   starting: "Starting. cloudflared is connecting to Cloudflare.",
   connected: "Connected. Cloudflare is routing traffic through this tunnel.",
   degraded: "Degraded. Lost the connection to Cloudflare; cloudflared is reconnecting.",
