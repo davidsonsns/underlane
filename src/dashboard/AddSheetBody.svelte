@@ -10,6 +10,9 @@
   import { fade } from "svelte/transition";
   import { open as openPicker } from "@tauri-apps/plugin-dialog";
   import FileText from "@lucide/svelte/icons/file-text";
+  import CircleAlert from "@lucide/svelte/icons/circle-alert";
+  import CircleCheck from "@lucide/svelte/icons/circle-check";
+  import Info from "@lucide/svelte/icons/info";
   import Folder from "@lucide/svelte/icons/folder";
   import KeyRound from "@lucide/svelte/icons/key-round";
   import Zap from "@lucide/svelte/icons/zap";
@@ -18,6 +21,7 @@
   import type { Candidate, ImportReport } from "../lib/types";
   import StatePanel from "$lib/components/app/StatePanel.svelte";
   import * as Dialog from "$lib/components/ui/dialog/index.js";
+  import * as Alert from "$lib/components/ui/alert/index.js";
   import * as Tabs from "$lib/components/ui/tabs/index.js";
   import { Button } from "$lib/components/ui/button/index.js";
   import { Checkbox } from "$lib/components/ui/checkbox/index.js";
@@ -113,7 +117,12 @@
 
 <!-- Errors stay inline, next to the form (02 §1.4), above the footer of the tab that made them. -->
 {#snippet failure()}
-  {#if error}<p class="text-callout whitespace-pre-wrap text-bad-text select-text" role="alert">{error}</p>{/if}
+  {#if error}
+    <Alert.Root variant="destructive">
+      {#snippet icon()}<CircleAlert />{/snippet}
+      <Alert.Description class="whitespace-pre-wrap text-foreground">{error}</Alert.Description>
+    </Alert.Root>
+  {/if}
 {/snippet}
 
 <Dialog.Header>
@@ -160,11 +169,16 @@
         {/if}
       </div>
       {#if report}
-        <div class="text-callout leading-normal select-text" role="status" transition:fade={{ duration: motion(150) }}>
-          {#if report.added.length}<p>Imported {report.added.length} tunnel{report.added.length === 1 ? "" : "s"}.</p>{/if}
-          {#if report.existing.length}<p class="text-muted-foreground">{report.existing.length} already imported.</p>{/if}
-          {#each report.failed as [path, why] (path)}<p class="text-bad-text"><span class="font-mono">{path.split("/").pop()}</span>: {why}</p>{/each}
-          {#if report.added.length === 0 && report.failed.length === 0 && report.existing.length === 0}<p class="text-muted-foreground">No cloudflared configs found there.</p>{/if}
+        <div transition:fade={{ duration: motion(150) }}>
+          <Alert.Root variant={report.failed.length ? "destructive" : report.added.length ? "success" : "default"} role={report.failed.length ? "alert" : "status"}>
+            {#snippet icon()}{#if report?.failed.length}<CircleAlert />{:else if report?.added.length}<CircleCheck />{:else}<Info />{/if}{/snippet}
+            <Alert.Description class="text-foreground">
+              {#if report.added.length}<p>Imported {report.added.length} tunnel{report.added.length === 1 ? "" : "s"}.</p>{/if}
+              {#if report.existing.length}<p class="text-muted-foreground">{report.existing.length} already imported.</p>{/if}
+              {#each report.failed as [path, why] (path)}<p class="text-bad-text"><span class="font-mono">{path.split("/").pop()}</span>: {why}</p>{/each}
+              {#if report.added.length === 0 && report.failed.length === 0 && report.existing.length === 0}<p class="text-muted-foreground">No cloudflared configs found there.</p>{/if}
+            </Alert.Description>
+          </Alert.Root>
         </div>
       {/if}
       {@render failure()}

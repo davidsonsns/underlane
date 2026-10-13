@@ -4,6 +4,10 @@
   import { slide } from "svelte/transition";
   import { revealItemInDir } from "@tauri-apps/plugin-opener";
   import Check from "@lucide/svelte/icons/check";
+  import CircleCheck from "@lucide/svelte/icons/circle-check";
+  import CircleAlert from "@lucide/svelte/icons/circle-alert";
+  import Info from "@lucide/svelte/icons/info";
+  import TriangleAlert from "@lucide/svelte/icons/triangle-alert";
   import FolderOpen from "@lucide/svelte/icons/folder-open";
   import FilePenLine from "@lucide/svelte/icons/file-pen-line";
   import List from "@lucide/svelte/icons/list";
@@ -32,6 +36,7 @@
   import { Switch } from "$lib/components/ui/switch/index.js";
   import * as Select from "$lib/components/ui/select/index.js";
   import * as AlertDialog from "$lib/components/ui/alert-dialog/index.js";
+  import * as Alert from "$lib/components/ui/alert/index.js";
   import Routes from "./Routes.svelte";
 
   let { tunnel, onremove }: { tunnel: Tunnel; onremove: (id: string) => Promise<void> } = $props();
@@ -99,12 +104,12 @@
     crashed: "text-bad-text",
     stopped: "text-muted-foreground",
   };
-  const border: Record<Status, string> = {
-    connected: "border-s-ok",
-    starting: "border-s-starting",
-    degraded: "border-s-degraded",
-    crashed: "border-s-bad",
-    stopped: "border-s-off",
+  const noticeVariant: Record<Status, Alert.AlertVariant> = {
+    connected: "success",
+    starting: "default",
+    degraded: "warning",
+    crashed: "destructive",
+    stopped: "default",
   };
 
   async function run(fn: () => Promise<unknown>) {
@@ -211,15 +216,22 @@
   const backToRemove = returnFocusTo(() => removeTrigger);
 </script>
 
-<!-- Persistent state stays inline, not a toast (02 §1.4). One-offs: the 3px status edge and the
-     looser line height of today's notices. -->
-{#snippet notice(status: Status, body: Snippet, role?: "status" | "alert")}
+<!-- Persistent state stays inline, not a toast (02 §1.4). -->
+{#snippet notice(status: Status, body: Snippet, role: "status" | "alert" = "status")}
   <div
-    class="mb-3.5 rounded-lg border-[0.5px] border-s-[3px] border-border bg-card px-3 py-2.5 text-callout leading-[1.45] {border[status]}"
-    {role}
+    class="mb-3.5"
     transition:slide={{ duration: motion(180) }}
   >
-    {@render body()}
+    <Alert.Root variant={noticeVariant[status]} {role}>
+      {#snippet icon()}
+        {#if status === "connected"}<CircleCheck />
+        {:else if status === "crashed"}<CircleAlert />
+        {:else if status === "degraded"}<TriangleAlert />
+        {:else if status === "starting"}<RotateCw />
+        {:else}<Info />{/if}
+      {/snippet}
+      <Alert.Description class="text-foreground">{@render body()}</Alert.Description>
+    </Alert.Root>
   </div>
 {/snippet}
 
@@ -292,13 +304,14 @@
   {@render notice("crashed", errorBody, "alert")}
 {/if}
 {#if configTarget && configChange?.status === "changed"}
-  {#snippet configChangedBody()}
-    <div class="flex flex-wrap items-center justify-between gap-2">
-      <span>Config changed on disk · Restart to apply</span>
-      <Button variant="outline" disabled={busy} onclick={restart}><RotateCw class="size-3.5" /> {restarting ? "Restarting…" : "Restart"}</Button>
-    </div>
-  {/snippet}
-  {@render notice("degraded", configChangedBody, "status")}
+  <div class="mb-3.5" transition:slide={{ duration: motion(180) }}>
+    <Alert.Root variant="warning" role="status">
+      {#snippet icon()}<FilePenLine />{/snippet}
+      {#snippet action()}<Button variant="outline" disabled={busy} onclick={restart}>{restarting ? "Restarting…" : "Restart"}</Button>{/snippet}
+      <Alert.Title>Config changed on disk</Alert.Title>
+      <Alert.Description>Restart to apply your changes.</Alert.Description>
+    </Alert.Root>
+  </div>
 {/if}
 {#if configTarget && (configError || configChange?.status === "unreadable")}
   {#snippet configErrorBody()}<div class="whitespace-pre-wrap select-text">{configError ?? configChange?.message ?? "Couldn't read the config file. The running config is still loaded."}</div>{/snippet}

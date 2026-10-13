@@ -3,13 +3,14 @@
 	import { tv, type VariantProps } from "$lib/utils.js"; // underlane: tv without its own merge (01 §5)
 
 	export const alertVariants = tv({
-		// Inline banner: tinted fill, no border, 12px text.
-		base: "group/alert relative grid w-full gap-0.5 rounded-lg px-3 py-2 text-left text-callout has-data-[slot=alert-action]:pr-16 has-[>svg]:grid-cols-[auto_1fr] has-[>svg]:gap-x-1.5 *:[svg]:row-span-2 *:[svg]:translate-y-0.5 *:[svg]:text-current *:[svg:not([class*='size-'])]:size-3.5",
+		// Native inset: neutral surface, severity confined to the icon.
+		base: "group/alert relative flex w-full items-start gap-3 rounded-lg bg-card p-3.5 text-left text-callout text-foreground leading-normal",
 		variants: {
 			variant: {
-				default: "bg-fill text-foreground",
-				warning: "bg-starting/12 text-starting-text",
-				destructive: "bg-bad/10 text-bad-text",
+				default: "[&_[data-slot=alert-icon]]:text-muted-foreground",
+				warning: "[&_[data-slot=alert-icon]]:text-degraded-text",
+				destructive: "[&_[data-slot=alert-icon]]:text-bad-text",
+				success: "[&_[data-slot=alert-icon]]:text-ok-text",
 			},
 		},
 		defaultVariants: {
@@ -23,15 +24,20 @@
 <script lang="ts">
 	import { cn, type WithElementRef } from "$lib/utils.js";
 	import type { HTMLAttributes } from "svelte/elements";
+	import type { Snippet } from "svelte";
 
 	let {
 		ref = $bindable(null),
 		class: className,
 		variant = "default",
 		children,
+		icon,
+		action,
 		...restProps
 	}: WithElementRef<HTMLAttributes<HTMLDivElement>> & {
 		variant?: AlertVariant;
+		icon?: Snippet;
+		action?: Snippet;
 	} = $props();
 </script>
 
@@ -42,5 +48,13 @@
 	class={cn(alertVariants({ variant }), className)}
 	{...restProps}
 >
-	{@render children?.()}
+	{#if icon}
+		<span data-slot="alert-icon" aria-hidden="true" class="grid size-6.5 shrink-0 place-items-center rounded-md bg-control [&_svg]:size-4">
+			{@render icon()}
+		</span>
+	{/if}
+	<div class="flex min-w-0 flex-1 flex-wrap items-center gap-x-3 gap-y-2">
+		<div class="min-w-[min(100%,180px)] flex-1 space-y-0.5 [overflow-wrap:anywhere]">{@render children?.()}</div>
+		{#if action}<div data-slot="alert-action" class="shrink-0">{@render action()}</div>{/if}
+	</div>
 </div>

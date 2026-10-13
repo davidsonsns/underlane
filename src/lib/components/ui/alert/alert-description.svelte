@@ -15,7 +15,7 @@
 	bind:this={ref}
 	data-slot="alert-description"
 	class={cn(
-		"text-callout text-current group-has-[>svg]/alert:col-start-2 select-text [&_p:not(:last-child)]:mb-2 [&_a]:underline [&_a]:underline-offset-2",
+		"text-callout text-muted-foreground select-text [&_p:not(:last-child)]:mb-2 [&_a]:underline [&_a]:underline-offset-2",
 		className
 	)}
 	{...restProps}

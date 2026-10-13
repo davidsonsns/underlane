@@ -77,7 +77,8 @@ try {
   writeFileSync(config, b);
   check((await comparison()).status === "changed", "external edit detected without restart");
   check((await state()).pid === started.pid && readFileSync(derived, "utf8") === runningA, "existing child and derived config stay on A");
-  check((await text()).includes("Config changed on disk · Restart to apply"), "visible badge explains restart");
+  const changed = await text();
+  check(changed.includes("Config changed on disk") && changed.includes("Restart to apply your changes."), "visible badge explains restart");
   writeFileSync(config, a);
   check((await comparison()).status === "unchanged", "restored bytes clear the mismatch");
   check(!(await text()).includes("Config changed on disk"), "restored bytes clear the visible badge");

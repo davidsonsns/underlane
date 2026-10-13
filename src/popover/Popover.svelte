@@ -148,8 +148,9 @@
 
   {#if store.overview && !store.overview.cloudflared}
     <Alert.Root variant="warning" class="mx-2.5 mb-1.5 w-auto">
-      <TriangleAlert />
-      <Alert.Description>cloudflared isn't installed. Run <code class="font-mono text-xs">brew install cloudflared</code>, then open Settings.</Alert.Description>
+      {#snippet icon()}<TriangleAlert />{/snippet}
+      <Alert.Title>cloudflared isn't installed</Alert.Title>
+      <Alert.Description>Run <code class="font-mono text-xs">brew install cloudflared</code>, then open Settings.</Alert.Description>
     </Alert.Root>
   {/if}
 

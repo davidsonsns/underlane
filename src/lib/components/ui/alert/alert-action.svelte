@@ -14,7 +14,7 @@
 <div
 	bind:this={ref}
 	data-slot="alert-action"
-	class={cn("absolute top-1.5 right-2", className)}
+	class={cn("mt-2 flex flex-wrap items-center gap-2", className)}
 	{...restProps}
 >
 	{@render children?.()}
