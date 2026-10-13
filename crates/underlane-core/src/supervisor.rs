@@ -1,7 +1,7 @@
 //! Runs cloudflared processes as children, watches their health, restarts them with backoff
 //! and owns the inspecting proxies that front them.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -18,7 +18,7 @@ use tokio::process::{Child, ChildStdin, Command};
 use tokio::sync::{mpsc, watch};
 use tokio::task::JoinHandle;
 
-use crate::cloudflared::{self, Validation};
+use crate::cloudflared::{self, FailureExplanation, Validation};
 use crate::config::{ConfigFingerprint, TunnelConfig};
 use crate::derived::{self, Upstream};
 use crate::model::{LogLine, Tunnel, TunnelKind};
@@ -62,6 +62,7 @@ pub struct TunnelState {
     pub detail: Option<String>,
     /// Plain-language validation hint, when the config failed validation.
     pub hint: Option<String>,
+    pub failure: Option<FailureExplanation>,
     /// Public URL for quick tunnels.
     pub public_url: Option<String>,
     /// hostname -> service, from the config (or the metrics `/config` endpoint for token tunnels).
@@ -144,6 +145,7 @@ impl TunnelState {
             status: Status::Stopped,
             detail: None,
             hint: None,
+            failure: None,
             public_url: None,
             mappings: Vec::new(),
             pid: None,
@@ -415,12 +417,31 @@ struct Prepared {
 
 /// Won't get better by retrying (bad config, missing binary, already running elsewhere...).
 struct Fatal {
-    detail: String,
-    hint: Option<String>,
+    failure: FailureExplanation,
 }
 
 fn fatal(detail: impl Into<String>) -> Fatal {
-    Fatal { detail: detail.into(), hint: None }
+    let raw = detail.into();
+    Fatal { failure: explain_diagnostic(&raw) }
+}
+
+fn observed_failure(cause: &str, action: &str, raw: &str) -> Fatal {
+    Fatal { failure: FailureExplanation::new(cause, Some(action), raw) }
+}
+
+fn explain_diagnostic(diagnostics: &str) -> FailureExplanation {
+    let error = crate::cli::CfError::classify(Some(1), "", diagnostics).expect_err("failure diagnostic");
+    FailureExplanation::from_error(&error)
+}
+
+fn explain_exit(code: Option<i32>, diagnostics: &str) -> FailureExplanation {
+    let mut failure = match crate::cli::CfError::classify(code, "", diagnostics) {
+        Err(error) => FailureExplanation::from_error(&error),
+        Ok(_) => FailureExplanation::new("cloudflared stopped unexpectedly.", Some("Review the diagnostic and logs, then try again."), diagnostics),
+    };
+    let exit_status = code.map(|code| code.to_string()).unwrap_or_else(|| "not reported".into());
+    failure.raw = cloudflared::safe_diagnostic(&format!("cloudflared exit status: {exit_status}\n{}", failure.raw));
+    failure
 }
 
 /// Ensure a running proxy exists for each upstream, reusing ports across restarts.
@@ -482,8 +503,15 @@ async fn prepare(
 
     match t.kind {
         TunnelKind::Config => {
-            let path = PathBuf::from(t.config_path.as_deref().ok_or_else(|| fatal("No config file is set for this tunnel."))?);
-            let config = TunnelConfig::load(&path).map_err(|e| fatal(crate::secret::redact_text(&e.to_string())))?;
+            let path = PathBuf::from(t.config_path.as_deref().ok_or_else(|| observed_failure("No config file is set for this tunnel.", "Select a config file in the tunnel settings, then restart.", "No config file is set for this tunnel."))?);
+            let config = TunnelConfig::load(&path).map_err(|e| {
+                let action = match &e {
+                    crate::config::ConfigError::Io { .. } => "Check that the imported config file exists and is readable, then restart.",
+                    crate::config::ConfigError::Yaml { .. } => "Check YAML indentation and syntax in the source file, then restart.",
+                    crate::config::ConfigError::Invalid(_) => "Fix the source config using the diagnostic below, then restart.",
+                };
+                observed_failure("The config could not be read or parsed.", action, &e.to_string())
+            })?;
 
             let home_cf = crate::config::home_dir().join(".cloudflared");
             let identity = cloudflared::TunnelIdentity {
@@ -493,25 +521,23 @@ async fn prepare(
                     && matches!(path.file_name().and_then(|f| f.to_str()), Some("config.yml" | "config.yaml")),
             };
             if let Some(ext) = cloudflared::find_external(&identity, &cfg.marker()).first() {
-                return Err(Fatal {
-                    detail: format!("This tunnel is already running outside Underlane (pid {}).", ext.pid),
-                    hint: Some(format!(
-                        "A second connector would split traffic between them. Stop the other process first, then start it here.\n{}",
-                        ext.command
-                    )),
-                });
+                return Err(observed_failure(
+                    "This tunnel is already running outside Underlane.",
+                    "Stop the other connector first, then start the tunnel here.",
+                    &format!("This tunnel is already running outside Underlane (pid {}).\n{}", ext.pid, ext.command),
+                ));
             }
 
             if config.ingress.is_empty() {
                 return Err(fatal("The config has no ingress rules and no `url:`, so there is nothing to route."));
             }
             if !config.is_single_origin() {
-                let Validation { ok, raw, hint } = cloudflared::validate(bin, &path).await;
+                let Validation { ok, raw, failure, .. } = cloudflared::validate(bin, &path).await;
                 if !ok {
-                    return Err(Fatal { detail: format!("Config is invalid: {raw}"), hint });
+                    return Err(Fatal { failure: failure.unwrap_or_else(|| explain_exit(Some(1), &raw)) });
                 }
             }
-            derived::preflight_credentials(&config).map_err(fatal)?;
+            derived::preflight_credentials(&config).map_err(|raw| observed_failure("The tunnel credentials are missing or do not match the config.", "Check credentials-file and the tunnel ID in the source config, then restart.", &raw))?;
 
             let mut mappings: Vec<RouteMapping> = config
                 .ingress
@@ -577,9 +603,9 @@ async fn prepare(
             })
         }
         TunnelKind::Quick => {
-            let origin = normalize_origin(t.origin_url.as_deref().ok_or_else(|| fatal("No local URL is set for this quick tunnel."))?);
+            let origin = normalize_origin(t.origin_url.as_deref().ok_or_else(|| observed_failure("No origin URL is set for this quick tunnel.", "Set the origin URL in the tunnel settings, then restart.", "No local URL is set for this quick tunnel."))?);
             if derived::split_service(&origin).is_none() {
-                return Err(fatal(format!("`{origin}` isn't an http:// or https:// URL.")));
+                return Err(observed_failure("The origin URL is invalid.", "Use a complete HTTP or HTTPS origin URL, then restart.", &format!("`{origin}` isn't an http:// or https:// URL.")));
             }
             let neutral = cfg.neutral_config().map_err(|e| fatal(e.to_string()))?;
             let mut url = origin.clone();
@@ -611,7 +637,7 @@ async fn prepare(
                 .token
                 .as_ref()
                 .filter(|t| !t.expose().trim().is_empty())
-                .ok_or_else(|| fatal("No token is stored for this tunnel. Paste it again in the tunnel's settings."))?;
+                .ok_or_else(|| observed_failure("No token is stored for this tunnel.", "Paste the token again in the tunnel settings, then restart.", "No token is stored for this tunnel."))?;
             let neutral = cfg.neutral_config().map_err(|e| fatal(e.to_string()))?;
             let mut args = base_args(t, &neutral, cfg.grace_period);
             args.push("run".into());
@@ -718,7 +744,7 @@ fn mappings_from_remote_config(v: &serde_json::Value) -> Vec<RouteMapping> {
 enum RunOutcome {
     Stopped,
     Restart(Box<RunSpec>),
-    Exited { code: Option<i32>, ran_for: Duration, last_error: Option<String> },
+    Exited { code: Option<i32>, ran_for: Duration, diagnostics: String },
     FailOpen,
 }
 
@@ -732,13 +758,18 @@ struct LineCtx<'a> {
 struct LineInfo {
     level: String,
     message: String,
+    raw: String,
 }
 
 impl LineCtx<'_> {
     fn handle(&self, line: &str) -> Option<LineInfo> {
         let redactor = self.cfg.capture.read().unwrap().redactor();
         let p = cloudflared::parse_log_line_with(line, &redactor.headers, Some(&redactor.query))?;
-        let info = LineInfo { level: p.level.clone(), message: p.message.clone() };
+        let mut raw = serde_json::from_str::<serde_json::Value>(&p.fields).unwrap_or_else(|_| serde_json::json!({}));
+        raw["level"] = p.level.clone().into();
+        raw["message"] = p.message.clone().into();
+        let safe_raw = if matches!(serde_json::from_str::<serde_json::Value>(line), Ok(serde_json::Value::Object(_))) { raw.to_string() } else { p.message.clone() };
+        let info = LineInfo { level: p.level.clone(), message: p.message.clone(), raw: safe_raw };
         (self.sink)(Event::Log(LogLine {
             id: 0,
             tunnel_id: self.id.to_string(),
@@ -801,6 +832,7 @@ async fn run(mut spec: RunSpec, cfg: SupervisorConfig, sink: EventSink, mut rx: 
         state.status = Status::Starting;
         state.detail = None;
         state.hint = None;
+        state.failure = None;
         state.public_url = None;
         state.connections = 0;
         state.pid = None;
@@ -811,6 +843,9 @@ async fn run(mut spec: RunSpec, cfg: SupervisorConfig, sink: EventSink, mut rx: 
         let Some(bin) = bin else {
             state.status = Status::Crashed;
             state.detail = Some("cloudflared wasn't found. Install it with `brew install cloudflared` or set its path in Settings.".into());
+            state.failure = Some(FailureExplanation::new("cloudflared could not be found.", Some("Install cloudflared or set its executable path in Settings, then restart."), state.detail.as_deref().unwrap()));
+            state.detail = state.failure.as_ref().map(|f| f.cause.clone());
+            state.hint = state.failure.as_ref().and_then(|f| f.action.clone());
             emit_state(&state);
             match rx.recv().await {
                 Some(Cmd::Restart(s)) => {
@@ -835,10 +870,11 @@ async fn run(mut spec: RunSpec, cfg: SupervisorConfig, sink: EventSink, mut rx: 
         };
         let prepared = match prepared {
             Ok(p) => p,
-            Err(Fatal { detail, hint }) => {
+            Err(Fatal { failure }) => {
                 state.status = Status::Crashed;
-                state.detail = Some(detail);
-                state.hint = hint;
+                state.detail = Some(failure.cause.clone());
+                state.hint = failure.action.clone();
+                state.failure = Some(failure);
                 emit_state(&state);
                 // Wait for the user to fix things and restart, or stop.
                 match rx.recv().await {
@@ -855,7 +891,10 @@ async fn run(mut spec: RunSpec, cfg: SupervisorConfig, sink: EventSink, mut rx: 
             Ok(c) => c,
             Err(e) => {
                 state.status = Status::Crashed;
-                state.detail = Some(format!("Could not start cloudflared: {e}"));
+                let failure = FailureExplanation::new("cloudflared could not start.", Some("Check the executable path and file permissions in Settings, then restart."), &format!("Could not start cloudflared: {e}"));
+                state.detail = Some(failure.cause.clone());
+                state.hint = failure.action.clone();
+                state.failure = Some(failure);
                 emit_state(&state);
                 match rx.recv().await {
                     Some(Cmd::Restart(s)) => {
@@ -898,7 +937,7 @@ async fn run(mut spec: RunSpec, cfg: SupervisorConfig, sink: EventSink, mut rx: 
                 let mut lines = BufReader::new(reader).lines();
                 while let Ok(Some(l)) = lines.next_line().await {
                     let raw = Secret::new(l);
-                    let mut safe = crate::secret::redact_text(raw.expose());
+                    let mut safe = cloudflared::safe_diagnostic(raw.expose());
                     for secret in &secrets {
                         if !secret.expose().is_empty() { safe = safe.replace(secret.expose().as_str(), "[redacted]"); }
                     }
@@ -915,6 +954,7 @@ async fn run(mut spec: RunSpec, cfg: SupervisorConfig, sink: EventSink, mut rx: 
         let mut connected_once = false;
         let mut misses = 0u32;
         let mut last_error: Option<String> = None;
+        let mut diagnostics: VecDeque<String> = VecDeque::new();
         let mut fetched_remote_config = false;
         let mut lines_open = true;
 
@@ -924,8 +964,12 @@ async fn run(mut spec: RunSpec, cfg: SupervisorConfig, sink: EventSink, mut rx: 
                     match line {
                         Some(line) => {
                             if let Some(info) = lines_ctx.handle(&line) {
+                                if diagnostics.len() == 32 { diagnostics.pop_front(); }
+                                diagnostics.push_back(info.raw.clone());
                                 if matches!(info.level.as_str(), "error" | "fatal") {
-                                    last_error = Some(info.message.clone());
+                                    last_error = Some(info.raw.clone());
+                                    state.failure = Some(explain_diagnostic(&info.raw));
+                                    emit_state(&state);
                                 }
                                 if state.metrics_addr.is_none() {
                                     if let Some(addr) = cloudflared::metrics_addr_from_message(&info.message) {
@@ -959,12 +1003,22 @@ async fn run(mut spec: RunSpec, cfg: SupervisorConfig, sink: EventSink, mut rx: 
                         }
                         continue;
                     };
-                    let before = (state.status, state.connections, state.public_url.clone(), state.mappings.clone(), state.detail.clone());
+                    let before = (state.status, state.connections, state.public_url.clone(), state.mappings.clone(), state.detail.clone(), state.failure.clone());
                     match get_json(&http, &format!("http://{metrics}/ready")).await {
                         Some((200, v)) => {
                             connected_once = true;
                             misses = 0;
                             state.status = Status::Connected;
+                            // Edge readiness cannot prove that a previously failing origin recovered.
+                            let origin_failure = last_error.as_ref().is_some_and(|raw| {
+                                crate::cli::CfError::classify(Some(1), "", raw).err().is_some_and(|e| e.kind == crate::cli::ErrorKind::OriginConnection)
+                            });
+                            if !origin_failure {
+                                state.failure = None;
+                                state.hint = None;
+                                last_error = None;
+                                diagnostics.clear();
+                            }
                             state.connections = v.get("readyConnections").and_then(|c| c.as_u64()).unwrap_or(1) as u32;
                             if state.detail.as_deref().map(|d| d.starts_with("Lost connection") || d.starts_with("Still connecting")).unwrap_or(false) {
                                 state.detail = prepared.warning.clone();
@@ -996,22 +1050,17 @@ async fn run(mut spec: RunSpec, cfg: SupervisorConfig, sink: EventSink, mut rx: 
                             if misses >= 2 {
                                 state.status = Status::Degraded;
                                 state.connections = 0;
-                                state.detail = Some(format!(
-                                    "Lost connection to the Cloudflare edge; cloudflared is reconnecting.{}",
-                                    last_error.as_ref().map(|e| format!(" Last error: {e}")).unwrap_or_default()
-                                ));
+                                state.detail = Some("Lost connection to the Cloudflare edge; cloudflared is reconnecting.".into());
+                                state.failure = last_error.as_ref().map(|raw| explain_diagnostic(raw));
                             }
                         }
                         _ => {
                             if started.elapsed() > Duration::from_secs(20) {
-                                state.detail = Some(match &last_error {
-                                    Some(e) => format!("Still connecting… Last error: {e}"),
-                                    None => "Still connecting…".into(),
-                                });
+                                state.detail = Some("Still connecting…".into());
                             }
                         }
                     }
-                    if before != (state.status, state.connections, state.public_url.clone(), state.mappings.clone(), state.detail.clone()) {
+                    if before != (state.status, state.connections, state.public_url.clone(), state.mappings.clone(), state.detail.clone(), state.failure.clone()) {
                         emit_state(&state);
                     }
                 }
@@ -1020,11 +1069,17 @@ async fn run(mut spec: RunSpec, cfg: SupervisorConfig, sink: EventSink, mut rx: 
                     while let Ok(Some(line)) = tokio::time::timeout(Duration::from_millis(200), line_rx.recv()).await {
                         if let Some(info) = lines_ctx.handle(&line) {
                             if matches!(info.level.as_str(), "error" | "fatal") {
-                                last_error = Some(info.message);
+                                last_error = Some(info.raw.clone());
                             }
+                            if diagnostics.len() == 32 { diagnostics.pop_front(); }
+                            diagnostics.push_back(info.raw);
                         }
                     }
-                    break RunOutcome::Exited { code: status.ok().and_then(|s| s.code()), ran_for: started.elapsed(), last_error: last_error.clone() };
+                    // Keep the observed error even if a later burst of info logs filled the tail.
+                    if let Some(error) = last_error.filter(|error| !diagnostics.contains(error)) {
+                        diagnostics.push_front(error);
+                    }
+                    break RunOutcome::Exited { code: status.ok().and_then(|s| s.code()), ran_for: started.elapsed(), diagnostics: diagnostics.into_iter().collect::<Vec<_>>().join("\n") };
                 }
                 cmd = rx.recv() => {
                     let grace = cfg.grace_period + Duration::from_secs(1);
@@ -1063,19 +1118,17 @@ async fn run(mut spec: RunSpec, cfg: SupervisorConfig, sink: EventSink, mut rx: 
                 state.restarts += 1;
                 continue 'outer;
             }
-            RunOutcome::Exited { code, ran_for, last_error } => {
+            RunOutcome::Exited { code, ran_for, diagnostics } => {
                 if ran_for > Duration::from_secs(120) {
                     failures = 0;
                 }
                 failures += 1;
                 state.status = Status::Crashed;
                 state.connections = 0;
-                let why = last_error.unwrap_or_else(|| match code {
-                    Some(c) => format!("cloudflared exited with code {c}"),
-                    None => "cloudflared was killed".into(),
-                });
+                state.failure = Some(explain_exit(code, &diagnostics));
+                state.hint = state.failure.as_ref().and_then(|f| f.action.clone());
                 if failures >= cfg.max_failures {
-                    state.detail = Some(format!("Gave up after {failures} attempts. {why}"));
+                    state.detail = Some(format!("Gave up after {failures} attempts."));
                     emit_state(&state);
                     match rx.recv().await {
                         Some(Cmd::Restart(s)) => {
@@ -1088,7 +1141,7 @@ async fn run(mut spec: RunSpec, cfg: SupervisorConfig, sink: EventSink, mut rx: 
                 }
                 let delay = backoff(cfg.backoff_base, cfg.backoff_max, failures);
                 state.detail = Some(format!(
-                    "{why}. Restarting in {}s (attempt {}/{}).",
+                    "Restarting in {}s (attempt {}/{}).",
                     delay.as_secs().max(1),
                     failures,
                     cfg.max_failures

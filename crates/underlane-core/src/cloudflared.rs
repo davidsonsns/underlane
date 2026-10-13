@@ -114,6 +114,115 @@ pub struct Validation {
     pub raw: String,
     /// Plain-language explanation and fix, when we recognise the message.
     pub hint: Option<String>,
+    pub failure: Option<FailureExplanation>,
+}
+
+/// Safe, ephemeral explanation of an observed failure; never an account or DNS assertion.
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct FailureExplanation {
+    pub cause: String,
+    pub action: Option<String>,
+    pub raw: String,
+}
+
+impl FailureExplanation {
+    pub fn new(cause: &str, action: Option<&str>, raw: &str) -> Self {
+        Self { cause: safe_diagnostic(cause), action: action.map(safe_diagnostic), raw: safe_diagnostic(raw) }
+    }
+
+    pub fn from_error(error: &cli::CfError) -> Self {
+        use cli::ErrorKind::*;
+        let cause = match error.kind {
+            BinaryMissing => "cloudflared could not be found.",
+            Io => "cloudflared could not start or read its output.",
+            Timeout => "cloudflared did not finish before the timeout.",
+            Cancelled => "The cloudflared command was cancelled.",
+            Usage => "cloudflared rejected a command option.",
+            Config => "The config could not be read or validated.",
+            Credentials => "The tunnel credentials are missing or invalid.",
+            NotLoggedIn => "cloudflared could not find the account certificate.",
+            AlreadyLoggedIn => "cloudflared refused to overwrite an existing certificate.",
+            Auth => "cloudflared reported rejected credentials.",
+            TunnelNotFound => "cloudflared could not find the requested tunnel.",
+            NameExists => "cloudflared reported an existing tunnel name.",
+            ActiveConnections => "cloudflared reported active connectors.",
+            DnsRecordExists => "cloudflared reported an existing DNS record.",
+            RateLimited => "cloudflared reported rate limiting.",
+            MetricsBind => "The metrics port is already in use.",
+            IncompatibleOrigin => "The config combines incompatible origin options.",
+            EdgeConnection => "cloudflared could not connect to the Cloudflare edge.",
+            OriginConnection => "cloudflared reported an origin connection failure.",
+            InvalidJson => "cloudflared returned an unexpected response.",
+            Unknown => "cloudflared reported an unrecognized failure.",
+        };
+        let action = error.hint.as_deref().or(match error.kind {
+            BinaryMissing => Some("Install cloudflared or set its executable path in Settings, then restart."),
+            Io => Some("Check the executable path, permissions and diagnostic below, then restart."),
+            Timeout => Some("Check the diagnostic below and retry when cloudflared is responding."),
+            InvalidJson => Some("Check the installed cloudflared version and the diagnostic below."),
+            Unknown => Some("Review the diagnostic and logs, then try again."),
+            _ => None,
+        });
+        Self::new(cause, action, &error.message)
+    }
+}
+
+fn redact_diagnostic_urls(text: &str, query: &HashSet<String>) -> String {
+        let mut safe = text.to_string();
+        let mut offset = 0;
+        while let Some(pos) = safe[offset..].find("://") {
+            let start = offset + pos + 3;
+            let end = safe[start..].find(|c: char| matches!(c, '/' | '?' | '#' | '\"' | '\'' | '\\') || c.is_whitespace()).map(|p| start + p).unwrap_or(safe.len());
+            if let Some(at) = safe[start..end].rfind('@') {
+                safe.replace_range(start..start + at, "[redacted]");
+                offset = start + "[redacted]@".len();
+            } else { offset = end; }
+        }
+        safe.split_inclusive(char::is_whitespace).map(|part| {
+            let token = part.trim_end_matches(char::is_whitespace);
+            format!("{}{}", crate::proxy::capture::redact_query_in_text(token, query), &part[token.len()..])
+        }).collect()
+    }
+/// Redact URLs and credentials in diagnostic text as well as the existing argv/JSON secrets.
+pub fn safe_diagnostic(text: &str) -> String {
+    let safe = redact_text(text);
+    let query = crate::proxy::capture::CaptureOptions::default().query_redaction_set();
+    fn value(v: &mut serde_json::Value, query: &HashSet<String>) {
+        match v {
+            serde_json::Value::String(s) => *s = redact_diagnostic_urls(s, query),
+            serde_json::Value::Object(o) => o.values_mut().for_each(|v| value(v, query)),
+            serde_json::Value::Array(a) => a.iter_mut().for_each(|v| value(v, query)),
+            _ => {}
+        }
+    }
+    if let Ok(mut json) = serde_json::from_str::<serde_json::Value>(&safe) {
+        value(&mut json, &query);
+        json.to_string()
+    } else { redact_diagnostic_urls(&safe, &query) }
+}
+
+/// Only diagnostics participate in classification: payload names, IDs and paths do not.
+pub(crate) fn diagnostic_text(text: &str) -> String {
+    if let Ok(json) = serde_json::from_str::<serde_json::Value>(text) {
+        return match json {
+            serde_json::Value::Object(map) if map.contains_key("level") => {
+                let level = map.get("level").and_then(|v| v.as_str()).map(normalize_level).unwrap_or_default();
+                if !matches!(level.as_str(), "error" | "fatal") { return String::new(); }
+                ["message", "error"].into_iter().filter_map(|key| map.get(key).and_then(|v| v.as_str())).collect::<Vec<_>>().join("\n")
+            }
+            _ => String::new(),
+        };
+    }
+    text.lines().filter_map(|line| {
+        let line = line.trim();
+        if line.to_ascii_lowercase().starts_with("warning:") || line.to_ascii_lowercase().starts_with("warn:") { return None; }
+        if line.starts_with("Validating rules from ") || line.starts_with("Using rules from ") { return None; }
+        if serde_json::from_str::<serde_json::Value>(line).is_ok() { return Some(diagnostic_text(line)); }
+        // Incomplete JSON is useful raw evidence, but its payload values are not anchors.
+        if line.starts_with('{') || line.starts_with('[') { return None; }
+        if [" INF ", " WRN ", " DBG "].iter().any(|tag| line.contains(tag)) { return None; }
+        Some(line.to_string())
+    }).collect::<Vec<_>>().join("\n")
 }
 
 /// Run `cloudflared tunnel --config <file> ingress validate` from the config's directory
@@ -127,14 +236,15 @@ pub async fn validate(bin: &Path, config: &Path) -> Validation {
         }
         Err(e) => {
             let mut validation = interpret_validation(false, &e.message);
-            validation.hint = validation.hint.or(e.hint);
+            validation.hint = validation.hint.or(e.hint.clone());
+            validation.failure = Some(FailureExplanation::from_error(&e));
             validation
         }
     }
 }
 
 pub fn interpret_validation(success: bool, output: &str) -> Validation {
-    let safe = redact_text(output);
+    let safe = safe_diagnostic(output);
     let raw = safe
         .lines()
         .map(str::trim)
@@ -143,14 +253,19 @@ pub fn interpret_validation(success: bool, output: &str) -> Validation {
         .join("\n");
     let raw = raw.strip_prefix("Validation failed: ").unwrap_or(&raw).to_string();
     if success && cli::CfError::classify(Some(0), &raw, "").is_ok() {
-        return Validation { ok: true, raw, hint: None };
+        return Validation { ok: true, raw, hint: None, failure: None };
     }
     let hint = friendly_hint(&raw).or_else(|| cli::CfError::classify(Some(0), &raw, "").err().and_then(|e| e.hint));
-    Validation { ok: false, hint, raw }
+    let mut error = cli::CfError::classify(Some(1), output, "").expect_err("failed validation");
+    error.hint = hint.clone();
+    Validation { ok: false, failure: Some(FailureExplanation::from_error(&error)), hint, raw }
 }
 
 /// Map known cloudflared validation errors to plain language.
 pub fn friendly_hint(msg: &str) -> Option<String> {
+    let safe = safe_diagnostic(msg);
+    let diagnostic = diagnostic_text(&safe);
+    let msg = diagnostic.as_str();
     let m = msg.to_ascii_lowercase();
     let hint = if m.contains("last ingress rule must match all urls") {
         "The last rule has to catch everything that didn't match earlier rules. Add a final rule without a hostname, for example `- service: http_status:404`.".to_string()
@@ -163,7 +278,7 @@ pub fn friendly_hint(msg: &str) -> Option<String> {
         "The file has no `ingress:` rules. Add at least one rule that ends with a catch-all such as `- service: http_status:404`.".to_string()
     } else if m.contains("hostname") && m.contains("wildcard") {
         "Wildcards are only allowed as the left-most label, for example `*.example.com`.".to_string()
-    } else if m.contains("yaml") || m.contains("unmarshal") {
+    } else if m.contains("not valid yaml") || m.contains("yaml:") || m.contains("unmarshal") {
         "The file isn't valid YAML. Check indentation and that each rule starts with `- `.".to_string()
     } else if m.contains("no such file") || m.contains("cannot find") {
         "The config file couldn't be read. It may have been moved or deleted.".to_string()
@@ -196,7 +311,7 @@ fn redact_query_in_json(v: &mut serde_json::Value, q: &HashSet<String>) {
     match v {
         serde_json::Value::String(s) => {
             if s.contains('?') {
-                *s = crate::proxy::capture::redact_query_in_text(s, q);
+                *s = redact_diagnostic_urls(s, q);
             }
         }
         serde_json::Value::Array(a) => a.iter_mut().for_each(|x| redact_query_in_json(x, q)),
@@ -207,7 +322,7 @@ fn redact_query_in_json(v: &mut serde_json::Value, q: &HashSet<String>) {
 
 /// Like [`parse_log_line`], also redacting query parameters in the message and all fields.
 pub fn parse_log_line_with(line: &str, redact: &HashSet<String>, query_redact: Option<&HashSet<String>>) -> Option<ParsedLog> {
-    let safe = redact_text(line);
+    let safe = safe_diagnostic(line);
     let line = safe.as_str();
     let line = line.trim_end();
     if line.trim().is_empty() {
@@ -220,7 +335,7 @@ pub fn parse_log_line_with(line: &str, redact: &HashSet<String>, query_redact: O
             .unwrap_or_else(|| "info".into());
         let mut message = map.remove("message").and_then(|v| v.as_str().map(String::from)).unwrap_or_default();
         if let Some(q) = query_redact {
-            message = crate::proxy::capture::redact_query_in_text(&message, q);
+            message = redact_diagnostic_urls(&message, q);
         }
         let ts_ms = map.remove("time").and_then(|v| v.as_str().and_then(parse_rfc3339_ms));
         if let Some(h) = map.get_mut("headers") {
@@ -244,14 +359,18 @@ pub fn parse_log_line_with(line: &str, redact: &HashSet<String>, query_redact: O
             break;
         }
     }
-    // Untagged plain-text lines are what cloudflared prints for fatal startup problems
-    // (e.g. "quick tunnel provisioning failed with status 429"); surface them as errors.
-    let lower = line.to_ascii_lowercase();
-    if !tagged && (lower.contains("failed") || lower.contains("error")) {
-        level = "error".into();
+    let lower = line.trim().to_ascii_lowercase();
+    if !tagged {
+        if lower.starts_with("warning:") || lower.starts_with("warn:") {
+            level = "warn".into();
+        } else if lower.starts_with("error:") || lower.starts_with("fatal:")
+            || cli::CfError::classify(Some(1), "", line).err().is_some_and(|e| e.kind != cli::ErrorKind::Unknown)
+        {
+            level = "error".into();
+        }
     }
     let message = match query_redact {
-        Some(q) => crate::proxy::capture::redact_query_in_text(line, q),
+        Some(q) => redact_diagnostic_urls(line, q),
         None => line.to_string(),
     };
     Some(ParsedLog { ts_ms: None, level, message, fields: "{}".into() })

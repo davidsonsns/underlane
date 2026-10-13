@@ -179,7 +179,7 @@ async fn failed_validation_and_spawn_keep_the_previous_loaded_baseline() {
     std::fs::write(path, original.replace("4000", "5000")).unwrap();
     std::fs::write(f.root.join("bin/mode"), "invalid-config").unwrap();
     sup.restart(spec.clone());
-    let failed = wait_state(&states, |s| s.status == Status::Crashed && s.detail.as_deref().unwrap_or("").contains("Config is invalid")).await;
+    let failed = wait_state(&states, |s| s.status == Status::Crashed && s.failure.as_ref().is_some_and(|f| f.cause.contains("config"))).await;
     assert_eq!(failed.loaded_config, loaded.loaded_config);
     assert_eq!(failed.config_revision, loaded.config_revision);
     assert_eq!(failed.check_config_change(path).status, ConfigChangeStatus::Changed);
@@ -189,7 +189,7 @@ async fn failed_validation_and_spawn_keep_the_previous_loaded_baseline() {
     std::fs::write(path, "url: http://localhost:6000\n").unwrap();
     *sup.config().cloudflared.write().unwrap() = Some(f.root.join("missing-binary"));
     sup.restart(spec.clone());
-    let failed = wait_state(&states, |s| s.status == Status::Crashed && s.detail.as_deref().unwrap_or("").contains("Could not start cloudflared")).await;
+    let failed = wait_state(&states, |s| s.status == Status::Crashed && s.failure.as_ref().is_some_and(|f| f.cause.contains("could not start"))).await;
     assert_eq!(failed.loaded_config, loaded.loaded_config);
     assert_eq!(failed.config_revision, loaded.config_revision);
     assert_eq!(failed.check_config_change(path).status, ConfigChangeStatus::Changed);
@@ -233,7 +233,8 @@ async fn internal_respawn_advances_load_revision_within_same_run() {
     let (sup, states, _) = supervisor(&f, |c| c.max_failures = 3);
     sup.start(spec.clone());
     let state = wait_state(&states, |s| s.status == Status::Crashed && s.config_revision == 3).await;
-    let loaded: Vec<_> = states.lock().unwrap().iter().filter(|s| s.pid.is_some()).cloned().collect();
+    let mut loaded: Vec<_> = states.lock().unwrap().iter().filter(|s| s.pid.is_some()).cloned().collect();
+    loaded.dedup_by_key(|s| s.config_revision);
     assert_eq!(loaded.iter().map(|s| s.config_revision).collect::<Vec<_>>(), vec![1, 2, 3]);
     assert!(loaded.iter().all(|s| s.run == state.run));
     assert_eq!(sup.config_state("tun-1").unwrap().config_revision, 3);
@@ -284,7 +285,7 @@ async fn crashing_tunnel_backs_off_then_gives_up() {
     let (sup, states, _) = supervisor(&f, |c| c.max_failures = 3);
     sup.start(RunSpec { tunnel: tunnel(TunnelKind::Quick), token: None });
     let s = wait_status(&states, Status::Crashed).await;
-    assert!(s.detail.as_deref().unwrap().contains("failed to connect to the edge"), "{:?}", s.detail);
+    assert!(s.failure.as_ref().unwrap().raw.contains("failed to connect to the edge"), "{:?}", s.failure);
     for _ in 0..100 {
         if states.lock().unwrap().iter().any(|s| s.detail.as_deref().map(|d| d.starts_with("Gave up after 3 attempts")).unwrap_or(false)) {
             break;
@@ -294,7 +295,7 @@ async fn crashing_tunnel_backs_off_then_gives_up() {
     let details: Vec<String> = states.lock().unwrap().iter().filter_map(|s| s.detail.clone()).collect();
     assert!(details.iter().any(|d| d.contains("Restarting in")), "{details:#?}");
     assert!(details.iter().any(|d| d.starts_with("Gave up after 3 attempts")), "{details:#?}");
-    let attempts = states.lock().unwrap().iter().filter(|s| s.status == Status::Starting && s.pid.is_some()).count();
+    let attempts = states.lock().unwrap().iter().filter_map(|s| s.pid).collect::<std::collections::HashSet<_>>().len();
     assert_eq!(attempts, 3);
     sup.stop("tun-1").await;
 }
@@ -340,7 +341,7 @@ async fn invalid_config_is_reported_without_retrying() {
     t.config_path = Some(cfg_path.to_string_lossy().into_owned());
     sup.start(RunSpec { tunnel: t, token: None });
     let s = wait_status(&states, Status::Crashed).await;
-    assert!(s.detail.unwrap().contains("has no service"));
+    assert!(s.failure.unwrap().raw.contains("has no service"));
     tokio::time::sleep(Duration::from_millis(300)).await;
     let starts = states.lock().unwrap().iter().filter(|s| s.status == Status::Starting).count();
     assert_eq!(starts, 1, "no retry loop for a bad config");
@@ -477,5 +478,114 @@ async fn killing_only_the_shim_does_not_orphan_cloudflared() {
         tokio::time::sleep(Duration::from_millis(50)).await;
     }
     assert_ne!(unsafe { libc::kill(cf_pid, 0) }, 0, "cloudflared behind a killed shim was cleaned up");
+    sup.stop("tun-1").await;
+}
+
+#[tokio::test]
+async fn runtime_known_unknown_and_rc_zero_failures_keep_safe_diagnostics_and_retry_controls() {
+    for (mode, expected) in [
+        ("runtime-known", "credentials"),
+        ("runtime-unknown", "unrecognized"),
+        ("unknown-flag", "command option"),
+        ("login-refused", "certificate"),
+    ] {
+        let f = fake(mode);
+        let (sup, states, _) = supervisor(&f, |cfg| cfg.max_failures = 1);
+        let spec = RunSpec { tunnel: tunnel(TunnelKind::Quick), token: None };
+        sup.start(spec.clone());
+        let crashed = wait_status(&states, Status::Crashed).await;
+        let failure = crashed.failure.as_ref().unwrap();
+        assert!(failure.cause.contains(expected), "{mode}: {failure:?}");
+        assert!(failure.action.is_some(), "{mode}: {failure:?}");
+        assert!(failure.raw.contains("exit status"), "{failure:?}");
+        assert!(!failure.raw.contains("Some("), "exit status is plain text: {failure:?}");
+        assert!(!format!("{crashed:?}").contains("invented-"));
+        assert!(crashed.supervised && crashed.pid.is_none());
+        assert!(crashed.detail.unwrap().contains("Gave up"));
+        std::fs::write(f.root.join("bin/mode"), "ok").unwrap();
+        sup.restart(spec);
+        let recovered = wait_status(&states, Status::Connected).await;
+        assert!(recovered.failure.is_none() && recovered.hint.is_none());
+        sup.stop("tun-1").await;
+        assert!(states.lock().unwrap().last().unwrap().failure.is_none());
+    }
+}
+
+#[tokio::test]
+async fn runtime_warning_and_success_messages_never_create_explanations() {
+    let f = fake("runtime-warning");
+    let (sup, states, _) = supervisor(&f, |_| {});
+    sup.start(RunSpec { tunnel: tunnel(TunnelKind::Quick), token: None });
+    wait_status(&states, Status::Connected).await;
+    tokio::time::sleep(Duration::from_millis(250)).await;
+    sup.stop("tun-1").await;
+    assert!(states.lock().unwrap().iter().all(|state| state.failure.is_none()));
+}
+
+#[tokio::test]
+async fn readiness_clears_edge_failure_without_restart_but_not_an_origin_failure() {
+    for mode in ["runtime-recover", "runtime-origin"] {
+        let f = fake(mode);
+        let (sup, states, _) = supervisor(&f, |_| {});
+        sup.start(RunSpec { tunnel: tunnel(TunnelKind::Quick), token: None });
+        let reported = wait_state(&states, |state| state.failure.is_some()).await;
+        assert!(reported.pid.is_some());
+        assert!(!format!("{reported:?}").contains("invented-"));
+        if mode == "runtime-recover" {
+            assert!(reported.failure.unwrap().cause.contains("edge"));
+            std::fs::write(f.root.join("bin/mode"), "ok").unwrap();
+            let recovered = wait_state(&states, |state| state.status == Status::Connected && state.failure.is_none()).await;
+            assert_eq!(recovered.restarts, 0);
+        } else {
+            let connected = wait_state(&states, |state| state.status == Status::Connected && state.failure.is_some()).await;
+            assert!(connected.failure.unwrap().cause.contains("origin"));
+            tokio::time::sleep(Duration::from_millis(250)).await;
+            assert!(states.lock().unwrap().last().unwrap().failure.is_some(), "edge readiness does not prove origin recovery");
+        }
+        sup.stop("tun-1").await;
+        assert!(states.lock().unwrap().last().unwrap().failure.is_none());
+    }
+}
+
+#[tokio::test]
+async fn preparation_failures_explain_missing_config_credentials_token_and_binary() {
+    for mode in ["config", "credentials", "token", "binary"] {
+        let f = fake("ok");
+        let (sup, states, _) = supervisor(&f, |_| {});
+        let spec = match mode {
+            "config" => {
+                let mut t = tunnel(TunnelKind::Config);
+                t.config_path = Some(f.root.join("unauthorized-429.yml").to_string_lossy().into_owned());
+                RunSpec { tunnel: t, token: None }
+            }
+            "credentials" => config_spec(&f, "url: http://localhost:3000\ncredentials-file: missing.json\n"),
+            "token" => RunSpec { tunnel: tunnel(TunnelKind::Token), token: None },
+            _ => {
+                *sup.config().cloudflared.write().unwrap() = None;
+                RunSpec { tunnel: tunnel(TunnelKind::Quick), token: None }
+            }
+        };
+        sup.start(spec);
+        let crashed = wait_status(&states, Status::Crashed).await;
+        let failure = crashed.failure.unwrap();
+        assert!(failure.action.is_some(), "{mode}: {failure:?}");
+        assert!(!failure.cause.contains("Cloudflare rejected"));
+        assert!(!failure.raw.is_empty());
+        assert!(crashed.pid.is_none());
+        sup.stop("tun-1").await;
+        assert!(states.lock().unwrap().last().unwrap().failure.is_none());
+    }
+}
+
+#[tokio::test]
+async fn runtime_error_survives_a_burst_of_info_logs_before_exit() {
+    let f = fake("runtime-burst");
+    let (sup, states, _) = supervisor(&f, |cfg| cfg.max_failures = 1);
+    sup.start(RunSpec { tunnel: tunnel(TunnelKind::Quick), token: None });
+    let crashed = wait_status(&states, Status::Crashed).await;
+    let failure = crashed.failure.unwrap();
+    assert!(failure.cause.contains("credentials"), "{failure:?}");
+    assert!(failure.raw.contains("authentication failed: status 403"));
+    assert!(failure.raw.contains("synthetic exit context 39"), "recent context retained");
     sup.stop("tun-1").await;
 }

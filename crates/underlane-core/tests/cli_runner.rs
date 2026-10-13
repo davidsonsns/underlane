@@ -307,3 +307,33 @@ async fn inherited_run_secrets_are_removed_but_explicit_secrets_work() {
     env(&mut invocation, "TUNNEL_TOKEN", "invented-explicit-token");
     assert_eq!(cli::exec(&wrapper, invocation).await.unwrap_err().kind, ErrorKind::Unknown);
 }
+
+#[test]
+fn structured_runtime_diagnostics_classify_only_message_and_error_context() {
+    for (raw, kind) in [
+        (r#"{"level":"error","message":"Request failed","error":"Unable to reach the origin service: status 403","name":"Incorrect Usage","id":"429"}"#, ErrorKind::OriginConnection),
+        (r#"{"level":"error","message":"Failed to serve tunnel connection","error":"authentication failed: status 403"}"#, ErrorKind::Auth),
+        (r#"{"level":"error","message":"Failed to dial to edge","error":"timeout"}"#, ErrorKind::EdgeConnection),
+        (r#"{"level":"error","message":"Request failed","error":"opaque failure","name":"authentication failed","id":"status 429"}"#, ErrorKind::Unknown),
+        (r#"{"level":"error","message":"opaque","error":"unauthorized"}"#, ErrorKind::Auth),
+        ("unauthorized", ErrorKind::Auth),
+        ("Tunnel credentials file '/tmp/foo Incorrect Usage.json' doesn't exist or is not a file", ErrorKind::Credentials),
+        ("Tunnel credentials file '/tmp/foo authentication failed.json' doesn't exist or is not a file", ErrorKind::Credentials),
+        ("error loading config '/tmp/foo Incorrect Usage.yaml': permission denied", ErrorKind::Config),
+        ("error loading config /tmp/unauthorized.yml: permission denied", ErrorKind::Config),
+        (r#"{"level":"error","message":"opaque","error":"stat /tmp/unauthorized.yml: no such file"}"#, ErrorKind::Unknown),
+        (r#"{"level":"error","message":"opaque","error":"stat /tmp/status-429.yml: no such file"}"#, ErrorKind::Unknown),
+        (r#"{"level":"error","message":"Unable to reach the origin service","error":"rate limit status 429"}"#, ErrorKind::OriginConnection),
+        (r#"{"level":"error","message":"unknown","name":"Incorrect Usage","token":"invented-token",bad"#, ErrorKind::Unknown),
+    ] {
+        assert_eq!(CfError::classify(Some(1), "", raw).unwrap_err().kind, kind, "{raw}");
+    }
+    assert_eq!(CfError::classify(Some(0), r#"{"level":"error","message":"Incorrect Usage: flag provided but not defined"}"#, "").unwrap_err().kind, ErrorKind::Usage);
+    for raw in [
+        r#"{"level":"warn","message":"Incorrect Usage authentication failed status 403"}"#,
+        r#"{"level":"info","message":"Incorrect Usage existing certificate overwrite"}"#,
+        r#"{"name":"Incorrect Usage authentication failed","id":"status 429"}"#,
+        "2026-10-10T06:00:00Z WRN Incorrect Usage authentication failed status 403",
+        "Warning: Incorrect Usage authentication failed status 403",
+    ] { assert!(CfError::classify(Some(0), "", raw).is_ok(), "{raw}"); }
+}

@@ -109,13 +109,27 @@ if "ingress" in args:
     print("OK"); sys.exit(0)
 if mode == "crash":
     log("error", "failed to connect to the edge"); sys.exit(1)
+if mode == "runtime-burst":
+    log("error", "authentication failed: status 403")
+    for index in range(40): log("info", "synthetic exit context %d" % index)
+    sys.exit(1)
+if mode == "runtime-known":
+    sys.stderr.write(json.dumps({"level": "error", "message": "Failed to serve tunnel connection", "error": "authentication failed: status 403", "name": "429-unauthorized", "token": "invented-runtime-token"}) + "\n")
+    sys.stderr.flush(); sys.exit(1)
+if mode == "runtime-unknown":
+    sys.stderr.write('{"level":"error","message":"synthetic mystery failure","url":"https://invented-user:invented-password@example.invalid/?password=invented-query","token":"invented-runtime-token",bad\n')
+    sys.stderr.flush(); sys.exit(7)
+if mode == "runtime-warning":
+    log("warn", "Failed to serve tunnel connection: authentication failed status 403")
+    log("info", "Incorrect Usage existing certificate overwrite 429")
 if mode == "token-echo":
     log("info", "synthetic child echoed " + os.environ.get("TUNNEL_TOKEN", ""))
 class H(BaseHTTPRequestHandler):
     def log_message(self, *a): pass
     def do_GET(self):
         if self.path == "/ready":
-            body = {"status": 200, "readyConnections": 1}; code = 200
+            ready = not (mode == "runtime-recover" and open(os.path.join(here, "mode")).read().strip() != "ok")
+            body = {"status": 200 if ready else 503, "readyConnections": 1 if ready else 0}; code = body["status"]
         elif self.path == "/quicktunnel":
             body = {"hostname": "fake-words-here.trycloudflare.com"}; code = 200
         else:
@@ -130,5 +144,9 @@ def term(*a):
 signal.signal(signal.SIGTERM, term)
 log("info", "Starting tunnel")
 log("info", "Starting metrics server on 127.0.0.1:%d/metrics" % srv.server_address[1])
+if mode == "runtime-recover":
+    log("error", "Failed to dial to edge: synthetic network error")
+if mode == "runtime-origin":
+    log("error", "Unable to reach the origin service: status 403 from https://invented-user:invented-password@origin.invalid/?token=invented-query")
 while True:
     time.sleep(0.2)

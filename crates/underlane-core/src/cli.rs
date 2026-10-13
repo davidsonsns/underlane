@@ -13,7 +13,7 @@ use tokio::process::{Child, Command};
 use tokio::sync::{oneshot, watch, Semaphore};
 use tokio::time::Instant;
 
-use crate::cloudflared::{friendly_hint, parse_log_line, ParsedLog};
+use crate::cloudflared::{diagnostic_text, friendly_hint, parse_log_line, safe_diagnostic, ParsedLog};
 use crate::platform;
 use crate::secret::{redact_text, Secret};
 
@@ -74,8 +74,37 @@ pub enum ErrorKind {
     RateLimited,
     MetricsBind,
     IncompatibleOrigin,
+    EdgeConnection,
+    OriginConnection,
     InvalidJson,
     Unknown,
+}
+
+fn classification_text(text: &str) -> String {
+    let mut scrubbed = String::new();
+    let mut remaining = text;
+    while let Some(start) = remaining.find(['\'', '"', '`']) {
+        scrubbed.push_str(&remaining[..start]);
+        let quote = remaining.as_bytes()[start] as char;
+        if quote == '\'' && start > 0 && remaining.as_bytes()[start - 1].is_ascii_alphanumeric()
+            && remaining.as_bytes().get(start + 1).is_some_and(u8::is_ascii_alphanumeric)
+        {
+            scrubbed.push(quote);
+            remaining = &remaining[start + 1..];
+            continue;
+        }
+        let tail = &remaining[start + 1..];
+        let end = tail.find(quote).unwrap_or(tail.len());
+        let operand = &tail[..end];
+        let is_path = operand.contains('/') || operand.contains('\\')
+            || [".yaml", ".yml", ".json", ".pem"].iter().any(|ext| operand.ends_with(ext));
+        if !is_path { scrubbed.push_str(operand); }
+        else { scrubbed.push(' '); }
+        remaining = if end == tail.len() { "" } else { &tail[end + 1..] };
+    }
+    scrubbed.push_str(remaining);
+    scrubbed.split_whitespace().filter(|word| !word.contains('/') && !word.contains('\\'))
+        .collect::<Vec<_>>().join(" ").to_ascii_lowercase()
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
@@ -88,7 +117,7 @@ pub struct CfError {
 
 impl CfError {
     fn new(kind: ErrorKind, message: &str) -> Self {
-        Self { kind, message: redact_text(message), hint: None }
+        Self { kind, message: safe_diagnostic(message), hint: None }
     }
 
     /// Exit status alone is insufficient: cloudflared also reports some failures with rc 0.
@@ -101,24 +130,22 @@ impl CfError {
             && lines.all(|line| line.is_empty() || line.starts_with('\t'));
         let diagnostic_out = if ingress_payload { "" } else {
             match serde_json::from_str::<serde_json::Value>(stdout) {
+                Ok(serde_json::Value::Object(map)) if map.contains_key("level") => stdout,
                 Ok(serde_json::Value::Object(_) | serde_json::Value::Array(_)) => "",
                 _ => stdout,
             }
         };
         let text = format!("{diagnostic_out}\n{stderr}");
-        let lower = text
-            .lines()
-            .filter(|line| !line.trim_start().starts_with("Validating rules from "))
-            .collect::<Vec<_>>()
-            .join("\n")
-            .to_ascii_lowercase();
+        let diagnostics = diagnostic_text(&text);
+        // File/URL operands may contain diagnostic-looking names; they are not anchors.
+        let lower = classification_text(&diagnostics);
         let warnings = text
             .lines()
             .filter(|line| {
                 let l = line.to_ascii_lowercase();
                 l.contains("version") && l.contains("outdated")
             })
-            .map(|line| Warning::OutdatedVersion(redact_text(line)))
+            .map(|line| Warning::OutdatedVersion(safe_diagnostic(line)))
             .collect::<Vec<_>>();
         let known = if lower.contains("incorrect usage") || lower.contains("flag provided but not defined") {
             Some((ErrorKind::Usage, "cloudflared rejected a command option. Check the installed binary's supported flags."))
@@ -126,11 +153,21 @@ impl CfError {
             Some((ErrorKind::AlreadyLoggedIn, "A certificate already exists. cloudflared refused to overwrite it."))
         } else if code == Some(0) {
             None
+        } else if lower.contains("unable to reach the origin service")
+            || lower.contains("unable to connect to the origin")
+        {
+            Some((ErrorKind::OriginConnection, "Check that the origin service is running and that its address in the config is correct."))
+        } else if lower.contains("validation failed")
+            || lower.contains("cannot read config")
+            || lower.contains("error loading config")
+            || lower.contains("no ingress rules")
+        {
+            Some((ErrorKind::Config, "Fix the source config using the diagnostic below, then restart."))
         } else if lower.contains("cannot find a valid certificate")
             || lower.contains("cannot determine default origin certificate")
             || lower.contains("origin cert") && (lower.contains("not found") || lower.contains("does not exist"))
         {
-            Some((ErrorKind::NotLoggedIn, "cloudflared could not find the account certificate."))
+            Some((ErrorKind::NotLoggedIn, "Check the configured origin certificate path and that the certificate exists."))
         } else if lower.contains("credentials")
             && (lower.contains("not found")
                 || lower.contains("does not exist")
@@ -138,7 +175,7 @@ impl CfError {
                 || lower.contains("no such file")
                 || lower.contains("invalid"))
         {
-            Some((ErrorKind::Credentials, "The tunnel credentials are missing or invalid."))
+            Some((ErrorKind::Credentials, "Check credentials-file and the tunnel credentials, then restart."))
         } else if lower.contains("multiple-origin") && lower.contains("--url") {
             Some((ErrorKind::IncompatibleOrigin, "Use either ingress rules or --url for this tunnel."))
         } else if lower.contains("address already in use") && (lower.contains("metrics") || lower.contains("listen")) {
@@ -156,31 +193,32 @@ impl CfError {
             Some((ErrorKind::ActiveConnections, "The tunnel still has active connectors."))
         } else if lower.contains("already exists") && (lower.contains("dns") || lower.contains("cname")) {
             Some((ErrorKind::DnsRecordExists, "A DNS record already exists for this hostname."))
-        } else if lower.contains("429") || lower.contains("rate limit") {
-            Some((ErrorKind::RateLimited, "Cloudflare is rate limiting requests. Wait before retrying."))
-        } else if lower.contains("unauthorized")
+        } else if lower.contains("status 429") || lower.contains("status code 429") || lower.contains("rate limit") {
+            Some((ErrorKind::RateLimited, "Wait before retrying; review the diagnostic to identify the service that is rate limiting requests."))
+        } else if diagnostics.lines().any(|line| { let line = line.trim().to_ascii_lowercase(); line == "unauthorized" || line.starts_with("unauthorized:") })
             || lower.contains("authentication failed")
             || lower.contains("status 403")
             || lower.contains("status 401")
         {
-            Some((ErrorKind::Auth, "Cloudflare rejected the credentials."))
-        } else if lower.contains("validation failed")
-            || lower.contains("no such file")
-            || lower.contains("cannot read config")
-            || lower.contains("error loading config")
+            Some((ErrorKind::Auth, "Check the rejected credentials identified in the diagnostic, then restart."))
+        } else if lower.contains("failed to connect to the edge")
+            || lower.contains("failed to dial to edge")
+            || lower.contains("failed to serve tunnel connection")
         {
-            Some((ErrorKind::Config, "The config could not be read or validated."))
+            Some((ErrorKind::EdgeConnection, "Check the network connection and firewall, then retry. cloudflared will keep trying while this tunnel is running."))
         } else {
             None
         };
         if let Some((kind, hint)) = known {
-            let message = redact_text(text.trim());
-            let hint = friendly_hint(&message).or_else(|| Some(hint.into()));
+            let message = safe_diagnostic(text.trim());
+            let hint = Some(safe_diagnostic(&if kind == ErrorKind::Config {
+                friendly_hint(&text).unwrap_or_else(|| hint.into())
+            } else { hint.into() }));
             return Err(Self { kind, message, hint });
         }
         if code != Some(0) {
             let message =
-                if text.trim().is_empty() { format!("cloudflared exited with status {code:?}.") } else { redact_text(text.trim()) };
+                if text.trim().is_empty() { format!("cloudflared exited with status {code:?}.") } else { safe_diagnostic(text.trim()) };
             return Err(Self { kind: ErrorKind::Unknown, hint: friendly_hint(&message), message });
         }
         Ok(warnings)
@@ -412,7 +450,7 @@ async fn run_child(mut child: Child, inv: Invocation, deadline: Instant, drop_rx
     let status = status?;
     let raw_out = String::from_utf8_lossy(stdout.expose());
     let sanitize = |text: &str| {
-        let mut safe = redact_text(text);
+        let mut safe = safe_diagnostic(text);
         for (_, secret) in &inv.env {
             if !secret.expose().is_empty() {
                 safe = safe.replace(secret.expose().as_str(), "[redacted]");

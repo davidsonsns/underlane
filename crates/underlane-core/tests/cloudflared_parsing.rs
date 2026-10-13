@@ -133,3 +133,56 @@ fn foreign_argv_and_persisted_logs_never_expose_run_secrets() {
         assert!(!format!("{logs:?}").contains("invented-"));
     }
 }
+
+#[test]
+fn failure_explanations_and_persisted_logs_redact_urls_and_hint_echoes() {
+    use underlane_core::cli::CfError;
+    let raw = r#"{"level":"error","message":"Unable to reach the origin service https://invented-user:invented-password@example.invalid/?password=invented-query&x=1","error":"--token invented-token","url":"https://invented-user:invented-password@example.invalid/?token=invented-query"}"#;
+    let error = CfError::classify(Some(1), "", raw).unwrap_err();
+    let failure = FailureExplanation::from_error(&error);
+    assert!(failure.cause.contains("origin"));
+    assert!(failure.action.unwrap().contains("origin"));
+    assert!(!failure.raw.contains("invented-"), "{}", failure.raw);
+    let options = CaptureOptions::default();
+    let parsed = parse_log_line_with(raw, &options.redaction_set(), Some(&options.query_redaction_set())).unwrap();
+    assert!(!format!("{parsed:?}").contains("invented-"));
+    assert!(parsed.message.contains("x=1"));
+    let validation = interpret_validation(false, "Validation failed: --token #invented-secret will match every hostname");
+    assert!(!format!("{validation:?}").contains("invented-secret"));
+    let malformed = FailureExplanation::from_error(&CfError::classify(Some(1), "", r#"{"level":"error","url":"https://invented-user:invented-password@x.invalid/?password=invented-query","token":"invented-token",bad"#).unwrap_err());
+    assert!(!format!("{malformed:?}").contains("invented-"), "{malformed:?}");
+}
+
+#[test]
+fn successful_validation_with_error_words_in_filename_has_no_failure() {
+    let valid = interpret_validation(true, "Validating rules from /tmp/unauthorized-429-Incorrect Usage.yaml\nOK");
+    assert!(valid.ok && valid.failure.is_none() && valid.hint.is_none());
+    let unknown = interpret_validation(false, "Validation failed: unfamiliar diagnostic");
+    let failure = unknown.failure.unwrap();
+    assert!(failure.raw.contains("unfamiliar diagnostic"));
+    assert!(!failure.cause.contains("DNS"));
+}
+
+#[test]
+fn plain_warning_and_success_payload_names_do_not_become_error_logs() {
+    for (line, expected) in [
+        ("Warning: authentication failed status 403", "warn"),
+        ("Success: wrote /tmp/error-failed.yml", "info"),
+        (r#"{"level":"info","message":"Incorrect Usage","id":"authentication failed"}"#, "info"),
+        ("Error: unknown runtime diagnostic", "error"),
+    ] { assert_eq!(parse_log_line(line, &HashSet::new()).unwrap().level, expected); }
+}
+
+#[test]
+fn complete_diagnostics_redact_queries_across_whitespace_and_json_strings() {
+    let raw = "https://a.invalid/?x=1\nhttps://b.invalid/?password=invented-query\thttps://c.invalid/?token=invented-token";
+    for text in [raw.to_string(), serde_json::json!({"message": raw}).to_string()] {
+        let safe = safe_diagnostic(&text);
+        assert!(!safe.contains("invented-"), "{safe}");
+        assert!(safe.contains("x=1"));
+    }
+    let extra = CaptureOptions { redact_query: vec!["custom".into()], ..Default::default() };
+    let line = serde_json::json!({"level": "error", "message": "https://x.invalid/?x=1\nhttps://x.invalid/?custom=invented-custom"}).to_string();
+    let parsed = parse_log_line_with(&line, &extra.redaction_set(), Some(&extra.query_redaction_set())).unwrap();
+    assert!(!format!("{parsed:?}").contains("invented-"));
+}
