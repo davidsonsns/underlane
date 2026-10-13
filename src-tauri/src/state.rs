@@ -51,6 +51,7 @@ pub struct Core {
     /// Latest supervisor run seen per tunnel; older runs' late events are ignored.
     latest_run: Mutex<HashMap<String, u64>>,
     activity: Mutex<Option<platform::Activity>>,
+    ingress_tests: IngressTests,
 }
 
 /// Everything the UI needs to render a tunnel.
@@ -184,7 +185,129 @@ fn check_config_change_inner(db: &Db, id: &str, config_state: impl Fn() -> Tunne
     Ok(Some(result))
 }
 
+/// Unique frontend request IDs also cover cancellation arriving before its async start.
+#[derive(Default)]
+struct IngressTests(Mutex<HashMap<String, (underlane_core::cli::Cancellation, std::time::Instant, bool)>>);
+
+struct IngressTest<'a> { registry: &'a IngressTests, request: String, cancel: underlane_core::cli::Cancellation }
+
+impl Drop for IngressTest<'_> {
+    fn drop(&mut self) { self.registry.0.lock().unwrap().remove(&self.request); }
+}
+
+impl IngressTests {
+    fn validate(request: &str) -> Result<(), String> {
+        if request.is_empty() || request.len() > 128 || !request.bytes().all(|c| c.is_ascii_alphanumeric() || c == b'-' || c == b'_') {
+            return Err("Invalid ingress test request ID.".into());
+        }
+        Ok(())
+    }
+
+    fn prune(entries: &mut HashMap<String, (underlane_core::cli::Cancellation, std::time::Instant, bool)>) {
+        entries.retain(|_, (_, at, active)| *active || at.elapsed() < Duration::from_secs(60));
+    }
+
+    fn begin(&self, request: &str) -> Result<IngressTest<'_>, String> {
+        Self::validate(request)?;
+        let mut entries = self.0.lock().unwrap();
+        Self::prune(&mut entries);
+        if let Some((_, _, active)) = entries.get(request) {
+            return Err(if *active { "This ingress test is already running." } else { "Ingress test cancelled." }.into());
+        }
+        if entries.len() >= 256 { return Err("Too many ingress tests. Try again shortly.".into()); }
+        let cancel = underlane_core::cli::Cancellation::new();
+        entries.insert(request.into(), (cancel.clone(), std::time::Instant::now(), true));
+        Ok(IngressTest { registry: self, request: request.into(), cancel })
+    }
+
+    fn cancel(&self, request: &str) -> Result<(), String> {
+        Self::validate(request)?;
+        let mut entries = self.0.lock().unwrap();
+        Self::prune(&mut entries);
+        if let Some((cancel, _, _)) = entries.get(request) { cancel.cancel(); }
+        else if entries.len() < 256 {
+            let cancel = underlane_core::cli::Cancellation::new();
+            cancel.cancel();
+            entries.insert(request.into(), (cancel, std::time::Instant::now(), false));
+        }
+        Ok(())
+    }
+}
+
+fn ingress_source(db: &Db, id: &str) -> Result<String, String> {
+    let tunnel = db.tunnel(id).map_err(|_| "Could not read the saved tunnel.")?.ok_or("Tunnel not found.")?;
+    if tunnel.kind != TunnelKind::Config { return Err("URL testing requires a locally managed config file with ingress rules.".into()); }
+    tunnel.config_path.ok_or_else(|| "This tunnel has no config file path.".into())
+}
+
+fn confirm_ingress_source(db: &Db, id: &str, path: &str) -> Result<(), String> {
+    if ingress_source(db, id).as_deref() != Ok(path) {
+        return Err("Tunnel config changed during the test. Test the URL again.".into());
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod ingress_tests {
+    use super::*;
+
+    #[test]
+    fn registry_guards_duplicate_cancel_before_begin_and_cleans_finished_requests() {
+        let registry = IngressTests::default();
+        registry.cancel("cancel-before-start").unwrap();
+        assert!(registry.begin("cancel-before-start").err().unwrap().contains("cancelled"));
+        let test = registry.begin("running").unwrap();
+        assert!(registry.begin("running").err().unwrap().contains("already running"));
+        registry.cancel("running").unwrap();
+        assert!(test.cancel.is_cancelled());
+        drop(test);
+        assert!(!registry.0.lock().unwrap().contains_key("running"));
+        assert!(registry.begin("bad id!").is_err());
+        assert!(registry.cancel("").is_err());
+    }
+
+    #[test]
+    fn saved_tunnel_boundary_rejects_unsupported_removed_or_replaced_source() {
+        let db = Db::open_in_memory().unwrap();
+        let project = db.ensure_project("Ingress boundary").unwrap();
+        let mut tunnel = Tunnel {
+            id: "ingress-boundary".into(), project_id: project.id, name: "Synthetic".into(),
+            kind: TunnelKind::Config, config_path: Some("/synthetic/config.yml".into()),
+            origin_url: None, inspect: false, autostart: false, loglevel: "info".into(), created_at: 0, sort: 0,
+        };
+        db.upsert_tunnel(&tunnel).unwrap();
+        assert_eq!(ingress_source(&db, &tunnel.id).unwrap(), "/synthetic/config.yml");
+        assert!(confirm_ingress_source(&db, &tunnel.id, "/synthetic/config.yml").is_ok());
+        tunnel.config_path = Some("/synthetic/replaced.yml".into());
+        db.upsert_tunnel(&tunnel).unwrap();
+        assert!(confirm_ingress_source(&db, &tunnel.id, "/synthetic/config.yml").is_err());
+        for kind in [TunnelKind::Quick, TunnelKind::Token] {
+            tunnel.kind = kind;
+            db.upsert_tunnel(&tunnel).unwrap();
+            assert!(ingress_source(&db, &tunnel.id).unwrap_err().contains("locally managed"));
+        }
+        db.delete_tunnel(&tunnel.id).unwrap();
+        assert!(confirm_ingress_source(&db, &tunnel.id, "/synthetic/config.yml").is_err());
+    }
+}
+
 impl Core {
+    pub async fn test_ingress_rule(self: &Arc<Self>, id: String, url: String, request: String) -> Result<underlane_core::ingress::IngressMatch, String> {
+        underlane_core::ingress::match_url(&url)?;
+        let test = self.ingress_tests.begin(&request)?;
+        let db = self.db.clone();
+        let tunnel_id = id.clone();
+        let path = tokio::task::spawn_blocking(move || ingress_source(&db, &tunnel_id)).await.map_err(|_| "Could not read the saved tunnel.")??;
+        let bin = self.binary.read().unwrap().clone().ok_or("cloudflared wasn't found.")?;
+        let result = underlane_core::ingress::test_rule(std::path::Path::new(&bin.path), std::path::Path::new(&path), &url, test.cancel.clone()).await?;
+        let db = self.db.clone();
+        tokio::task::spawn_blocking(move || confirm_ingress_source(&db, &id, &path)).await.map_err(|_| "Could not read the saved tunnel.")??;
+        if test.cancel.is_cancelled() { return Err("Ingress test cancelled.".into()); }
+        Ok(result)
+    }
+
+    pub fn cancel_ingress_test(&self, request: &str) -> Result<(), String> { self.ingress_tests.cancel(request) }
+
     pub async fn init(handle: AppHandle, data_dir: PathBuf, shim: Option<PathBuf>) -> anyhow::Result<Arc<Core>> {
         std::fs::create_dir_all(&data_dir)?;
         let killed = underlane_core::supervisor::reap_orphans(&data_dir);
@@ -242,6 +365,7 @@ impl Core {
             sweep_now: tokio::sync::Notify::new(),
             latest_run: Mutex::new(HashMap::new()),
             activity: Mutex::new(None),
+            ingress_tests: IngressTests::default(),
         });
         tokio::spawn(writer_task(core.clone(), write_rx));
         tokio::spawn(state_task(core.clone(), state_rx));

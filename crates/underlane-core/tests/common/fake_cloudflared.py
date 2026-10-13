@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-import json, os, signal, subprocess, sys, threading, time
+import json, os, re, signal, subprocess, sys, threading, time
+from urllib.parse import urlsplit
 from http.server import BaseHTTPRequestHandler, HTTPServer
 here = os.path.dirname(os.path.abspath(__file__))
 mode = os.environ.get("FAKE_CLOUDFLARED_MODE") or open(os.path.join(here, "mode")).read().strip()
@@ -67,6 +68,43 @@ if command == "route" and rest[1:2] == ["dns"]:
 if command == "login":
     print("Please open the following URL and log in with your Cloudflare account:\nhttps://example.invalid/synthetic-login")
     sys.exit(0)
+if command == "ingress" and rest[1:2] == ["rule"]:
+    if mode == "ingress-slow": time.sleep(0.8)
+    if mode == "ingress-aba":
+        open(os.path.join(here, "ready"), "w").close()
+        deadline = time.time() + 3
+        while not os.path.exists(os.path.join(here, "proceed")) and time.time() < deadline: time.sleep(0.01)
+    if mode == "ingress-malformed": print("Matched rule #bogus"); sys.exit(0)
+    if mode == "ingress-out-of-range": print("Matched rule #999"); sys.exit(0)
+    if mode == "ingress-invalid": print("Validation failed: synthetic invalid ingress", file=sys.stderr); sys.exit(1)
+    target = args[args.index("--config") + 1]
+    # Restricted fixture YAML, not a replacement cloudflared parser.
+    rules = []
+    for line in open(target):
+        field = line.strip()
+        if field.startswith("- "):
+            rules.append({}); field = field[2:]
+        if rules and ":" in field:
+            key, value = field.split(":", 1)
+            if key in ("hostname", "path", "service"):
+                rules[-1][key] = value.strip().strip("\"'")
+    if not rules or rules[-1].get("hostname") or rules[-1].get("path"):
+        print("Validation failed: last ingress rule must match all URLs", file=sys.stderr); sys.exit(1)
+    if mode == "ingress-echo": print(open(target).read())
+    if mode == "ingress-aba":
+        open(os.path.join(here, "read"), "w").close()
+        deadline = time.time() + 3
+        while not os.path.exists(os.path.join(here, "restored")) and time.time() < deadline: time.sleep(0.01)
+    url = urlsplit(rest[2])
+    for index, rule in enumerate(rules):
+        host = rule.get("hostname", "")
+        match_host = not host or host == url.hostname or (host.startswith("*.") and url.hostname.endswith(host[1:]))
+        if match_host and (not rule.get("path") or re.search(rule["path"], url.path or "/")):
+            print("Using rules from " + target)
+            print("Matched rule #%d" % index)
+            for key, value in rule.items(): print("\t" + key + ": " + value)
+            sys.exit(0)
+    print("No match", file=sys.stderr); sys.exit(1)
 if "ingress" in args:
     print("OK"); sys.exit(0)
 if mode == "crash":
