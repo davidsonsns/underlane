@@ -39,13 +39,14 @@
   import { Button } from "$lib/components/ui/button/index.js";
   import { Input } from "$lib/components/ui/input/index.js";
   import { Switch } from "$lib/components/ui/switch/index.js";
+  import { Checkbox } from "$lib/components/ui/checkbox/index.js";
   import * as Select from "$lib/components/ui/select/index.js";
   import * as AlertDialog from "$lib/components/ui/alert-dialog/index.js";
   import * as Alert from "$lib/components/ui/alert/index.js";
   import Routes from "./Routes.svelte";
   import FailureNotice from "./FailureNotice.svelte";
 
-  let { tunnel, onremove }: { tunnel: Tunnel; onremove: (id: string) => Promise<void> } = $props();
+  let { tunnel, onremove }: { tunnel: Tunnel; onremove: (id: string, deleteConfig: boolean) => Promise<void> } = $props();
   let busy = $state(false);
   let restarting = $state(false);
   let error = $state<string | null>(null);
@@ -59,6 +60,12 @@
   let validation = $state<Validation | null>(null);
   let validationRequest = 0;
   let removeOpen = $state(false);
+  let deleteConfig = $state(false);
+  const componentId = $props.id();
+  const deleteConfigId = `${componentId}-delete-config`;
+  $effect(() => {
+    if (!removeOpen) deleteConfig = false;
+  });
   let removeTrigger = $state<HTMLElement | null>(null);
   let originDraft = $state("");
   let tokenDraft = $state("");
@@ -239,9 +246,10 @@
   // (this detail unmounts), so the dialog must not hand focus back to Remove; on failure it does.
   let removing = false;
   async function remove() {
+    const deleteFile = tunnel.kind === "config" && !!tunnel.config_path && deleteConfig;
     removing = true;
     removeOpen = false;
-    await run(() => onremove(tunnel.id));
+    await run(() => onremove(tunnel.id, deleteFile));
     if (error) {
       removing = false;
       removeTrigger?.focus({ preventScroll: true });
@@ -475,14 +483,25 @@
       <AlertDialog.Header>
         <AlertDialog.Title>Remove “{tunnel.name}”?</AlertDialog.Title>
         {#if tunnel.kind === "config"}
-          <AlertDialog.Description>The config file stays on disk.</AlertDialog.Description>
+          <AlertDialog.Description>
+            {deleteConfig ? "The config file will be permanently deleted." : "The config file stays on disk."}
+          </AlertDialog.Description>
         {:else if tunnel.kind === "token"}
           <AlertDialog.Description>Its token is deleted from the keychain.</AlertDialog.Description>
         {/if}
       </AlertDialog.Header>
+      {#if tunnel.kind === "config" && tunnel.config_path}
+        <div class="flex items-start gap-2.5">
+          <Checkbox id={deleteConfigId} bind:checked={deleteConfig} class="mt-0.5" />
+          <label for={deleteConfigId} class="min-w-0 text-sm">
+            Also delete the config file
+            <span class="mt-1 block break-all font-mono text-xs text-muted-foreground">{tunnel.config_path}</span>
+          </label>
+        </div>
+      {/if}
       <AlertDialog.Footer>
         <AlertDialog.Cancel>Cancel</AlertDialog.Cancel>
-        <AlertDialog.Action variant="destructive" onclick={remove}>Remove</AlertDialog.Action>
+        <AlertDialog.Action variant="ghost" class="text-destructive hover:text-destructive hover:bg-destructive/10" onclick={remove}>Remove</AlertDialog.Action>
       </AlertDialog.Footer>
     </AlertDialog.Content>
   </AlertDialog.Root>

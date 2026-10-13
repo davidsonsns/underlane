@@ -19,7 +19,7 @@ export const api = {
   addToken: (name: string, token: string, group: string) => invoke<string>("add_token_tunnel", { name, token, group }),
   updateTunnel: (id: string, patch: Partial<{ name: string; group: string | null; inspect: boolean; autostart: boolean; loglevel: string; originUrl: string; token: string }>) =>
     invoke<void>("update_tunnel", { id, patch }),
-  deleteTunnel: (id: string) => invoke<void>("delete_tunnel", { id }),
+  deleteTunnel: (id: string, deleteConfig = false) => invoke<void>("delete_tunnel", { id, deleteConfig }),
   start: (id: string) => invoke<void>("start_tunnel", { id }),
   stop: (id: string) => invoke<void>("stop_tunnel", { id }),
   restart: (id: string) => invoke<void>("restart_tunnel", { id }),

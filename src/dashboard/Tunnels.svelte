@@ -50,11 +50,11 @@
   // TunnelDetail's Remove: select the next tunnel in list order (else the previous one) and
   // focus it in the list, since the detail that held focus unmounts (02 2b). Removing the last
   // tunnel focuses the empty state's New button instead of leaving focus on <body>.
-  async function remove(id: string) {
+  async function remove(id: string, deleteConfig: boolean) {
     const order = groups.flatMap((g) => g.tunnels);
     const i = order.findIndex((t) => t.id === id);
     const next = order[i + 1] ?? order[i - 1] ?? null;
-    await api.deleteTunnel(id);
+    await api.deleteTunnel(id, deleteConfig);
     selected = next?.id ?? null;
     await store.refresh();
     await tick();

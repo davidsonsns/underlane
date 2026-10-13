@@ -263,16 +263,32 @@ fn update_tunnel_inner(core: &Core, id: String, patch: TunnelPatch) -> Res<()> {
 }
 
 #[tauri::command]
-pub async fn delete_tunnel(core: CoreState<'_>, id: String) -> Res<()> {
+pub async fn delete_tunnel(core: CoreState<'_>, id: String, delete_config: Option<bool>) -> Res<()> {
+    let tunnel = core.db.tunnel(&id).map_err(err)?;
     core.stop(&id).await;
-    if core.db.tunnel(&id).map_err(err)?.map(|t| t.kind == TunnelKind::Token).unwrap_or(false) {
-        tokens::delete(&id);
+    if let Some(tunnel) = tunnel {
+        if tunnel.kind == TunnelKind::Config && delete_config.unwrap_or(false) {
+            if let Some(path) = tunnel.config_path.as_deref() {
+                delete_config_file(path)?;
+            }
+        }
+        if tunnel.kind == TunnelKind::Token {
+            tokens::delete(&id);
+        }
     }
     core.db.delete_tunnel(&id).map_err(err)?;
     core.states.lock().unwrap().remove(&id);
     let _ = std::fs::remove_file(core.data_dir.join("derived").join(format!("{id}.yml")));
     core.notify_changed();
     Ok(())
+}
+
+fn delete_config_file(path: &str) -> Res<()> {
+    match std::fs::remove_file(path) {
+        Ok(()) => Ok(()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(e) => Err(format!("Could not delete config file `{path}`: {e}")),
+    }
 }
 
 #[tauri::command]
@@ -555,6 +571,27 @@ pub fn e2e_report(nonce: String, text: String) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn config_deletion_removes_only_the_file_and_reports_failures() {
+        let root = std::env::temp_dir().join(format!("underlane-delete-config-{}", std::process::id()));
+        std::fs::create_dir_all(&root).unwrap();
+        let path = root.join("config.yml");
+        let credentials = root.join("credentials.json");
+        std::fs::write(&path, "url: http://localhost:1\n").unwrap();
+        std::fs::write(&credentials, "{}").unwrap();
+
+        delete_config_file(path.to_str().unwrap()).unwrap();
+        assert!(!path.exists());
+        assert!(credentials.exists());
+        delete_config_file(path.to_str().unwrap()).unwrap();
+        let error = delete_config_file(root.to_str().unwrap()).unwrap_err();
+        assert!(error.contains("Could not delete config file"));
+        assert!(root.is_dir());
+
+        std::fs::remove_file(credentials).unwrap();
+        std::fs::remove_dir(root).unwrap();
+    }
 
     #[test]
     fn group_patch_distinguishes_omitted_null_and_name() {
