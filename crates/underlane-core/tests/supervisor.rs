@@ -16,6 +16,29 @@ use fake_cloudflared::{argv, fake, Fake};
 type States = Arc<Mutex<Vec<TunnelState>>>;
 
 #[tokio::test]
+async fn applying_edits_never_starts_a_stopped_or_stopping_tunnel() {
+    let f = fake("ignore-term");
+    let (sup, states, _) = supervisor(&f, |cfg| cfg.grace_period = Duration::from_millis(10));
+    let spec = RunSpec { tunnel: tunnel(TunnelKind::Quick), token: None };
+    assert!(!sup.restart_if_running(spec.clone()));
+    assert!(!sup.is_running("tun-1"));
+    sup.start(spec.clone());
+    wait_state(&states, |s| s.pid.is_some()).await;
+    // Wait for the fake connector to install its signal handler before stopping.
+    for _ in 0..100 {
+        if f.root.join("bin/pids.json").exists() { break; }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    let stopping_sup = sup.clone();
+    let stop = tokio::spawn(async move { stopping_sup.stop("tun-1").await });
+    while sup.config_state("tun-1").is_some() { tokio::task::yield_now().await; }
+    assert!(!sup.restart_if_running(spec.clone()));
+    stop.await.unwrap();
+    assert!(!sup.restart_if_running(spec));
+    assert!(!sup.is_running("tun-1"));
+}
+
+#[tokio::test]
 async fn token_echo_is_redacted_before_persisted_logs() {
     use underlane_core::db::{Db, LogQuery};
     use underlane_core::secret::Secret;

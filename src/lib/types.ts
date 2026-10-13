@@ -9,6 +9,23 @@ export interface RouteMapping {
   note: string | null;
 }
 
+export interface HostnameRoute {
+  index: number | null;
+  hostname: string;
+  service: string;
+  path: string | null;
+}
+
+export interface HostnameConfig {
+  revision: string;
+  routes: HostnameRoute[];
+  fallback_service: string;
+}
+
+export interface HostnameSaveResult {
+  restart_error: string | null;
+}
+
 export interface FailureExplanation {
   cause: string;
   action: string | null;

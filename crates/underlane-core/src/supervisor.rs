@@ -356,6 +356,13 @@ impl Supervisor {
         self.spawn_run(&mut runs, spec);
     }
 
+    /// Apply an edit only to an existing run; a concurrent user Stop always wins.
+    pub fn restart_if_running(&self, spec: RunSpec) -> bool {
+        let runs = self.runs.lock().unwrap();
+        let Some(handle) = runs.get(&spec.tunnel.id).filter(|h| h.live() && !h.stopping) else { return false };
+        handle.tx.send(Cmd::Restart(Box::new(spec))).is_ok()
+    }
+
     /// Stop a tunnel and wait until its process has exited.
     pub async fn stop(&self, id: &str) {
         let waiting = {

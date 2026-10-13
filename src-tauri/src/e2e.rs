@@ -28,7 +28,7 @@ mod server {
     use std::time::Duration;
 
     use bytes::Bytes;
-    use http_body_util::Full;
+    use http_body_util::{BodyExt, Full, Limited};
     use hyper::{Request, Response};
     use hyper_util::rt::TokioIo;
     use serde_json::{json, Value};
@@ -37,6 +37,13 @@ mod server {
     use super::PENDING;
     use crate::state::Core;
     use crate::tray;
+
+    #[derive(serde::Deserialize)]
+    struct HostnameSave {
+        revision: String,
+        routes: Vec<underlane_core::hostnames::HostnameRoute>,
+        fallback_service: String,
+    }
 
     pub fn start(app: AppHandle, port: u16) {
         tauri::async_runtime::spawn(async move {
@@ -103,6 +110,27 @@ mod server {
         let id = q.get("id").cloned().unwrap_or_default();
         match (req.method().as_str(), req.uri().path()) {
             ("GET", "/health") => reply(200, json!({"ok": true})),
+            ("GET", "/hostnames") => {
+                match tokio::task::spawn_blocking(move || crate::hostnames::load(&core, &id)).await {
+                    Ok(Ok(config)) => reply(200, json!(config)),
+                    Ok(Err(error)) => reply(400, json!({"error": error})),
+                    Err(_) => reply(500, json!({"error": "Hostname load failed"})),
+                }
+            }
+            ("POST", "/hostnames") => {
+                let body = match tokio::time::timeout(Duration::from_secs(5), Limited::new(req.into_body(), 64 * 1024).collect()).await {
+                    Ok(Ok(body)) => body.to_bytes(),
+                    _ => return reply(400, json!({"error": "Invalid or oversized hostname request"})),
+                };
+                let save: HostnameSave = match serde_json::from_slice(&body) {
+                    Ok(save) => save,
+                    Err(_) => return reply(400, json!({"error": "Invalid hostname request"})),
+                };
+                match crate::hostnames::save(core, id, save.revision, save.routes, save.fallback_service).await {
+                    Ok(result) => reply(200, json!(result)),
+                    Err(error) => reply(400, json!({"error": error})),
+                }
+            }
             ("POST", "/quick") => {
                 let level = core.settings.read().unwrap().default_loglevel.clone();
                 let origin = q.get("origin").cloned().unwrap_or_default();

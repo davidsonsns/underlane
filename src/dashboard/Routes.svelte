@@ -3,19 +3,65 @@
   // Each service is probed while the window is visible so it's obvious which ones are running.
   import { openUrl } from "@tauri-apps/plugin-opener";
   import { store } from "../lib/store.svelte";
-  import { api } from "../lib/api";
+  import { api, errorText } from "../lib/api";
+  import { notify } from "../lib/toast";
   import { reachSummary, serviceLabel, shortService } from "../lib/format";
   import type { Tunnel } from "../lib/types";
   import { mergeProps } from "bits-ui";
   import CopyButton from "$lib/components/app/CopyButton.svelte";
   import Tip from "$lib/components/app/Tip.svelte";
   import { kbRing } from "$lib/components/ui/mac";
+  import { Button } from "$lib/components/ui/button/index.js";
+
+  let HostnameSheet = $state<typeof import("./HostnameSheet.svelte").default | null>(null);
+  let manageTrigger = $state<HTMLButtonElement | null>(null);
+  let manageOpen = $state(false);
+  let manageLoading = $state(false);
+  let manageTarget = $state<{ id: string; name: string; running: boolean } | null>(null);
+  let restartWarning = $state<{ id: string; message: string } | null>(null);
+  let retryingRestart = $state(false);
 
   let { tunnel }: { tunnel: Tunnel } = $props();
   const PROBE_EVERY_MS = 3000;
 
   const s = $derived(tunnel.state);
   const live = $derived(s.status === "connected" || s.status === "degraded");
+
+  async function manage() {
+    if (manageLoading) return;
+    // Freeze the target before the lazy load; a sidebar selection must never retarget a draft.
+    manageTarget = { id: tunnel.id, name: tunnel.name, running: live || s.status === "starting" };
+    manageLoading = true;
+    try {
+      HostnameSheet ??= (await import("./HostnameSheet.svelte")).default;
+      manageOpen = true;
+    } catch (e) {
+      notify.error(e, "Couldn't open hostname editor");
+    } finally {
+      manageLoading = false;
+    }
+  }
+
+  async function saved(id: string, restartError: string | null) {
+    restartWarning = restartError ? { id, message: restartError } : null;
+    await store.refresh();
+    if (!restartError) notify.success("Hostnames saved.");
+  }
+
+  async function retryRestart() {
+    if (!restartWarning || retryingRestart) return;
+    const id = restartWarning.id;
+    retryingRestart = true;
+    try {
+      await api.restart(id);
+      restartWarning = null;
+      await store.refresh();
+    } catch (e) {
+      restartWarning = { id, message: errorText(e) };
+    } finally {
+      retryingRestart = false;
+    }
+  }
   const routes = $derived(
     s.mappings.length
       ? s.mappings
@@ -101,12 +147,22 @@
 </script>
 
 <section class="mt-8" aria-labelledby={headingId}>
-  <div class="mb-3 ms-3.5 flex items-baseline justify-between gap-3">
+  <div class="mb-3 ms-3.5 flex flex-wrap items-center gap-3">
     <h2 id={headingId} class="text-sm font-medium">Hostnames</h2>
     {#if summary}
       <span class="text-xs {live && upCount < probed.length ? 'text-bad-text' : 'text-muted-foreground'}" role="status">{summary}</span>
     {/if}
+    {#if tunnel.kind === "config"}
+      <Button bind:ref={manageTrigger} variant="outline" class="ms-auto" disabled={manageLoading} onclick={manage}>Manage hostnames</Button>
+    {/if}
   </div>
+
+  {#if restartWarning?.id === tunnel.id}
+    <div class="mb-3 flex items-start justify-between gap-3 rounded-md bg-fill px-3.5 py-2" role="status">
+      <div class="min-w-0 text-callout"><p>Hostnames saved. The tunnel couldn't restart.</p><p class="select-text text-xs text-bad-text">{restartWarning.message}</p></div>
+      <Button variant="outline" disabled={retryingRestart} onclick={retryRestart}>{retryingRestart ? "Restarting…" : "Restart tunnel"}</Button>
+    </div>
+  {/if}
 
   {#if routes.length === 0}
     <p class="mx-0.5 text-xs text-muted-foreground">
@@ -178,3 +234,7 @@
     </ul>
   {/if}
 </section>
+
+{#if HostnameSheet && manageTarget}
+  <HostnameSheet bind:open={manageOpen} target={manageTarget} returnFocus={() => manageTrigger} onsaved={saved} />
+{/if}

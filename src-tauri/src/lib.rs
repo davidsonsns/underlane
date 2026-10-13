@@ -2,6 +2,7 @@
 
 mod commands;
 mod e2e;
+mod hostnames;
 mod platform;
 mod state;
 mod tokens;
@@ -71,6 +72,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::overview,
             commands::check_config_change,
+            commands::load_hostnames,
+            commands::save_hostnames,
             commands::open_config_in_editor,
             commands::scan_default,
             commands::import_paths,

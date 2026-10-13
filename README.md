@@ -20,8 +20,10 @@ thinking about them: no terminal windows, no juggling `config.yml` files.
   on, it also has a request inspector with headers, pretty-printed JSON, a hex view and
   "copy as curl".
 - **Launch at login** (native `SMAppService`) and per-tunnel **start automatically**.
-- **Your config files are never modified.** Request inspection uses a derived copy in Underlane's data
-  folder.
+- **Manage hostnames** in a compact editor for locally managed config tunnels. Add, edit, or remove
+  rules, then save to the original config with a backup. Saving may change YAML comments and
+  formatting; advanced rule settings are retained. Running tunnels restart after validation.
+  Importing, starting, and request inspection still leave the original file untouched.
 - **Know when a running config is stale.** Imported tunnels show “Config changed on disk · Restart
   to apply” after an external edit, checked when you revisit the detail or return to the dashboard.
   Restart is explicit; Open in Editor uses the file's registered app, and Show in Finder reveals it.

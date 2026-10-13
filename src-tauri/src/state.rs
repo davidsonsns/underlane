@@ -267,7 +267,7 @@ impl Core {
     /// stopped tunnel still shows where it would send traffic.
     fn state_with_routes(&self, t: &Tunnel) -> TunnelState {
         let mut s = self.state_of(&t.id);
-        if s.mappings.is_empty() && t.kind == TunnelKind::Config {
+        if (s.mappings.is_empty() || s.status == Status::Stopped) && t.kind == TunnelKind::Config {
             let loaded = t.config_path.as_deref().map(|p| underlane_core::config::TunnelConfig::load(std::path::Path::new(p)));
             if let Some(Err(e)) = &loaded {
                 if s.status == Status::Stopped && s.detail.is_none() {
@@ -351,9 +351,7 @@ impl Core {
 
     /// Apply a changed tunnel definition to a running process.
     pub fn restart_if_running(&self, id: &str) -> anyhow::Result<()> {
-        if self.sup.is_running(id) {
-            self.restart(id)?;
-        }
+        self.sup.restart_if_running(self.spec(id)?);
         Ok(())
     }
 

@@ -1,7 +1,7 @@
 //! Reading cloudflared `config.yml` files.
 //!
-//! Files are only ever read. The parsed document keeps the original YAML value so a derived
-//! config can be emitted later without losing keys this module doesn't model.
+//! This parser only reads files. The parsed document keeps the original YAML value so derived
+//! configs and explicit hostname edits retain keys this module doesn't model.
 
 use std::path::{Path, PathBuf};
 use std::hash::{Hash, Hasher};

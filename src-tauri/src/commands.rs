@@ -45,6 +45,19 @@ pub async fn check_config_change(core: CoreState<'_>, id: String) -> Res<Option<
 }
 
 #[tauri::command]
+pub async fn load_hostnames(core: CoreState<'_>, id: String) -> Res<underlane_core::hostnames::HostnameConfig> {
+    blocking(&core, move |c| crate::hostnames::load(c, &id)).await
+}
+
+#[tauri::command]
+pub async fn save_hostnames(
+    core: CoreState<'_>, id: String, revision: String,
+    routes: Vec<underlane_core::hostnames::HostnameRoute>, fallback_service: String,
+) -> Res<crate::hostnames::SaveResult> {
+    crate::hostnames::save(core.inner().clone(), id, revision, routes, fallback_service).await
+}
+
+#[tauri::command]
 pub async fn open_config_in_editor(core: CoreState<'_>, app: AppHandle, id: String) -> Res<()> {
     blocking(&core, move |c| {
         let tunnel = c.db.tunnel(&id).map_err(err)?.ok_or("Tunnel not found")?;

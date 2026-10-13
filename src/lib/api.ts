@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import type {
-  Binary, Candidate, ConfigChange, ImportReport, LogLine, LoginItem, Overview, RequestDetail, RequestSummary, Settings, Validation,
+  Binary, Candidate, ConfigChange, HostnameConfig, HostnameRoute, HostnameSaveResult, ImportReport, LogLine, LoginItem, Overview, RequestDetail, RequestSummary, Settings, Validation,
 } from "./types";
 
 export const api = {
@@ -22,6 +22,9 @@ export const api = {
   validate: (id: string) => invoke<Validation>("validate_tunnel", { id }),
   checkConfigChange: (id: string) => invoke<ConfigChange | null>("check_config_change", { id }),
   openConfigInEditor: (id: string) => invoke<void>("open_config_in_editor", { id }),
+  loadHostnames: (id: string) => invoke<HostnameConfig>("load_hostnames", { id }),
+  saveHostnames: (id: string, revision: string, routes: HostnameRoute[], fallbackService: string) =>
+    invoke<HostnameSaveResult>("save_hostnames", { id, revision, routes, fallbackService }),
   probeServices: (services: string[]) => invoke<(boolean | null)[]>("probe_services", { services }),
   queryLogs: (args: { tunnelId?: string | null; levels?: string[]; search?: string; beforeId?: number; afterId?: number; limit?: number }) =>
     invoke<LogLine[]>("query_logs", { args }),

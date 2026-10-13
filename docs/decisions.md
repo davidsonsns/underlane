@@ -68,8 +68,9 @@ no Go toolchain here; fewer reference tray apps).
 ## 4. Body capture: an app-owned inspecting reverse proxy, opt-in per tunnel
 
 - Design is in research.md §3. There's one loopback listener per inspected ingress rule, and the
-  derived config lives in `<data>/derived/`. **The user's YAML is never written.** Imported files
-  are only read, and they're re-read on every start, so edits to them are picked up.
+  derived config lives in `<data>/derived/`. Inspection never writes the user's YAML. Imported
+  files are re-read on every start, so edits to them are picked up. Explicit hostname saves are
+  the exception introduced in §19.
 - **Token tunnels: inspection is not offered.** Their ingress is remote, and rewriting it would
   require the Cloudflare API (out of scope for v1). The mapping is still shown from the metrics
   `/config` endpoint while the tunnel runs. Infeasible as written, so this is the closest
@@ -675,7 +676,7 @@ an Access policy editor, not a WARP client.
 
 | # | Decision | Choice |
 |---|---|---|
-| D1 | Config editing | **App-owned tunnels.** Files the user wrote are never written (the §4 promise is reworded to "Underlane never edits files you wrote"). Tunnels created in-app get a config that Underlane owns and can fully edit; "Eject" turns it into an ordinary imported file. Comment-preserving edits of user YAML were rejected: `serde_yaml` drops comments and one bad write would erode the trust contract. |
+| D1 | Config editing | **Original plan: app-owned tunnels.** Superseded for explicit hostname editing by §19. Automatic runtime config derivation still never writes user files. |
 | D2 | Owned-config location | `~/.cloudflared/underlane/<name>.yml` with a `# Managed by Underlane` header: visible, runnable from a terminal, survives uninstall. Credentials stay where cloudflared writes them (`~/.cloudflared/<uuid>.json`). Each owned file is hashed; a hand-edited one is never overwritten. Derived copies stay in the data dir as in §4. |
 | D3 | Cloudflare API | **None through Phase 2.** Deep links to the dashboard where the CLI has no command (DNS record removal, editing remotely managed tunnels). The `apiToken` inside `cert.pem` is never used, logged or serialized: it is account-wide and lives 10+ years. If an API is ever added (Phase 3), it uses a separate user-created, minimally scoped token in the Keychain. |
 | D4 | Tunnels outliving the app | **Keep §3.** Phase 1 only detects and displays tunnels run by launchd or scripts. A Phase 3 candidate is a per-tunnel LaunchAgent written by Underlane. `cloudflared service install` is never used: one fixed label per machine, and without a token its plist can't run a locally managed tunnel. |
@@ -753,3 +754,24 @@ invent a child exit. Stop/restart clear explanations, and successful edge readin
 obsolete connection errors. An observed origin error remains until Stop/restart: edge readiness
 cannot establish origin recovery, and this slice adds no origin probes. Imported files and
 schema v1 remain unchanged; the config-change badge and failure explainers are complete.
+
+## 19. Explicit hostname editing for local configs
+
+The approved compact hostname modal edits the original config only after the user chooses
+Save changes. This supersedes §18 D1 for hostname editing: app-only overrides would make the
+visible rules disagree with the file opened in an external editor or run from a terminal.
+Import, ordinary starts, and request inspection continue to leave source bytes untouched.
+
+Existing rule indices retain hidden path filters and advanced options; new rules precede the
+final catch-all. Fully shadowed additions are rejected rather than silently routing elsewhere.
+The footer's 404 checkbox selects `http_status:404`; turning it off requires an explicit
+alternate fallback service. Token and quick tunnel hostnames remain managed elsewhere. Local
+rule edits never create or remove DNS records.
+
+Save validates a same-directory candidate before publication or restart, rejects stale source
+bytes, and keeps an exact-byte backup beside the config as
+`.<filename>.underlane-backup-<pid>-<serial>.bak`. YAML comments and formatting may change on an
+actual edit; a no-op preserves bytes. Atomic replacement preserves macOS metadata, ACLs, owner,
+group, and mode, or fails without publishing. Saves are serialized inside the app; external
+editors do not share that lock, leaving a narrow optimistic check/rename race. A running tunnel
+is restarted only if it is not stopping; stopped tunnels remain stopped and show fresh rules.

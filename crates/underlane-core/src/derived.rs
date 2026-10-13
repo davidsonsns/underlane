@@ -2,7 +2,7 @@
 //!
 //! The copy always lives in Underlane's data directory (so every process Underlane starts can be
 //! identified as its own) and has relative paths made absolute. With inspection on, eligible
-//! ingress services are pointed at Underlane's loopback proxy. The user's file is never written.
+//! ingress services are pointed at Underlane's loopback proxy. Derivation never writes the source.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};

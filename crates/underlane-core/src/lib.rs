@@ -8,6 +8,7 @@ pub mod db;
 pub mod decode;
 pub mod derived;
 pub mod import;
+pub mod hostnames;
 pub mod model;
 pub mod proxy;
 pub mod platform;

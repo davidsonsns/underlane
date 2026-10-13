@@ -543,3 +543,31 @@ No required P3 gate remains UNVERIFIED. Non-Unix compilation and an actual Voice
 session were not run; native AX names and keyboard behavior were verified. Origin errors remain
 observed-error notices until Stop/Restart because no origin recovery probe was added. The wider
 roadmap remains deferred.
+
+## Hostname editor — 2026-10-13
+
+The approved compact modal is implemented for local ingress config tunnels: borderless editable
+rows, staged add/remove with Undo, a footer 404 checkbox with explicit alternate fallback, and
+Cancel/Save. Save validates before updating source bytes, creates an exact backup, preserves
+advanced options and macOS file metadata, rejects source conflicts and newly shadowed routes,
+and restarts only a live non-stopping tunnel. New/changed hostname spelling is normalized to
+lowercase; existing no-op bytes remain intact.
+
+- `cargo test --workspace`: 123 passed, 2 existing ignored tests. The final serial build passed
+  all suites including doctests; an intermediate concurrent build produced a transient rustdoc
+  dependency-resolution failure.
+- `npm test`: 61 passed; `npm run check`: zero errors/warnings.
+- Debug/e2e Tauri bundle built and signed successfully.
+- `node e2e/hostnames.mjs target/debug/bundle/macos/Underlane.app`: 29 native checks passed using
+  disposable config/database and the synthetic connector. Includes one-restart verification,
+  stopped-state refresh, backup bytes, advanced options, conflicts, validation rejection,
+  unsupported tunnel boundaries, catch-all retention, and new/edited wildcard-shadow failures.
+- A browser-only mocked-IPC harness passed 13 interaction checks with dark/light screenshots,
+  keyboard focus/cancellation, error recovery, and footer visibility at 614px height and 19 rows.
+  Local evidence is under `e2e/out/hostnames/` (ignored build/test output).
+- Changed new Rust modules pass rustfmt; `git diff --check` passes. Repo-wide rustfmt still
+  reports pre-existing formatting differences across untouched modules; those were left alone.
+
+No real config, account, DNS record, or externally managed connector was changed. Live Cloudflare
+reconnection and an actual VoiceOver session were not exercised; native save/restart commands
+used the synthetic connector, and UI interaction checks used Chromium browser mocks.
