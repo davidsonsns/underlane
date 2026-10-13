@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount, tick, untrack, type Snippet } from "svelte";
-  import { DropdownMenu, mergeProps } from "bits-ui";
+  import { DropdownMenu } from "bits-ui";
   import { slide } from "svelte/transition";
   import { revealItemInDir } from "@tauri-apps/plugin-opener";
   import Check from "@lucide/svelte/icons/check";
@@ -29,6 +29,7 @@
   import StatusDot from "$lib/components/app/StatusDot.svelte";
   import Tip from "$lib/components/app/Tip.svelte";
   import IconAction from "$lib/components/app/IconAction.svelte";
+  import EditableName from "$lib/components/app/EditableName.svelte";
   import Combobox from "$lib/components/app/Combobox.svelte";
   import SettingsGroup from "$lib/components/app/SettingsGroup.svelte";
   import SettingsRow from "$lib/components/app/SettingsRow.svelte";
@@ -53,9 +54,6 @@
   let validationRequest = 0;
   let removeOpen = $state(false);
   let removeTrigger = $state<HTMLElement | null>(null);
-  let nameButton = $state<HTMLElement | null>(null);
-  let nameInput = $state<HTMLInputElement | null>(null);
-  let nameDraft = $state("");
   let originDraft = $state("");
   let tokenDraft = $state("");
   let now = $state(Date.now());
@@ -165,50 +163,6 @@
     if (mounted) void configCheck.check();
   }
 
-  // Rename (02 F7). Enter commits once, Escape never saves, and a blur commits only while still
-  // editing (so the Enter/Escape that closed the field can't save again). Focus goes back to
-  // the name only after Enter or Escape; a blur leaves it where the user clicked or tabbed.
-  // Only an edit saves: comparing with the name at edit start (not the live one) keeps a rename
-  // made elsewhere meanwhile from being overwritten by an untouched field.
-  let mode = $state<"idle" | "editing" | "done">("idle");
-  let nameAtStart = "";
-  const renameHintId = $props.id();
-
-  async function startRename() {
-    nameDraft = nameAtStart = tunnel.name;
-    mode = "editing";
-    await tick();
-    nameInput?.focus();
-    nameInput?.select();
-  }
-
-  function commit() {
-    if (mode !== "editing") return;
-    mode = "done";
-    const name = nameDraft.trim();
-    if (name && name !== nameAtStart) patch({ name });
-  }
-
-  async function close(refocus: boolean) {
-    if (refocus) {
-      await tick();
-      nameButton?.focus();
-    }
-    mode = "idle";
-  }
-
-  function onNameKey(e: KeyboardEvent) {
-    if (e.key === "Enter") {
-      e.preventDefault();
-      commit();
-      close(true);
-    } else if (e.key === "Escape") {
-      e.preventDefault();
-      mode = "done";
-      close(true);
-    }
-  }
-
   // Names, URLs and tokens aren't prose: no autocorrect or capitalisation, and no spelling or
   // completion bubble, whose dismissal would eat the first Escape (measured in the real app).
   const plainText = { autocorrect: "off", autocapitalize: "off", spellcheck: false, writingsuggestions: false } as const;
@@ -256,37 +210,12 @@
   <div class="flex min-w-0 max-w-1/2 items-center gap-2.5">
     <!-- StatusDot carries the accessible status; the tooltip adds detail. -->
     <Tip text={statusHint[s.status]}>
-      {#snippet children({ props })}<button {...props} type="button" aria-label={statusHint[s.status]} class="flex shrink-0 rounded-sm {kbRing}"><StatusDot status={s.status} size={10} /></button>{/snippet}
+      {#snippet children({ props })}<button {...props} type="button" aria-label={statusHint[s.status]} class="flex shrink-0 rounded-sm {kbRing}"><StatusDot status={s.status} /></button>{/snippet}
     </Tip>
-    {#if mode === "editing"}
-      <Input
-        bind:ref={nameInput}
-        bind:value={nameDraft}
-        {...plainText}
-        aria-label="Tunnel name"
-        class="h-7.5 min-w-0 w-70 text-lg"
-        onkeydown={onNameKey}
-        onblur={() => {
-          if (mode === "editing") {
-            commit();
-            close(false);
-          }
-        }}
-      />
-    {:else}
-      <!-- A permanent "Rename" description: the Tip's aria-describedby exists only while it's open.
-           -0.01em: the title's tighter tracking, a one-off. -->
-      <Tip text="Rename">
-        {#snippet children({ props })}
-          <button
-            {...mergeProps(props, { onclick: startRename, "aria-describedby": renameHintId })}
-            bind:this={nameButton}
-            class="min-w-0 cursor-text truncate rounded-sm text-left text-xl font-semibold tracking-[-0.01em] {kbRing}" title={tunnel.name}>{tunnel.name}</button
-          >
-        {/snippet}
-      </Tip>
-      <span id={renameHintId} class="sr-only">Rename</span>
-    {/if}
+    <EditableName name={tunnel.name} label="Tunnel name" class="text-xl font-semibold tracking-[-0.01em]" onsave={async (name) => {
+      await api.updateTunnel(tunnel.id, { name });
+      await store.refresh();
+    }} />
   </div>
   <span class="min-w-0 flex-1 truncate text-callout text-muted-foreground" title={headerMeta}>{headerMeta}</span>
   <div class="flex shrink-0 items-center gap-2">

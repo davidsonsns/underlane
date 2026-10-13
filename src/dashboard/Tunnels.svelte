@@ -21,6 +21,7 @@
   import { mergeProps } from "bits-ui";
   import { cn } from "$lib/utils";
   import TunnelDetail from "./TunnelDetail.svelte";
+  import GroupName from "./GroupName.svelte";
 
   let { focusId = null, onadd }: { focusId?: string | null; onadd: (e: MouseEvent) => void } = $props();
   let selected = $state<string | null>(null);
@@ -113,8 +114,8 @@
       <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
       <nav class="flex flex-col gap-2 overflow-y-auto border-e-[0.5px] border-border bg-sidebar/40 p-3" aria-label="Tunnels" bind:this={list} onkeydown={onListKey}>
         {#each groups as g (g.id)}
-          <div animate:flip={{ duration: motion(200) }}>
-            {#if g.id !== null}<div class="px-2 py-1 text-xs font-semibold text-muted-foreground">{g.name}</div>{/if}
+          <div class="min-w-0" animate:flip={{ duration: motion(200) }}>
+            {#if g.id !== null}<GroupName id={g.id} name={g.name} />{/if}
             {#each g.tunnels as t (t.id)}
               <button
                 class={cn("flex w-full items-center gap-2.5 rounded-md px-2.5 py-2.5 transition-colors text-left", t.id === selected ? "bg-(--selected)" : "hover:bg-fill", kbRing)}
