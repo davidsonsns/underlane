@@ -147,7 +147,7 @@
       ></div>
       {#each nav as n}
         <button
-          class={cn("flex h-8 items-center gap-2.5 rounded-md px-2.5 text-left transition-colors", view === n.id ? "text-foreground font-medium" : "text-muted-foreground hover:bg-fill hover:text-foreground", kbRing)}
+          class={cn("flex h-8 items-center gap-2.5 rounded-md px-2.5 text-left transition-colors", view === n.id ? "text-foreground" : "text-muted-foreground hover:bg-fill hover:text-foreground", kbRing)}
           aria-current={view === n.id ? "page" : undefined}
           onclick={() => show(n.id, () => { view = n.id; focusId = null; })}
         >
