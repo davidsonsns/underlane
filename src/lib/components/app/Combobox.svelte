@@ -74,7 +74,7 @@
 <Popover.Root bind:open onOpenChange={(o) => !o && (query = "")}>
   <Popover.Trigger bind:ref={trigger}>
     {#snippet child({ props })}
-      <Button {...props} {id} aria-describedby={describedBy} aria-labelledby={labelledBy} variant="outline" class={cn("w-55 justify-between", className)}>
+      <Button {...props} {id} title={value || undefined} aria-describedby={describedBy} aria-labelledby={labelledBy} variant="outline" class={cn("w-55 justify-between", className)}>
         <span class="truncate">{value || "None"}</span><ChevronDown class="size-3 text-muted-foreground" />
       </Button>
     {/snippet}
@@ -94,7 +94,7 @@
             <Command.Group {heading}>
               {#each rows.matches as name (name)}
                 <Command.Item value={name} onSelect={() => pick(name)} class={row}>
-                  {#if name === value}<span class={menuIndicator}><Check /></span>{/if}<span class="truncate">{name}</span>
+                  {#if name === value}<span class={menuIndicator}><Check /></span>{/if}<span class="truncate" title={name}>{name}</span>
                 </Command.Item>
               {/each}
             </Command.Group>

@@ -135,7 +135,7 @@
     up: "bg-ok",
     ready: "bg-off",
     down: "bg-bad",
-    idle: "shadow-[inset_0_0_0_1.5px_var(--off)]", // a hollow ring: probed nothing yet (StatusDot's idle look)
+    idle: "border border-off", // Same hollow ring as a stopped StatusDot.
     none: "invisible", // keeps the column width so services stay aligned
   };
   const link = `cursor-pointer select-none rounded-xs hover:underline ${kbRing}`;
@@ -203,12 +203,12 @@
           <span class="flex items-center gap-1.75 justify-self-end text-callout whitespace-nowrap text-muted-foreground">
             <Tip text={tip ?? ""} disabled={!tip}>
               {#snippet children({ props })}
-                <!-- The dot itself is the trigger (no extra button); ::before widens the 7px hover target. -->
+                <!-- The dot itself is the trigger (no extra button); ::before widens the 8px hover target. -->
                 <span
                   {...{ ...props, tabindex: undefined }}
                   role={tip ? "img" : undefined}
                   aria-label={tip}
-                  class="relative size-1.75 flex-none rounded-full transition-[background-color,box-shadow] duration-240 before:absolute before:-inset-1 {dot[r]}"
+                  class="relative size-2 flex-none rounded-full transition-[background-color,box-shadow] duration-240 before:absolute before:-inset-1 {dot[r]}"
                 >
                   <!-- Requests through an inspected route flash the dot, like a network activity light. -->
                   {#key store.pulses[tunnel.id]}

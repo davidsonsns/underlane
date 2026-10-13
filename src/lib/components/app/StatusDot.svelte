@@ -7,7 +7,7 @@
   let { status, size = 8 }: { status: Status; size?: number } = $props();
 
   const look: Record<Status, string> = {
-    stopped: "bg-transparent shadow-[inset_0_0_0_1.5px_var(--off)]",
+    stopped: "bg-transparent border border-off",
     connected: "bg-ok shadow-[0_0_0_3px_color-mix(in_srgb,var(--ok)_18%,transparent)]",
     degraded: "bg-degraded",
     crashed: "bg-bad",

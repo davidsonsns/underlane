@@ -168,7 +168,13 @@
     {:else}
       {#each groups as g (g.id)}
         <div class="not-first:mt-1.5" animate:flip={{ duration: motion(220) }}>
-          {#if g.id !== null}<div class="px-2 pt-1.5 pb-0.75 text-xs font-semibold text-muted-foreground">{g.name}</div>{/if}
+          {#if g.id !== null}
+            <Tip text={g.name}>
+              {#snippet children({ props })}
+                <div {...{ ...props, tabindex: undefined }} class="truncate px-2 pt-1.5 pb-0.75 text-xs font-semibold text-muted-foreground">{g.name}</div>
+              {/snippet}
+            </Tip>
+          {/if}
           {#each g.tunnels as t (t.id)}
             {@const m = t.state.mappings.find((m) => m.hostname) ?? t.state.mappings[0]}
             {@const url = publicUrl(t)}
