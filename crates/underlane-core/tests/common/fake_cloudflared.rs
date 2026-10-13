@@ -23,13 +23,25 @@ pub fn fake(mode: &str) -> Fake {
     }
     std::fs::write(bindir.join("mode"), mode).unwrap();
     let data = root.join("data");
-    Fake { _dir: dir, bin, data, root }
+    Fake {
+        _dir: dir,
+        bin,
+        data,
+        root,
+    }
 }
 
 pub fn argv(f: &Fake) -> (Vec<String>, String) {
-    let v: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(f.root.join("bin/argv.json")).unwrap()).unwrap();
+    let v: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(f.root.join("bin/argv.json")).unwrap())
+            .unwrap();
     (
-        v["argv"].as_array().unwrap().iter().map(|a| a.as_str().unwrap().to_string()).collect(),
+        v["argv"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|a| a.as_str().unwrap().to_string())
+            .collect(),
         v["cwd"].as_str().unwrap().to_string(),
     )
 }

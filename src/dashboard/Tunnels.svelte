@@ -49,7 +49,7 @@
 
   // TunnelDetail's Remove: select the next tunnel in list order (else the previous one) and
   // focus it in the list, since the detail that held focus unmounts (02 2b). Removing the last
-  // tunnel focuses the empty state's Add tunnel instead of leaving focus on <body>.
+  // tunnel focuses the empty state's New button instead of leaving focus on <body>.
   async function remove(id: string) {
     const order = groups.flatMap((g) => g.tunnels);
     const i = order.findIndex((t) => t.id === id);
@@ -91,7 +91,7 @@
         <Button variant="outline" onclick={() => api.startAll()}><Play class="size-2.5 fill-current" /> Start all</Button>
       {/if}
     {/if}
-    <Button data-add-tunnel onclick={onadd}><Plus class="size-3.5" /> Add tunnel</Button>
+    <Button data-add-tunnel onclick={onadd}><Plus class="size-3.5" /> New</Button>
   </Toolbar>
 
   {#if store.loading}
@@ -104,8 +104,8 @@
     </div>
   {:else if store.tunnels.length === 0}
     <div class="grid flex-1 place-items-center">
-      <StatePanel kind="empty" title="Set up your first tunnel" message="Underlane runs cloudflared for you. Import the config files you already have, paste a token from the Cloudflare dashboard, or share a local port with a quick tunnel; no account needed for that one.">
-        <Button bind:ref={emptyAdd} onclick={onadd}>Add tunnel</Button>
+      <StatePanel kind="empty" title="Create your first project" message="Start with a new config or load one you already have. For a temporary public URL, create a quick tunnel; no Cloudflare account needed.">
+        <Button bind:ref={emptyAdd} onclick={onadd}>New</Button>
       </StatePanel>
     </div>
   {:else}

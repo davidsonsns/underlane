@@ -317,6 +317,45 @@ impl Db {
         Ok(())
     }
 
+    /// Register a project and its optional group together; legacy path spellings also count.
+    pub(crate) fn register_project(&self, mut tunnel: Tunnel, group: Option<&str>) -> anyhow::Result<Tunnel> {
+        let mut conn = self.conn.lock().unwrap();
+        let tx = conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+        let path = std::path::Path::new(tunnel.config_path.as_deref().expect("project config path"));
+        let canonical = std::fs::canonicalize(path)?;
+        {
+            let mut statement = tx.prepare("SELECT config_path FROM tunnels WHERE config_path IS NOT NULL")?;
+            for existing in statement.query_map([], |row| row.get::<_, String>(0))? {
+                let existing = existing?;
+                let existing = crate::config::expand_tilde(&existing);
+                anyhow::ensure!(existing != path && std::fs::canonicalize(&existing).ok().as_deref() != Some(canonical.as_path()),
+                    "This config file already belongs to a project. Open that project instead.");
+            }
+        }
+        if let Some(name) = group {
+            let group = match group_by_name(&tx, name, None)? {
+                Some(group) => group,
+                None => {
+                    let group = Group {
+                        id: uuid::Uuid::new_v4().to_string(), name: name.to_string(),
+                        sort: tx.query_row("SELECT COALESCE(MAX(sort), -1) + 1 FROM groups", [], |r| r.get(0))?,
+                    };
+                    tx.execute("INSERT INTO groups(id, name, sort) VALUES (?1, ?2, ?3)", params![group.id, group.name, group.sort])?;
+                    group
+                }
+            };
+            tunnel.group_id = Some(group.id);
+        }
+        tunnel.sort = tx.query_row("SELECT COALESCE(MAX(sort), -1) + 1 FROM tunnels", [], |r| r.get(0))?;
+        tx.execute(
+            "INSERT INTO tunnels(id, group_id, name, kind, config_path, origin_url, inspect, autostart, loglevel, created_at, sort)
+             VALUES (?1, ?2, ?3, 'config', ?4, NULL, 0, 0, ?5, ?6, ?7)",
+            params![tunnel.id, tunnel.group_id, tunnel.name, tunnel.config_path, tunnel.loglevel, tunnel.created_at, tunnel.sort],
+        )?;
+        tx.commit()?;
+        Ok(tunnel)
+    }
+
     pub fn delete_tunnel(&self, id: &str) -> anyhow::Result<()> {
         self.with(|c| {
             c.execute("DELETE FROM tunnels WHERE id = ?1", [id])?;

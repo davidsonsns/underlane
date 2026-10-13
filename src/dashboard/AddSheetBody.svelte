@@ -1,243 +1,213 @@
 <script lang="ts" module>
-  export type AddTab = "import" | "quick" | "token";
+  export type AddTab = "project" | "quick";
 </script>
 
 <script lang="ts">
-  // The Add tunnel sheet's contents. AddSheet renders this inside Dialog.Content, which Bits
-  // unmounts while the dialog is closed, so every open starts fresh: first tab, a new scan of
-  // ~/.cloudflared, no picks, no errors, and no token draft left in memory after Cancel (02 2c).
+  // The body remounts on every opening, so cancelled drafts never leak into the next New form.
   import { onMount } from "svelte";
-  import { fade } from "svelte/transition";
   import { open as openPicker } from "@tauri-apps/plugin-dialog";
   import FileText from "@lucide/svelte/icons/file-text";
-  import CircleAlert from "@lucide/svelte/icons/circle-alert";
-  import CircleCheck from "@lucide/svelte/icons/circle-check";
-  import Info from "@lucide/svelte/icons/info";
   import Folder from "@lucide/svelte/icons/folder";
-  import KeyRound from "@lucide/svelte/icons/key-round";
+  import FolderPlus from "@lucide/svelte/icons/folder-plus";
+  import CircleAlert from "@lucide/svelte/icons/circle-alert";
   import Zap from "@lucide/svelte/icons/zap";
   import { api, errorText } from "../lib/api";
-  import { motion } from "../lib/theme";
-  import type { Candidate, ImportReport } from "../lib/types";
-  import StatePanel from "$lib/components/app/StatePanel.svelte";
+  import { store } from "../lib/store.svelte";
+  import { serviceLabel } from "../lib/format";
+  import { projectFilename } from "../lib/project-filename";
+  import type { ProjectConfigPreview } from "../lib/types";
+  import Combobox from "$lib/components/app/Combobox.svelte";
   import * as Dialog from "$lib/components/ui/dialog/index.js";
   import * as Alert from "$lib/components/ui/alert/index.js";
   import * as Tabs from "$lib/components/ui/tabs/index.js";
   import { Button } from "$lib/components/ui/button/index.js";
-  import { Checkbox } from "$lib/components/ui/checkbox/index.js";
   import { Input } from "$lib/components/ui/input/index.js";
   import { Label } from "$lib/components/ui/label/index.js";
-  import { Switch } from "$lib/components/ui/switch/index.js";
-  import { Textarea } from "$lib/components/ui/textarea/index.js";
 
   let {
-    initialTab = "import",
+    initialTab = "project",
+    busy = $bindable(false),
     onclose,
     onadded,
-  }: { initialTab?: AddTab; onclose: () => void; onadded: (id: string | null) => void | Promise<void> } = $props();
+  }: { initialTab?: AddTab; busy?: boolean; onclose: () => void; onadded: (id: string) => void | Promise<void> } = $props();
 
-  // Only the starting tab: the body remounts on every open.
   // svelte-ignore state_referenced_locally
   let tab = $state<AddTab>(initialTab);
-  let candidates = $state<Candidate[] | null>(null);
-  let scanError = $state<string | null>(null);
-  let picked = $state<Record<string, boolean>>({});
-  let report = $state<ImportReport | null>(null);
+  let project = $state({ name: "", group: "" });
+  let origin = $state("");
+  let defaultDirectory = $state<string | null>(null);
+  let directory = $state<string | null>(null);
+  let directoryError = $state<string | null>(null);
+  let chosenPath = $state<string | null>(null);
+  let preview = $state<ProjectConfigPreview | null>(null);
+  let configError = $state<string | null>(null);
   let error = $state<string | null>(null);
-  let busy = $state(false);
-
-  let quick = $state({ origin: "", name: "", group: "Quick tunnels", inspect: false });
-  let token = $state({ token: "", name: "", group: "Remote" });
-
-  // Addresses, names and tokens aren't prose (same as TunnelDetail): no autocorrect or
-  // capitalisation, and no spelling bubble, whose dismissal would eat the first Escape.
+  let picking = $state(false);
+  // A successful write is never repeated if refreshing the dashboard fails afterward.
+  let createdId = $state<string | null>(null);
+  let alive = true;
+  const locked = $derived(busy || picking || createdId !== null);
+  const saveDirectory = $derived(directory ?? defaultDirectory);
+  const destination = $derived(saveDirectory ? `${saveDirectory}/${projectFilename(project.name)}` : null);
   const plainText = { autocorrect: "off", autocapitalize: "off", spellcheck: false, writingsuggestions: false } as const;
   const uid = $props.id();
   const id = (name: string) => `${uid}-${name}`;
 
-  onMount(async () => {
-    try {
-      candidates = await api.scanDefault();
-      for (const c of candidates) if (!c.imported) picked[c.path] = true;
-    } catch (e) {
-      scanError = errorText(e);
-    }
+  onMount(() => {
+    api.projectDirectory().then((path) => { if (alive) defaultDirectory = path; })
+      .catch((e) => { if (alive) directoryError = errorText(e); });
+    return () => { alive = false; };
   });
 
-  async function importPaths(paths: string[]) {
-    if (!paths.length) return;
-    busy = true;
+  async function loadConfig() {
+    if (locked) return;
+    picking = true;
     error = null;
     try {
-      report = await api.importPaths(paths);
-      if (report.added.length && !report.failed.length) await onadded(null);
+      const path = await openPicker({ multiple: false, directory: false, filters: [{ name: "cloudflared config", extensions: ["yml", "yaml"] }] });
+      if (!alive || !path || Array.isArray(path)) return;
+      chosenPath = path;
+      preview = null;
+      configError = null;
+      try {
+        const result = await api.previewProjectConfig(path);
+        if (alive) { preview = result; chosenPath = result.path; }
+      } catch (e) {
+        if (alive) configError = errorText(e);
+      }
     } catch (e) {
-      error = errorText(e);
+      if (alive) error = errorText(e);
     } finally {
-      busy = false;
+      if (alive) picking = false;
     }
   }
 
-  async function chooseFiles(directory: boolean) {
-    const res = await openPicker({ multiple: true, directory, filters: directory ? undefined : [{ name: "cloudflared config", extensions: ["yml", "yaml"] }] });
-    if (!res) return;
-    await importPaths(Array.isArray(res) ? res : [res]);
-  }
-
-  async function addQuick() {
-    busy = true;
+  async function chooseDirectory() {
+    if (locked) return;
+    picking = true;
     error = null;
     try {
-      const id = await api.addQuick(quick.name, quick.origin, quick.group, quick.inspect);
-      await api.start(id);
-      await onadded(id); // busy until the list shows it, so it can't be submitted twice
+      const path = await openPicker({ multiple: false, directory: true, defaultPath: saveDirectory ?? undefined });
+      if (alive && typeof path === "string") directory = path;
     } catch (e) {
-      error = errorText(e);
+      if (alive) error = errorText(e);
     } finally {
-      busy = false;
+      if (alive) picking = false;
     }
   }
 
-  async function addToken() {
+  function removeConfig() {
+    chosenPath = null;
+    preview = null;
+    configError = null;
+    error = null;
+  }
+
+  async function create() {
+    if (busy || picking) return;
+    const finish = onadded;
     busy = true;
     error = null;
     try {
-      const id = await api.addToken(token.name, token.token, token.group);
-      await onadded(id); // busy until the list shows it, so it can't be submitted twice
+      if (!createdId) {
+        createdId = tab === "project"
+          ? await api.createProject(project.name, project.group, preview?.path ?? null, directory)
+          : await api.addQuick("", origin, "Quick tunnels", false);
+      }
+      if (alive) await finish(createdId);
     } catch (e) {
-      error = errorText(e);
+      if (alive) error = errorText(e);
     } finally {
-      busy = false;
+      if (alive) busy = false;
     }
   }
-
-  const selectedPaths = $derived(Object.entries(picked).filter(([, v]) => v).map(([k]) => k));
-  const hosts = (c: Candidate) => (c.hostnames.slice(0, 3).join(", ") || "no hostnames") + (c.hostnames.length > 3 ? ` +${c.hostnames.length - 3}` : "");
 </script>
 
-<!-- Errors stay inline, next to the form (02 §1.4), above the footer of the tab that made them. -->
-{#snippet failure()}
-  {#if error}
+{#snippet failure(message: string | null)}
+  {#if message}
     <Alert.Root variant="destructive">
       {#snippet icon()}<CircleAlert />{/snippet}
-      <Alert.Description class="whitespace-pre-wrap text-foreground">{error}</Alert.Description>
+      <Alert.Description class="whitespace-pre-wrap text-foreground">{message}</Alert.Description>
     </Alert.Root>
   {/if}
 {/snippet}
 
-<Dialog.Header>
-  <Dialog.Title>Add tunnel</Dialog.Title>
-</Dialog.Header>
+<Dialog.Header><Dialog.Title>New</Dialog.Title></Dialog.Header>
 
-<!-- min-w-0: the sheet is a grid, and the untruncated hostnames would otherwise widen its column. -->
-<Tabs.Root class="min-w-0" bind:value={() => tab, (v) => (tab = v as AddTab)}>
+<Tabs.Root class="min-w-0" bind:value={() => tab, (v) => { tab = v as AddTab; error = null; }}>
   <Tabs.List class="self-center">
-    <Tabs.Trigger value="import"><FileText />Import config</Tabs.Trigger>
-    <Tabs.Trigger value="quick"><Zap />Quick tunnel</Tabs.Trigger>
-    <Tabs.Trigger value="token"><KeyRound />Token</Tabs.Trigger>
+    <Tabs.Trigger value="project" disabled={locked}><FolderPlus />Project</Tabs.Trigger>
+    <Tabs.Trigger value="quick" disabled={locked}><Zap />Quick tunnel</Tabs.Trigger>
   </Tabs.List>
 
-  <!-- tabindex -1: every panel starts with controls, so Tab goes from the tabs straight to them. -->
-  <Tabs.Content value="import" tabindex={-1}>
-    <!-- A form for the submit button; it has no text field, so Return doesn't import (as before). -->
-    <form class="flex flex-col gap-3" onsubmit={(e) => { e.preventDefault(); importPaths(selectedPaths); }}>
-      <p class="text-callout text-muted-foreground">Underlane reads existing cloudflared config files and never modifies them.</p>
-      <div class="rounded-lg bg-card border-[0.5px] border-border">
-        <div class="border-b-[0.5px] border-border px-3 py-2 text-xs text-muted-foreground">In <span class="font-mono">~/.cloudflared</span></div>
-        {#if candidates === null && !scanError}
-          <StatePanel kind="loading" title="Looking for config files…" />
-        {:else if scanError}
-          <StatePanel kind="error" title="Couldn't read ~/.cloudflared" message={scanError} />
-        {:else if candidates && candidates.length === 0}
-          <StatePanel kind="empty" title="No config files found here" message="Choose files or a folder below instead." />
-        {:else if candidates}
-          <ul class="max-h-60 overflow-auto">
-            {#each candidates as c, i (c.path)}
-              <li class="not-first:border-t-[0.5px] not-first:border-border">
-                <!-- The whole row toggles the checkbox it contains. -->
-                <Label for={id(`cand-${i}`)} class="gap-2.5 px-3 py-2 {c.imported ? 'text-muted-foreground' : ''}">
-                  <Checkbox id={id(`cand-${i}`)} disabled={c.imported} bind:checked={() => picked[c.path] ?? false, (v) => (picked[c.path] = v)} />
-                  <span class="flex min-w-0 flex-1 flex-col">
-                    <span class="font-medium">{c.name} <span class="font-normal text-muted-foreground">{c.path.split("/").pop()}</span></span>
-                    <span class="truncate font-mono text-code text-muted-foreground" title={c.hostnames.join(", ")}>{hosts(c)}</span>
-                  </span>
-                  <span class="text-xs text-muted-foreground">{c.imported ? "Imported" : c.group}</span>
-                </Label>
-              </li>
-            {/each}
-          </ul>
+  <Tabs.Content value="project" tabindex={-1}>
+    <form class="flex min-w-0 flex-col gap-4" onsubmit={(e) => { e.preventDefault(); create(); }}>
+      <div class="grid grid-cols-2 gap-3">
+        <div class="flex min-w-0 flex-col gap-1.5">
+          <Label for={id("name")}>Name</Label>
+          <Input id={id("name")} {...plainText} placeholder="my-app" required disabled={locked} bind:value={project.name} />
+        </div>
+        <div class="flex min-w-0 flex-col gap-1.5">
+          <Label id={id("group-label")} for={id("group")}>Group</Label>
+          <div class="flex min-w-0 items-center gap-1">
+            <Combobox id={id("group")} aria-labelledby="{id('group-label')} {id('group')}" value={project.group} items={(store.overview?.groups ?? []).map((g) => g.name)} class="min-w-0 w-full" placeholder="Choose or create a group…" disabled={locked} onpick={(name) => (project.group = name)} />
+            {#if project.group}<Button variant="ghost" size="sm" disabled={locked} aria-label="Remove group" onclick={() => (project.group = "")}>Clear</Button>{/if}
+          </div>
+        </div>
+      </div>
+      <div class="flex min-w-0 flex-col gap-2">
+        <p class="font-medium">Config <span class="font-normal text-muted-foreground">· optional</span></p>
+        {#if chosenPath}
+          <div class="flex min-w-0 items-start gap-2">
+            <span class="min-w-0 flex-1 break-all font-mono text-code text-muted-foreground select-text">{chosenPath}</span>
+            <Button variant="ghost" disabled={locked} onclick={removeConfig}>Remove</Button>
+          </div>
+          {#if picking}<p class="text-callout text-muted-foreground" role="status">Reading config…</p>{/if}
+          {@render failure(configError)}
+          {#if preview}
+            <p class="text-callout text-muted-foreground">This project will use the selected file.</p>
+            {#if preview.routes.length}
+              <table class="w-full table-fixed text-left text-callout">
+                <thead><tr class="text-xs font-normal text-muted-foreground"><th class="pb-2 font-normal">Hostname</th><th class="pb-2 font-normal">Local endpoint</th></tr></thead>
+                <tbody>
+                  {#each preview.routes as route, i (i)}
+                    <tr class="border-t-[0.5px] border-border"><td class="break-all py-2 pe-3">{route.hostname ?? "Any other hostname"}{#if route.path}<span class="text-muted-foreground">{route.path}</span>{/if}</td><td class="break-all py-2 font-mono text-muted-foreground">{serviceLabel(route.service)}</td></tr>
+                  {/each}
+                </tbody>
+              </table>
+            {:else}<p class="text-callout text-muted-foreground">This config has no hostname rules.</p>{/if}
+          {/if}
+        {:else}
+          <Button variant="outline" class="self-start" disabled={locked} onclick={loadConfig}><FileText class="size-3.5" /> Load config…</Button>
+          <div class="mt-2 border-t-[0.5px] border-border pt-3">
+            <p class="text-callout text-muted-foreground">A new config will be created at</p>
+            <div class="mt-1.5 flex min-w-0 items-start gap-2">
+              <span class="min-w-0 flex-1 break-all font-mono text-code text-muted-foreground select-text">{destination ?? "Finding your config folder…"}</span>
+              <Button variant="outline" disabled={locked} onclick={chooseDirectory}><Folder class="size-3.5" /> Change…</Button>
+            </div>
+          </div>
+          {#if !saveDirectory}{@render failure(directoryError)}{/if}
         {/if}
       </div>
-      {#if report}
-        <div transition:fade={{ duration: motion(150) }}>
-          <Alert.Root variant={report.failed.length ? "destructive" : report.added.length ? "success" : "default"} role={report.failed.length ? "alert" : "status"}>
-            {#snippet icon()}{#if report?.failed.length}<CircleAlert />{:else if report?.added.length}<CircleCheck />{:else}<Info />{/if}{/snippet}
-            <Alert.Description class="text-foreground">
-              {#if report.added.length}<p>Imported {report.added.length} tunnel{report.added.length === 1 ? "" : "s"}.</p>{/if}
-              {#if report.existing.length}<p class="text-muted-foreground">{report.existing.length} already imported.</p>{/if}
-              {#each report.failed as [path, why] (path)}<p class="text-bad-text"><span class="font-mono">{path.split("/").pop()}</span>: {why}</p>{/each}
-              {#if report.added.length === 0 && report.failed.length === 0 && report.existing.length === 0}<p class="text-muted-foreground">No cloudflared configs found there.</p>{/if}
-            </Alert.Description>
-          </Alert.Root>
-        </div>
-      {/if}
-      {@render failure()}
-      <Dialog.Footer>
-        <Button variant="outline" disabled={busy} onclick={() => chooseFiles(false)}><FileText class="size-3.5" /> Choose files…</Button>
-        <Button variant="outline" disabled={busy} onclick={() => chooseFiles(true)}><Folder class="size-3.5" /> Choose folder…</Button>
-        <span class="flex-1"></span>
-        <Button variant="outline" onclick={onclose}>Cancel</Button>
-        <Button type="submit" disabled={busy || selectedPaths.length === 0}>Import{selectedPaths.length ? ` ${selectedPaths.length}` : ""}</Button>
+      {@render failure(error)}
+      <Dialog.Footer class="mt-1 border-t-[0.5px] border-border pt-4">
+        <Button variant="ghost" disabled={busy} onclick={onclose}>Cancel</Button>
+        <Button type="submit" disabled={busy || picking || (!createdId && (!project.name.trim() || (chosenPath ? !preview : !saveDirectory)))}>{busy ? "Creating…" : createdId ? "Open project" : "Create project"}</Button>
       </Dialog.Footer>
     </form>
   </Tabs.Content>
 
   <Tabs.Content value="quick" tabindex={-1}>
-    <form class="flex flex-col gap-3" onsubmit={(e) => { e.preventDefault(); addQuick(); }}>
-      <p class="text-callout text-muted-foreground">Share a local server at a random <span class="font-mono">trycloudflare.com</span> address. No Cloudflare account needed.</p>
-      <!-- 120px: the right-aligned label column of an AppKit form ("Local address:" fits). -->
-      <div class="grid grid-cols-[120px_1fr] items-center gap-x-3 gap-y-2.5">
-        <Label for={id("q-origin")} class="justify-self-end">Local address:</Label>
-        <Input id={id("q-origin")} {...plainText} class="font-mono" placeholder="localhost:3000" bind:value={quick.origin} required />
-        <Label for={id("q-name")} class="justify-self-end">Name:</Label>
-        <Input id={id("q-name")} {...plainText} placeholder="Optional" bind:value={quick.name} />
-        <Label for={id("q-group")} class="justify-self-end">Group:</Label>
-        <Input id={id("q-group")} {...plainText} bind:value={quick.group} />
-        <span></span>
-        <div class="flex items-start gap-2 pt-1">
-          <!-- Bits' Switch is type="button", so it never submits this form (decisions §15, 02 F15). -->
-          <Switch id={id("q-inspect")} aria-describedby={id("q-inspect-help")} disabled={busy} bind:checked={quick.inspect} />
-          <div class="flex flex-col">
-            <Label for={id("q-inspect")}>Inspect requests</Label>
-            <span id={id("q-inspect-help")} class="text-xs text-muted-foreground">Capture request and response bodies through Underlane's local proxy.</span>
-          </div>
-        </div>
+    <form class="flex flex-col gap-3" onsubmit={(e) => { e.preventDefault(); create(); }}>
+      <div class="flex flex-col gap-1.5">
+        <Label for={id("origin")}>Local endpoint</Label>
+        <Input id={id("origin")} {...plainText} class="font-mono" placeholder="localhost:3000" bind:value={origin} required disabled={locked} />
       </div>
-      {@render failure()}
-      <Dialog.Footer>
-        <Button variant="outline" onclick={onclose}>Cancel</Button>
-        <Button type="submit" disabled={busy || !quick.origin.trim()}>Create and start</Button>
-      </Dialog.Footer>
-    </form>
-  </Tabs.Content>
-
-  <Tabs.Content value="token" tabindex={-1}>
-    <form class="flex flex-col gap-3" onsubmit={(e) => { e.preventDefault(); addToken(); }}>
-      <p class="text-callout text-muted-foreground">For tunnels created in the Cloudflare dashboard. Copy the token from the tunnel's install command; Underlane keeps it in your keychain.</p>
-      <!-- 120px: the right-aligned label column of an AppKit form ("Local address:" fits). -->
-      <div class="grid grid-cols-[120px_1fr] items-center gap-x-3 gap-y-2.5">
-        <Label for={id("t-token")} class="self-start justify-self-end pt-1">Token:</Label>
-        <!-- break-all: a token is one long word. -->
-        <Textarea id={id("t-token")} {...plainText} class="max-h-28 resize-none font-mono break-all" rows={3} placeholder="eyJhIjoi…" bind:value={token.token} required />
-        <Label for={id("t-name")} class="justify-self-end">Name:</Label>
-        <Input id={id("t-name")} {...plainText} placeholder="Remote tunnel" bind:value={token.name} />
-        <Label for={id("t-group")} class="justify-self-end">Group:</Label>
-        <Input id={id("t-group")} {...plainText} bind:value={token.group} />
-      </div>
-      {@render failure()}
-      <Dialog.Footer>
-        <Button variant="outline" onclick={onclose}>Cancel</Button>
-        <Button type="submit" disabled={busy || !token.token.trim()}>Add tunnel</Button>
+      <p class="text-callout text-muted-foreground">Get a temporary public URL for your local app. No Cloudflare account needed.</p>
+      {@render failure(error)}
+      <Dialog.Footer class="mt-1 border-t-[0.5px] border-border pt-4">
+        <Button variant="ghost" disabled={busy} onclick={onclose}>Cancel</Button>
+        <Button type="submit" disabled={busy || picking || (!createdId && !origin.trim())}>{busy ? "Creating…" : createdId ? "Open tunnel" : "Create quick tunnel"}</Button>
       </Dialog.Footer>
     </form>
   </Tabs.Content>

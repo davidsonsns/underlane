@@ -3,6 +3,7 @@
 mod commands;
 mod e2e;
 mod hostnames;
+mod setup;
 mod platform;
 mod state;
 mod tokens;
@@ -77,6 +78,11 @@ pub fn run() {
             commands::open_config_in_editor,
             commands::scan_default,
             commands::import_paths,
+            commands::project_directory,
+            commands::preview_project_config,
+            commands::create_project,
+            commands::setup_project_tunnel,
+            commands::cancel_project_setup,
             commands::add_quick_tunnel,
             commands::add_token_tunnel,
             commands::rename_group,

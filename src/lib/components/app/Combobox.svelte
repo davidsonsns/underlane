@@ -24,6 +24,7 @@
     heading,
     onpick,
     open = $bindable(false),
+    disabled = false,
     id,
     class: className,
     "aria-describedby": describedBy,
@@ -37,6 +38,7 @@
     /** Called with an existing item or the typed name; not called when `value` is picked again. */
     onpick: (name: string) => void;
     open?: boolean;
+    disabled?: boolean;
     id?: string;
     class?: string;
     "aria-describedby"?: string;
@@ -74,7 +76,7 @@
 <Popover.Root bind:open onOpenChange={(o) => !o && (query = "")}>
   <Popover.Trigger bind:ref={trigger}>
     {#snippet child({ props })}
-      <Button {...props} {id} title={value || undefined} aria-describedby={describedBy} aria-labelledby={labelledBy} variant="outline" class={cn("w-55 justify-between", className)}>
+      <Button {...props} {id} {disabled} title={value || undefined} aria-describedby={describedBy} aria-labelledby={labelledBy} variant="outline" class={cn("w-55 justify-between", className)}>
         <span class="truncate">{value || "None"}</span><ChevronDown class="size-3 text-muted-foreground" />
       </Button>
     {/snippet}

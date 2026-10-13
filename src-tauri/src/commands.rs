@@ -58,6 +58,16 @@ pub async fn save_hostnames(
 }
 
 #[tauri::command]
+pub async fn setup_project_tunnel(core: CoreState<'_>, id: String, request_id: String) -> Res<crate::setup::SetupResult> {
+    crate::setup::run(core.inner().clone(), id, request_id).await
+}
+
+#[tauri::command]
+pub fn cancel_project_setup(id: String, request_id: String) {
+    crate::setup::cancel(&id, &request_id);
+}
+
+#[tauri::command]
 pub async fn open_config_in_editor(core: CoreState<'_>, app: AppHandle, id: String) -> Res<()> {
     blocking(&core, move |c| {
         let tunnel = c.db.tunnel(&id).map_err(err)?.ok_or("Tunnel not found")?;
@@ -117,6 +127,29 @@ pub async fn import_paths(core: CoreState<'_>, paths: Vec<String>) -> Res<Import
         Ok(report)
     })
     .await
+}
+
+#[tauri::command]
+pub fn project_directory() -> String {
+    underlane_core::projects::default_directory().to_string_lossy().into_owned()
+}
+
+#[tauri::command]
+pub async fn preview_project_config(core: CoreState<'_>, path: String) -> Res<underlane_core::projects::ProjectConfigPreview> {
+    blocking(&core, move |_| underlane_core::projects::preview(std::path::Path::new(&path)).map_err(err)).await
+}
+
+#[tauri::command]
+pub async fn create_project(core: CoreState<'_>, name: String, group: String, config_path: Option<String>, directory: Option<String>) -> Res<String> {
+    blocking(&core, move |core| {
+        let level = core.settings.read().unwrap().default_loglevel.clone();
+        let tunnel = underlane_core::projects::create(
+            &core.db, &name, &group, config_path.as_deref().map(std::path::Path::new),
+            directory.as_deref().map(std::path::Path::new), &level,
+        ).map_err(|e| underlane_core::secret::redact_text(&e.to_string()))?;
+        core.notify_changed();
+        Ok(tunnel.id)
+    }).await
 }
 
 #[tauri::command]
@@ -275,6 +308,11 @@ pub fn start_all_inner<R: Runtime>(app: &AppHandle<R>) {
     let core = app.state::<Arc<Core>>();
     if let Ok(ts) = core.db.tunnels() {
         for t in ts {
+            if t.kind == TunnelKind::Config && t.config_path.as_deref()
+                .and_then(|path| TunnelConfig::load(std::path::Path::new(path)).ok())
+                .is_some_and(|config| underlane_core::projects::needs_setup(&config)) {
+                continue;
+            }
             if !core.state_of(&t.id).status.is_active() {
                 let _ = core.start(&t.id);
             }

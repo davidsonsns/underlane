@@ -228,7 +228,12 @@ pub(crate) fn diagnostic_text(text: &str) -> String {
 /// Run `cloudflared tunnel --config <file> ingress validate` from the config's directory
 /// (cloudflared resolves relative paths against its working directory).
 pub async fn validate(bin: &Path, config: &Path) -> Validation {
-    let inv = Invocation::new(["ingress", "validate"], ConfigPolicy::Target(config.into()));
+    validate_cancellable(bin, config, cli::Cancellation::new()).await
+}
+
+pub async fn validate_cancellable(bin: &Path, config: &Path, cancel: cli::Cancellation) -> Validation {
+    let mut inv = Invocation::new(["ingress", "validate"], ConfigPolicy::Target(config.into()));
+    inv.cancel = cancel;
     match cli::exec(bin, inv).await {
         Ok(o) => {
             let text = format!("{}{}", o.stdout.text().unwrap_or_default(), o.stderr);

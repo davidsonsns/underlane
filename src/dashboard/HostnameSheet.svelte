@@ -42,7 +42,7 @@
   const fieldClass = "h-8 w-full min-w-0 rounded-xs border-b border-transparent bg-transparent px-1.5 text-sm outline-none transition-colors hover:bg-fill focus:bg-fill disabled:opacity-45 placeholder:text-placeholder";
   const payload = $derived(hostnamePayload(routes, return404, customFallback));
   const changed = $derived(config !== null && hostnameChanged(config, payload));
-  // Open at the editor's final height instead of recentering a short loading panel.
+  // Open at the editor's final height instead of flashing a short loading panel.
   const visible = $derived(open && (!loading || config !== null));
 
   async function load() {
@@ -120,7 +120,7 @@
 
 <Dialog.Root bind:open={() => visible, (value) => { if (!saving) open = value; }}>
   <Dialog.Content
-    class="top-1/2 flex max-h-[calc(100dvh-48px)] w-[min(700px,calc(100vw-48px))] -translate-y-1/2 flex-col gap-0 overflow-hidden p-0 data-open:slide-in-from-top-0! data-closed:slide-out-to-top-0!"
+    class="flex w-[min(700px,calc(100vw-48px))] flex-col gap-0 overflow-hidden p-0"
     onCloseAutoFocus={returnFocusTo(returnFocus)}
     onEscapeKeydown={(e) => { if (saving) e.preventDefault(); }}
     onInteractOutside={(e) => { if (saving) e.preventDefault(); }}

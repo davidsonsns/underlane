@@ -28,15 +28,16 @@
   let view = $state<View>("tunnels");
   let focusId = $state<string | null>(null);
   let adding = $state(false);
-  let addTab = $state<AddTab>("import");
+  let addTab = $state<AddTab>("project");
   // The button that opened the sheet, for return focus (02 R7). Null when the popover opened it.
   // Bumped each time the Add sheet opens, so a slow add can't close a sheet reopened meanwhile.
   let sheetSession = $state(0);
   $effect.pre(() => {
+    addTab;
     if (adding) untrack(() => sheetSession++);
   });
   let addTrigger = $state<HTMLElement | null>(null);
-  // The tunnel the sheet just added (null for imports), for return focus.
+  // The project or quick tunnel the sheet just created, for return focus.
   let addedId: string | null = null;
   let requestsRef = $state<{ selectFirst: (side?: "req" | "resp") => Promise<void> } | null>(null);
 
@@ -44,7 +45,7 @@
     const [v, id] = target.replace(/^#/, "").split(":");
     if (v === "add") {
       // add:<tab> opens a given tab (O6), e.g. for screenshots.
-      addTab = id === "quick" || id === "token" ? id : "import";
+      addTab = id === "quick" ? "quick" : "project";
       addTrigger = null;
       addedId = null;
       view = "tunnels";
@@ -110,8 +111,25 @@
   function openAdd(e: MouseEvent) {
     addTrigger = e.currentTarget as HTMLElement;
     addedId = null;
-    addTab = "import";
+    addTab = "project";
     adding = true;
+  }
+
+  // Freeze the opening that owns a create request before its backend write begins. A later
+  // popover navigation or reopened sheet must never be selected/closed by the old request.
+  function afterCreation(session: number) {
+    return async (id: string) => {
+      if (session !== sheetSession || !adding) return;
+      await store.refresh();
+      if (session !== sheetSession || !adding) return;
+      if (store.error) throw new Error(store.error);
+      addTrigger = null;
+      addedId = id;
+      focusId = id;
+      view = "tunnels";
+      await tick();
+      if (session === sheetSession && adding) adding = false;
+    };
   }
 
   // Tunnels uses the brand mark; the rest are lucide (02 §1.3).
@@ -189,7 +207,7 @@
 
 <!-- After adding one tunnel, focus goes to its row in the Tunnels list (it's selected through
      focusId). Otherwise, without a live trigger (opened from the popover, or the empty state went
-     away after an import), focus goes to the Tunnels toolbar's Add tunnel. -->
+     away after creation), focus goes to the Tunnels toolbar's New button. -->
 <AddSheet
   bind:open={adding}
   tab={addTab}
@@ -199,19 +217,7 @@
     row?.scrollIntoView({ block: "nearest" });
     return row || (addTrigger?.isConnected ? addTrigger : document.querySelector<HTMLElement>("[data-add-tunnel]"));
   }}
-  onadded={async (id) => {
-    const session = sheetSession;
-    addTrigger = null;
-    addedId = id;
-    // Refresh first: Tunnels drops a selection that isn't in the list yet, and the sheet hands
-    // focus to the new row when it closes. The sheet stays busy until this returns.
-    await store.refresh();
-    focusId = id;
-    view = "tunnels";
-    await tick();
-    // Close only the sheet this add came from, not one reopened during the refresh.
-    if (session === sheetSession) adding = false;
-  }}
+  onadded={afterCreation(sheetSession)}
 />
 
 <Toaster theme={store.overview?.settings.theme ?? "system"} position="bottom-right" visibleToasts={3} />

@@ -74,6 +74,8 @@ export interface Tunnel {
   sort: number;
   state: TunnelState;
   has_token: boolean;
+  /** A config project without a Cloudflare tunnel identity yet. */
+  setup_needed?: boolean;
 }
 
 interface Group {
@@ -158,6 +160,22 @@ export interface Candidate {
   group: string;
   hostnames: string[];
   imported: boolean;
+}
+
+export interface ProjectConfigPreview {
+  path: string;
+  routes: { hostname: string | null; path: string | null; service: string }[];
+}
+
+export interface TunnelSetupProgress {
+  id: string;
+  request_id: string;
+  stage: "checking" | "login" | "creating" | "linking";
+}
+
+export interface TunnelSetupResult {
+  tunnel_id: string;
+  credentials_file: string;
 }
 
 export interface ImportReport {

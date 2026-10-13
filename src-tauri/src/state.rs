@@ -61,6 +61,7 @@ pub struct TunnelView {
     pub group_name: String,
     pub state: TunnelState,
     pub has_token: bool,
+    pub setup_needed: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -265,16 +266,24 @@ impl Core {
 
     /// State plus the routes parsed from the config file when the tunnel isn't running, so a
     /// stopped tunnel still shows where it would send traffic.
-    fn state_with_routes(&self, t: &Tunnel) -> TunnelState {
+    fn state_with_routes(&self, t: &Tunnel) -> (TunnelState, bool) {
         let mut s = self.state_of(&t.id);
+        let loaded = if t.kind == TunnelKind::Config {
+            t.config_path.as_deref().map(|p| underlane_core::config::TunnelConfig::load(std::path::Path::new(p)))
+        } else { None };
+        let setup_needed = loaded.as_ref().and_then(|result| result.as_ref().ok())
+            .is_some_and(underlane_core::projects::needs_setup);
         if (s.mappings.is_empty() || s.status == Status::Stopped) && t.kind == TunnelKind::Config {
-            let loaded = t.config_path.as_deref().map(|p| underlane_core::config::TunnelConfig::load(std::path::Path::new(p)));
             if let Some(Err(e)) = &loaded {
                 if s.status == Status::Stopped && s.detail.is_none() {
                     s.detail = Some(underlane_core::secret::redact_text(&format!("The config file can't be read: {e}")));
                 }
             }
             if let Some(Ok(c)) = loaded {
+                if s.status == Status::Stopped && setup_needed && s.detail.is_none() {
+                    s.detail = Some(underlane_core::projects::DRAFT_DETAIL.into());
+                    s.hint = Some(underlane_core::projects::DRAFT_HINT.into());
+                }
                 s.mappings = c
                     .ingress
                     .iter()
@@ -288,7 +297,7 @@ impl Core {
                     .collect();
             }
         }
-        s
+        (s, setup_needed)
     }
 
     /// Tell every window that the tunnel list or a tunnel's definition changed.
@@ -307,11 +316,15 @@ impl Core {
             .db
             .tunnels()?
             .into_iter()
-            .map(|t| TunnelView {
-                group_name: t.group_id.as_ref().and_then(|id| names.get(id)).cloned().unwrap_or_default(),
-                state: self.state_with_routes(&t),
-                has_token: t.kind == TunnelKind::Token && self.db.kv_get(&format!("token:{}", t.id)).ok().flatten().is_some(),
-                tunnel: t,
+            .map(|t| {
+                let (state, setup_needed) = self.state_with_routes(&t);
+                TunnelView {
+                    group_name: t.group_id.as_ref().and_then(|id| names.get(id)).cloned().unwrap_or_default(),
+                    state,
+                    setup_needed,
+                    has_token: t.kind == TunnelKind::Token && self.db.kv_get(&format!("token:{}", t.id)).ok().flatten().is_some(),
+                    tunnel: t,
+                }
             })
             .collect();
         Ok(Overview {

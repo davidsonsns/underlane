@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import type {
-  Binary, Candidate, ConfigChange, HostnameConfig, HostnameRoute, HostnameSaveResult, ImportReport, LogLine, LoginItem, Overview, RequestDetail, RequestSummary, Settings, Validation,
+  Binary, Candidate, ConfigChange, HostnameConfig, HostnameRoute, HostnameSaveResult, ImportReport, LogLine, LoginItem, Overview, ProjectConfigPreview, RequestDetail, RequestSummary, Settings, TunnelSetupResult, Validation,
 } from "./types";
 
 export const api = {
@@ -8,6 +8,12 @@ export const api = {
   renameGroup: (id: string, name: string) => invoke<void>("rename_group", { id, name }),
   scanDefault: () => invoke<Candidate[]>("scan_default"),
   importPaths: (paths: string[]) => invoke<ImportReport>("import_paths", { paths }),
+  projectDirectory: () => invoke<string>("project_directory"),
+  previewProjectConfig: (path: string) => invoke<ProjectConfigPreview>("preview_project_config", { path }),
+  createProject: (name: string, group: string, configPath: string | null, directory: string | null) =>
+    invoke<string>("create_project", { name, group, configPath, directory }),
+  setupProjectTunnel: (id: string, requestId: string) => invoke<TunnelSetupResult>("setup_project_tunnel", { id, requestId }),
+  cancelProjectSetup: (id: string, requestId: string) => invoke<void>("cancel_project_setup", { id, requestId }),
   addQuick: (name: string, origin: string, group: string, inspect: boolean) =>
     invoke<string>("add_quick_tunnel", { name, origin, group, inspect }),
   addToken: (name: string, token: string, group: string) => invoke<string>("add_token_tunnel", { name, token, group }),

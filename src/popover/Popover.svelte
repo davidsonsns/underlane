@@ -37,7 +37,7 @@
   let toaster = $state(false);
   notify.onLoad(() => (toaster = true));
 
-  /** Focus the first tunnel row (or "Add a tunnel" when there are none), without a ring:
+  /** Focus the first tunnel row (or "New" when there are none), without a ring:
    *  AppKit shows none until the first key (02 §4.4). */
   function focusFirst() {
     delete document.documentElement.dataset.kbNav;
@@ -163,7 +163,7 @@
       </StatePanel>
     {:else if store.tunnels.length === 0}
       <StatePanel kind="empty" title="No tunnels yet" message="Import a config.yml, paste a tunnel token, or share a local port with a quick tunnel.">
-        <Button data-empty-add onclick={() => api.openDashboard("add")}>Add a tunnel</Button>
+        <Button data-empty-add onclick={() => api.openDashboard("add")}>New</Button>
       </StatePanel>
     {:else}
       {#each groups as g (g.id)}
@@ -215,7 +215,7 @@
               <!-- Busy while a start/stop is in flight: disabled, announced, and the thumb pulses. -->
               <Switch
                 bind:checked={() => isOn(t), (v) => toggle(t, v)}
-                disabled={busy[t.id]}
+                disabled={busy[t.id] || (t.setup_needed && !isOn(t))}
                 aria-busy={busy[t.id] || undefined}
                 aria-label={isOn(t) ? `Stop ${t.name}` : `Start ${t.name}`}
                 class={cn(busy[t.id] && "*:animate-pulse")}

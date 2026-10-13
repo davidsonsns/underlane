@@ -1,5 +1,5 @@
 <script lang="ts">
-  // The Add tunnel sheet (02 2c): a Dialog that owns its open state. The body lives in
+  // The New sheet: a Dialog that owns its open state. The body lives in
   // AddSheetBody, inside Dialog.Content, so it remounts on every open; the Root stays mounted for
   // the close animation and the return focus.
   import { untrack } from "svelte";
@@ -9,7 +9,7 @@
 
   let {
     open = $bindable(false),
-    tab = "import",
+    tab = "project",
     returnFocus,
     onadded,
   }: {
@@ -17,22 +17,24 @@
     tab?: AddTab;
     /** Where focus goes when the sheet closes (02 R7: WebKit doesn't focus a clicked button). */
     returnFocus: () => HTMLElement | null | undefined;
-    onadded: (id: string | null) => void | Promise<void>;
+    onadded: (id: string) => void | Promise<void>;
   } = $props();
 
   // Bits keeps Content mounted until the 150ms close animation ends, so a reopen inside that
   // window would keep the old body (and a typed token). Key the body on each opening instead,
   // and on the tab, so an add:<tab> link while open switches to that tab.
   let opens = $state(0);
+  let busy = $state(false);
   $effect.pre(() => {
-    if (open) untrack(() => opens++);
+    tab;
+    if (open) untrack(() => { opens++; busy = false; });
   });
 </script>
 
 <Dialog.Root bind:open>
-  <Dialog.Content class="w-[min(560px,calc(100vw-48px))]" onCloseAutoFocus={returnFocusTo(returnFocus)}>
+  <Dialog.Content class="w-[min(560px,calc(100vw-48px))]" onCloseAutoFocus={returnFocusTo(returnFocus)} onEscapeKeydown={(e) => { if (busy) e.preventDefault(); }} onInteractOutside={(e) => { if (busy) e.preventDefault(); }}>
     {#key `${opens}:${tab}`}
-      <AddSheetBody initialTab={tab} onclose={() => (open = false)} {onadded} />
+      <AddSheetBody initialTab={tab} bind:busy onclose={() => { if (!busy) open = false; }} {onadded} />
     {/key}
   </Dialog.Content>
 </Dialog.Root>

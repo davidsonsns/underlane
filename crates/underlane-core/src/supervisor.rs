@@ -520,6 +520,11 @@ async fn prepare(
                 observed_failure("The config could not be read or parsed.", action, &e.to_string())
             })?;
 
+            if crate::projects::needs_setup(&config) {
+                return Err(observed_failure(crate::projects::DRAFT_DETAIL, crate::projects::DRAFT_HINT,
+                    "The source config has no tunnel identity. Add tunnel and credentials-file in your editor."));
+            }
+
             let home_cf = crate::config::home_dir().join(".cloudflared");
             let identity = cloudflared::TunnelIdentity {
                 config_path: Some(path.to_string_lossy().into_owned()),

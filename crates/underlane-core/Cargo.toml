@@ -7,6 +7,7 @@ description = "Platform-independent core of Underlane: cloudflared supervision, 
 
 [dependencies]
 anyhow = "1"
+base64 = "0.22"
 bytes = "1"
 flate2 = "1"
 brotli-decompressor = "6"

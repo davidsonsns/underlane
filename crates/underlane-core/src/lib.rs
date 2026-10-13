@@ -12,6 +12,8 @@ pub mod hostnames;
 pub mod model;
 pub mod proxy;
 pub mod platform;
+pub mod projects;
 pub mod secret;
 pub mod shim;
 pub mod supervisor;
+pub mod tunnel_setup;

@@ -571,3 +571,39 @@ lowercase; existing no-op bytes remain intact.
 No real config, account, DNS record, or externally managed connector was changed. Live Cloudflare
 reconnection and an actual VoiceOver session were not exercised; native save/restart commands
 used the synthetic connector, and UI interaction checks used Chromium browser mocks.
+
+## New project flow (2026-10-13)
+
+- `cargo test --workspace`: 139 passed, 2 existing ignored tests. The 11 project integration
+  tests cover existing source preservation, malformed YAML, revalidation at creation, safe
+  filenames, collisions, group/ungrouped persistence, rollback, concurrent registration,
+  canonical duplicate detection, symlink-relative credentials, and token-config compatibility.
+- `npm test`: 71 passed. `npm run check`: zero errors/warnings. `npm run build` passed.
+- Actual dashboard UI checked with mocked Tauri IPC: required name, existing group selection,
+  config preview, draft and loaded-config creation, selected-project redirect, invalid selection
+  blocking, editor-return setup refresh, refresh retry without a second create, pending-refresh
+  navigation to Quick tunnel, and stopped Quick tunnel creation without an automatic start.
+  Harness: `.scratch/new-flow-ui.html`; screenshot: `e2e/out/new-flow/project-form.png` (ignored).
+- Independent review's editor-refresh, session-isolation, symlink-path, and config-token issues
+  were fixed and rechecked. `git diff --check` passed.
+
+No real Cloudflare tunnel, account, DNS record, or existing user config was changed during
+validation. Native file-picker/registered-editor integration and live Cloudflare connectivity
+were not exercised; backend file/database tests used temporary directories.
+
+## CLI tunnel setup (2026-10-13)
+
+- `cargo test --workspace`: 163 passed, 2 existing ignored tests. Includes 24 fake-CLI setup
+  checks for existing/missing login, misleading login exit success, timeout/cancellation,
+  credential/account/remote validation, partial-success recovery, rename-safe retry intents,
+  secret suppression, hostile argument-like names, supported longer secrets, and YAML linking.
+- `npm test`: 71 passed. `npm run check`: zero errors/warnings. `npm run build` passed.
+- Mocked-IPC checks on the actual dashboard: Set up tunnel replaces manual identity editing;
+  login progress and Cancel setup are shown; completion enables Start and autostart while
+  leaving the project stopped; cancellation restores the action and shows retry feedback.
+  Screenshot: `e2e/out/tunnel-setup/project-setup.png` (ignored).
+- Independent review verified original-name intent persistence after ambiguous creation,
+  setup accessibility after draft failures, and source validation/cancellation/publication.
+
+No real Cloudflare account/resource or user certificate was changed. Browser login, remote
+creation, and account responses used fixtures; a live OAuth/create round trip was not run.

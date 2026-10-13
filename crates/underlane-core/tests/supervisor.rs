@@ -124,6 +124,20 @@ fn config_spec(f: &Fake, text: &str) -> RunSpec {
 }
 
 #[tokio::test]
+async fn project_drafts_are_refused_before_starting_cloudflared() {
+    let f = fake("ok");
+    let spec = config_spec(&f, "ingress:\n  - service: http_status:404\n");
+    let (sup, states, _) = supervisor(&f, |_| {});
+    sup.start(spec);
+    let state = wait_status(&states, Status::Crashed).await;
+    assert!(state.detail.as_deref().unwrap().contains("tunnel ID"));
+    assert!(state.hint.as_deref().unwrap().contains("Set up tunnel"));
+    assert!(!f.root.join("bin/argv.json").exists(), "neither validation nor run may start cloudflared");
+    assert!(!f.data.join("derived/tun-1.yml").exists());
+    sup.stop("tun-1").await;
+}
+
+#[tokio::test]
 async fn loaded_source_bytes_survive_edits_and_update_only_after_restart() {
     let f = fake("ok");
     let original = "url: http://localhost:4000\noriginRequest:\n  accessToken: invented-config-secret\n";
@@ -193,7 +207,7 @@ async fn loaded_source_deletion_and_read_failure_are_unreadable() {
 #[tokio::test]
 async fn failed_validation_and_spawn_keep_the_previous_loaded_baseline() {
     let f = fake("ok");
-    let original = "ingress:\n  - service: http://localhost:4000\n";
+    let original = "tunnel: test-id\ningress:\n  - service: http://localhost:4000\n";
     let spec = config_spec(&f, original);
     let path = spec.tunnel.config_path.as_deref().unwrap();
     let (sup, states, _) = supervisor(&f, |_| {});
@@ -228,7 +242,7 @@ async fn edit_during_preparation_keeps_the_bytes_used_for_derived_config() {
         "if \"ingress\" in args:\n    open(os.path.join(here, 'validating'), 'w').close()\n    while not os.path.exists(os.path.join(here, 'release-validation')): time.sleep(0.01)\n    print(\"OK\"); sys.exit(0)",
     );
     std::fs::write(&f.bin, script).unwrap();
-    let original = "ingress:\n  - service: http://localhost:4000\n";
+    let original = "tunnel: test-id\ningress:\n  - service: http://localhost:4000\n";
     let spec = config_spec(&f, original);
     let path = spec.tunnel.config_path.as_deref().unwrap();
     let (sup, states, _) = supervisor(&f, |_| {});

@@ -775,3 +775,50 @@ actual edit; a no-op preserves bytes. Atomic replacement preserves macOS metadat
 group, and mode, or fails without publishing. Saves are serialized inside the app; external
 editors do not share that lock, leaving a narrow optimistic check/rename race. A running tunnel
 is restarted only if it is not stopping; stopped tunnels remain stopped and show fresh rules.
+
+## 20. New: projects and quick tunnels
+
+The New sheet has two paths: Project and Quick tunnel. A project has a required name, optional
+group, and optional single config file. Loading previews hostname/service pairs without edits;
+creation uses the selected source in place. Without a selected file, creation writes a stopped
+draft under `~/.cloudflared/underlane/<name>.yml`, or in a user-selected existing folder, and opens
+its detail. Tunnel/account setup is completed afterward, not in the New form. Quick tunnels
+also open their stopped detail before the user chooses Start. This replaces the old import,
+quick, and token tabs; existing token tunnels remain supported.
+
+Projects reuse config tunnel records without a schema migration. Group choice is independent
+of the source folder, and a blank group leaves the project ungrouped. Selected symlink paths
+retain their parent for relative credentials; canonical paths are used only for duplicate
+detection. New files are published without overwriting existing files. Project/group registration
+is transactional, with cleanup of an unchanged newly created draft if registration fails.
+
+Drafts cannot start until a tunnel identity is supplied, including existing config token or
+token-file authentication. Stopped projects reload their config when the dashboard regains
+focus so completing setup in an editor updates Start and hostnames. A creation's completion is
+bound to the opening that requested it; navigating or switching to a different New form cannot
+be undone by an old request. Refresh retries reuse the created ID rather than creating again.
+
+## 21. Set up a project's tunnel with the CLI
+
+The project's explicit Set up tunnel action validates ingress offline, then uses the bounded
+cloudflared CLI runner with an explicit neutral config for login/list/create. A missing default
+certificate starts browser login; a successful exit is not enough without a saved, valid
+certificate and successful account tunnel listing. Existing certificates are never deleted or
+overwritten automatically. Custom account-certificate configs require explicit external setup.
+Only one account setup runs at a time. Progress is request-bound, cancellation terminates CLI
+children, and navigating away cancels that request without cancelling a later one.
+
+New setup credentials use `~/.cloudflared/underlane/<project-id>.json`, superseding §18 D2's
+default UUID filename for app-created tunnels. A known path enables recovery when remote
+creation succeeds before config linking. Credential secrets never enter IPC or logs; account
+identity must match the default certificate and the remote tunnel must still exist. A private,
+nonsecret setup intent persists the initial remote name and account before creation, so
+renaming a project after an ambiguous failure cannot create another tunnel on retry. Missing
+credentials for an existing name produce an error rather than attaching an unrelated tunnel.
+
+Linking preserves other YAML keys and ingress settings, checks the original source bytes,
+shares the hostname-save lock, and uses the existing atomic backup/metadata-preserving writer.
+Comments/formatting may change; the backup preserves original bytes. A failed link retains
+verified credentials for retry and never deletes the Cloudflare tunnel. Setup leaves the
+project stopped. Hostnames and DNS are configured afterward; this action does not change DNS.
+Drafts remain setup-accessible after a failed start, and Start all/popover switches skip them.

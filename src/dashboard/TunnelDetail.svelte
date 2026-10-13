@@ -1,5 +1,6 @@
 <script lang="ts">
   import { onMount, tick, untrack, type Snippet } from "svelte";
+  import { listen, type UnlistenFn } from "@tauri-apps/api/event";
   import { DropdownMenu } from "bits-ui";
   import { slide } from "svelte/transition";
   import { revealItemInDir } from "@tauri-apps/plugin-opener";
@@ -21,7 +22,7 @@
   import { api, errorText } from "../lib/api";
   import { motion } from "../lib/theme";
   import { formatUptime, isOn, statusHint } from "../lib/format";
-  import type { ConfigChange, Status, Tunnel, Validation } from "../lib/types";
+  import type { ConfigChange, Status, Tunnel, TunnelSetupProgress, Validation } from "../lib/types";
   import { configChecker } from "$lib/config-change";
   import { failurePresentation } from "$lib/failure";
   import { notify } from "$lib/toast";
@@ -48,6 +49,11 @@
   let busy = $state(false);
   let restarting = $state(false);
   let error = $state<string | null>(null);
+  let setupError = $state<string | null>(null);
+  let setupRequest = $state<string | null>(null);
+  let setupStage = $state<TunnelSetupProgress["stage"] | null>(null);
+  let cancellingSetup = $state(false);
+  let setupSubscription: Promise<UnlistenFn> | null = null;
   let configChange = $state<ConfigChange | null>(null);
   let configError = $state<string | null>(null);
   let validation = $state<Validation | null>(null);
@@ -100,18 +106,36 @@
 
   onMount(() => {
     mounted = true;
-    const check = () => { void configCheck.check(); };
+    setupSubscription = listen<TunnelSetupProgress>("project-setup-progress", ({ payload }) => {
+      if (mounted && payload.id === tunnel.id && payload.request_id === setupRequest) setupStage = payload.stage;
+    });
+    // Preserve the rejection for setup() without an unhandled rejection before its first click.
+    void setupSubscription.catch(() => {});
+    const check = () => {
+      void configCheck.check();
+      // Draft setup is completed in an external editor. Reload stopped configs on return so
+      // their Start button and hostname list reflect the file without requiring a relaunch.
+      if (tunnel.kind === "config" && !on) void store.refresh();
+    };
     const visible = () => { if (document.visibilityState === "visible") check(); };
     window.addEventListener("focus", check);
     document.addEventListener("visibilitychange", visible);
     return () => {
       mounted = false;
+      if (setupRequest) void api.cancelProjectSetup(tunnel.id, setupRequest).catch(() => {});
+      void setupSubscription?.then((unsubscribe) => unsubscribe()).catch(() => {});
       window.removeEventListener("focus", check);
       document.removeEventListener("visibilitychange", visible);
       configCheck.cancel();
     };
   });
-  const kindText = { config: "Named tunnel from a config file", token: "Remotely managed tunnel (token)", quick: "Quick tunnel on trycloudflare.com" };
+  const kindText = { config: "Project from a config file", token: "Remotely managed tunnel (token)", quick: "Quick tunnel on trycloudflare.com" };
+  const setupMessages: Record<TunnelSetupProgress["stage"], string> = {
+    checking: "Checking the project config and Cloudflare login…",
+    login: "Complete Cloudflare login in your browser. Setup will continue when you return.",
+    creating: "Creating your Cloudflare tunnel…",
+    linking: "Linking the tunnel ID and credentials to this project…",
+  };
   const noticeVariant: Record<Status, Alert.AlertVariant> = {
     connected: "success",
     starting: "default",
@@ -131,6 +155,45 @@
       error = errorText(e);
     } finally {
       busy = false;
+    }
+  }
+
+  async function setup() {
+    if (busy || setupRequest || !tunnel.setup_needed) return;
+    const target = tunnel.id;
+    const request = crypto.randomUUID();
+    setupRequest = request;
+    setupStage = "checking";
+    setupError = null;
+    error = null;
+    busy = true;
+    try {
+      await setupSubscription;
+      if (!mounted) return;
+      await api.setupProjectTunnel(target, request);
+      if (!mounted || setupRequest !== request) return;
+      await store.refresh();
+      if (store.error) throw new Error(`The tunnel was set up, but the project could not refresh: ${store.error}`);
+      if (mounted) notify.success("Tunnel set up. Configure hostnames, then start the project.");
+    } catch (e) {
+      if (mounted && setupRequest === request) setupError = errorText(e);
+    } finally {
+      if (mounted && setupRequest === request) {
+        setupRequest = null;
+        setupStage = null;
+        cancellingSetup = false;
+        busy = false;
+      }
+    }
+  }
+
+  async function cancelSetup() {
+    if (!setupRequest || cancellingSetup) return;
+    cancellingSetup = true;
+    try {
+      await api.cancelProjectSetup(tunnel.id, setupRequest);
+    } catch (e) {
+      if (mounted) { setupError = errorText(e); cancellingSetup = false; }
     }
   }
 
@@ -212,7 +275,7 @@
     <Tip text={statusHint[s.status]}>
       {#snippet children({ props })}<button {...props} type="button" aria-label={statusHint[s.status]} class="flex shrink-0 rounded-sm {kbRing}"><StatusDot status={s.status} /></button>{/snippet}
     </Tip>
-    <EditableName name={tunnel.name} label="Tunnel name" class="text-xl font-semibold tracking-[-0.01em]" onsave={async (name) => {
+    <EditableName name={tunnel.name} label={tunnel.kind === "config" ? "Project name" : "Tunnel name"} class="text-xl font-semibold tracking-[-0.01em]" onsave={async (name) => {
       await api.updateTunnel(tunnel.id, { name });
       await store.refresh();
     }} />
@@ -222,7 +285,7 @@
     {#if on}
       <Button variant="outline" disabled={busy} onclick={() => run(() => api.stop(tunnel.id))}><Square class="size-2.5 fill-current" /> Stop</Button>
     {:else}
-      <Button variant="outline" disabled={busy || !store.overview?.cloudflared} onclick={() => run(() => api.start(tunnel.id))}>
+      <Button variant="outline" disabled={busy || tunnel.setup_needed || !store.overview?.cloudflared} onclick={() => run(() => api.start(tunnel.id))}>
         <Play class="size-2.5 fill-current" /> Start
       </Button>
     {/if}
@@ -246,7 +309,22 @@
   </div>
 </header>
 
-{#if failure}
+{#if tunnel.setup_needed || setupRequest}
+  <div class="mb-3.5" role="status">
+    <Alert.Root>
+      {#snippet icon()}<Info />{/snippet}
+      <Alert.Title>{setupRequest ? setupStage === "login" ? "Log in to Cloudflare" : "Setting up tunnel" : "Project setup needed"}</Alert.Title>
+      <Alert.Description>{cancellingSetup ? "Cancelling setup…" : setupStage ? setupMessages[setupStage] : on ? "Stop this project, then set up its Cloudflare tunnel." : "Create a Cloudflare tunnel and link its credentials automatically. You'll be asked to log in if needed."}</Alert.Description>
+      {#snippet action()}
+        {#if setupRequest}
+          <Button variant="outline" disabled={cancellingSetup || setupStage === "linking"} onclick={cancelSetup}>Cancel setup</Button>
+        {:else}
+          <Button disabled={busy || on || !store.overview?.cloudflared} onclick={setup}>Set up tunnel</Button>
+        {/if}
+      {/snippet}
+    </Alert.Root>
+  </div>
+{:else if failure}
   {#key JSON.stringify([tunnel.id, s.run, s.status, failure])}
     <div class="mb-3.5" transition:slide={{ duration: motion(180) }}>
       <FailureNotice {failure} status={s.status} detail={s.detail} />
@@ -258,6 +336,14 @@
     {#if s.hint}<div class="mt-1.5 whitespace-pre-wrap text-muted-foreground select-text">{s.hint}</div>{/if}
   {/snippet}
   {@render notice(s.status, stateBody, "status")}
+{/if}
+{#if setupError}
+  <div class="mb-3.5">
+    <Alert.Root variant="destructive">
+      {#snippet icon()}<CircleAlert />{/snippet}
+      <Alert.Description class="whitespace-pre-wrap text-foreground">{setupError}</Alert.Description>
+    </Alert.Root>
+  </div>
 {/if}
 {#if error}
   {#snippet errorBody()}<div class="whitespace-pre-wrap select-text">{error}</div>{/snippet}
@@ -300,7 +386,7 @@
   </SettingsRow>
   <SettingsRow label="Start automatically" help="Start this tunnel whenever Underlane launches.">
     {#snippet control({ id, describedBy })}
-      <Switch {id} aria-describedby={describedBy} disabled={busy} bind:checked={() => tunnel.autostart, (v) => patch({ autostart: v })} />
+      <Switch {id} aria-describedby={describedBy} disabled={busy || tunnel.setup_needed} bind:checked={() => tunnel.autostart, (v) => patch({ autostart: v })} />
     {/snippet}
   </SettingsRow>
   <SettingsRow label="Log level" help="Debug logs every request's headers (redacted before storage).">
@@ -340,7 +426,7 @@
 
 {#snippet sourceNote()}
   {#if tunnel.kind === "config"}
-    Underlane reads this file and never changes it. Edits are picked up the next time the tunnel starts.
+    Starting and request inspection leave this file unchanged. Tunnel setup and hostname saves update it with a backup. Other edits are picked up the next time the tunnel starts.
   {:else}
     Quick tunnels get a new random hostname every time they start, and don't support server-sent events.
   {/if}

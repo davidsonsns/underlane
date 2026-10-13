@@ -9,9 +9,12 @@ thinking about them: no terminal windows, no juggling `config.yml` files.
 
 ![Underlane dashboard with the Lane Cut logo](docs/screenshots/lane-cut-dashboard-dark.png)
 
-- **Import what you already have.** Underlane scans `~/.cloudflared` for config files, and you can
-  add files or project folders. It also supports token (dashboard-managed) tunnels and
-  `trycloudflare.com` quick tunnels.
+- **Create a project or load what you already have.** Choose **New → Project**, enter a name
+  and optional group, then load an existing cloudflared config or create a draft in
+  `~/.cloudflared/underlane` (or a folder you choose). Loaded files stay in place. Creation
+  opens the project, where **Set up tunnel** uses the cloudflared CLI to log in when needed,
+  create a tunnel, and link its ID and credentials automatically. **New → Quick tunnel**
+  creates a temporary tunnel for a local endpoint. Existing token tunnels remain supported.
 - **One click per tunnel**, or all at once, with live status: starting, connected, degraded,
   stopped or crashed. Crashed tunnels restart with backoff.
 - **A count in the menu bar** shows how many tunnels are up. The popover can copy a tunnel's public
@@ -65,8 +68,15 @@ make build      # npm ci + tauri build -> target/release/bundle/macos/Underlane.
 make install    # same, then copies it to ~/Applications (needed for launch at login)
 ```
 
-Open `Underlane.app`. On first run it opens the dashboard. Choose **Add tunnel** to import config
-files, paste a tunnel token, or share a local port as a quick tunnel.
+Open `Underlane.app`. On first run it opens the dashboard. Choose **New** for a project or quick
+tunnel. New project configs are drafts: choose **Set up tunnel**, complete Cloudflare login in
+your browser if prompted, then configure hostnames and start from the project. Loading a config shows its
+hostnames and endpoints before creation and uses that original file without copying it.
+
+Tunnel setup validates the project config before creating a Cloudflare resource and saves a
+backup when linking its identity. Credentials stay in `~/.cloudflared/underlane/<project-id>.json`.
+Failed linking can be retried using the saved credentials; setup remembers the original tunnel
+name across project renames. Setup supports the default `~/.cloudflared/cert.pem` account.
 
 If you use a menu bar manager (Hidden Bar, Ice, Bartender), new items may land in its hidden
 section. Drag Underlane's circular Lane Cut icon into the visible part.

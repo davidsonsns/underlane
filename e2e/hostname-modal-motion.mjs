@@ -20,6 +20,8 @@ await page.addInitScript((delay)=>{
  window.__TAURI_INTERNALS__={metadata:{currentWindow:{label:'dashboard'},currentWebview:{label:'dashboard'}},transformCallback(cb){const n=next++;callbacks[n]=cb;return n},unregisterCallback(n){delete callbacks[n]},async invoke(cmd,args){
   const m=window.__hostnameMock;m.calls.push({cmd,args});
   if(cmd==='overview') return structuredClone(m.overview);
+  if(cmd==='scan_default') return [];
+  if(cmd==='project_directory') return '/synthetic/.cloudflared/underlane';
   if(cmd==='load_hostnames') { await new Promise(r=>setTimeout(r,Number(window.__loadDelay??100))); return structuredClone(m.config); }
   if(cmd==='probe_services') return args.services.map(s=>s.startsWith('http_status:')?null:false);
   if(cmd==='check_config_change') return {run:1,config_revision:1,source_path:'/synthetic/hostname-ui.yml',status:'unchanged',message:null};
@@ -44,9 +46,18 @@ assert.ok(samples.length>5,'Modal frame sampling missed the open');
 const ys=samples.filter(f=>f.opacity>0.02).map(f=>f.y);
 const movement=Math.max(...ys)-Math.min(...ys);
 console.log(JSON.stringify({frames:samples.length,movement,first:samples[0],last:samples.at(-1),loadingFrames:samples.filter(f=>f.loading).length,loadCalls:await page.evaluate(()=>window.__hostnameMock.calls.filter(c=>c.cmd==='load_hostnames').length)},null,2));
-await browser.close();
-assert.ok(movement<1,`Modal jumped ${movement.toFixed(1)}px while opening`);
+assert.ok(movement<=17,`Modal moved ${movement.toFixed(1)}px, beyond the shared sheet animation`);
 const heights=samples.map(f=>f.height);
 assert.ok(Math.max(...heights)-Math.min(...heights)<1,'Modal changed height while opening');
 assert.ok(samples.every(f=>!f.loading),'Short loading panel flashed before editor');
+const hostnameTop = samples.at(-1).y;
+await page.getByRole('button',{name:'Cancel',exact:true}).click();
+await page.getByRole('dialog').waitFor({state:'detached'});
+await page.getByRole('button',{name:'New',exact:true}).click();
+await page.getByRole('dialog').waitFor();
+await page.waitForTimeout(300);
+const addTop = await page.getByRole('dialog').evaluate(e=>e.getBoundingClientRect().top);
+assert.ok(Math.abs(hostnameTop-addTop)<1,`Manage hostnames top ${hostnameTop}px differs from New ${addTop}px`);
+console.log(`Both sheets align at ${addTop}px`);
 assert.deepEqual(errors, [], 'Unexpected browser error');
+await browser.close();

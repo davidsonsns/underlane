@@ -15,7 +15,7 @@ use underlane_core::secret::redact_text;
 use crate::state::Core;
 
 // Saves are infrequent; serializing them also covers tunnels sharing a config file.
-static SAVES: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+pub(crate) static SAVES: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 static NEXT_FILE: AtomicU64 = AtomicU64::new(0);
 
 #[derive(Serialize)]
@@ -23,7 +23,7 @@ pub struct SaveResult {
     pub restart_error: Option<String>,
 }
 
-fn source_path(core: &Core, id: &str) -> Result<PathBuf, String> {
+pub(crate) fn source_path(core: &Core, id: &str) -> Result<PathBuf, String> {
     let tunnel = core
         .db
         .tunnel(id)
@@ -102,12 +102,12 @@ async fn validate(binary: &str, path: &Path) -> Result<(), String> {
     )))
 }
 
-struct Candidate {
-    path: PathBuf,
+pub(crate) struct Candidate {
+    pub(crate) path: PathBuf,
 }
 
 impl Candidate {
-    fn new(source: &Path, text: &str) -> Result<Self, String> {
+    pub(crate) fn new(source: &Path, text: &str) -> Result<Self, String> {
         let (path, mut file) = unique_file(source, "pending")?;
         let candidate = Self { path };
         file.write_all(text.as_bytes())
@@ -172,7 +172,7 @@ fn check_source(source: &Path, original: &str) -> Result<fs::Metadata, String> {
     Ok(metadata)
 }
 
-fn publish(source: &Path, original: &str, candidate: &Path) -> Result<(), String> {
+pub(crate) fn publish(source: &Path, original: &str, candidate: &Path) -> Result<(), String> {
     let metadata = check_source(source, original)?;
     let (backup_path, mut backup) = unique_file(source, "backup")?;
     let result = (|| {
