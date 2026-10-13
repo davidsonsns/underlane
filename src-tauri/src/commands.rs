@@ -66,7 +66,7 @@ fn readable_config_file(path: &str) -> Res<()> {
 pub struct Candidate {
     pub path: String,
     pub name: String,
-    pub project: String,
+    pub group: String,
     pub hostnames: Vec<String>,
     pub imported: bool,
 }
@@ -86,7 +86,7 @@ fn scan_default_inner(core: &Core) -> Res<Vec<Candidate>> {
         out.push(Candidate {
             imported: core.db.tunnel_by_config_path(&key).ok().flatten().is_some(),
             name: c.display_name(),
-            project: import::project_name_for(&p),
+            group: import::group_name_for(&p),
             hostnames: c.ingress.iter().filter_map(|r| r.hostname.clone()).collect(),
             path: key,
         });
@@ -107,14 +107,14 @@ pub async fn import_paths(core: CoreState<'_>, paths: Vec<String>) -> Res<Import
 }
 
 #[tauri::command]
-pub fn add_quick_tunnel(core: CoreState<'_>, name: String, origin: String, project: String, inspect: bool) -> Res<String> {
+pub fn add_quick_tunnel(core: CoreState<'_>, name: String, origin: String, group: String, inspect: bool) -> Res<String> {
     let origin = normalize_origin(&origin);
     if underlane_core::derived::split_service(&origin).is_none() {
         return Err(format!("`{origin}` isn't a local http:// or https:// address."));
     }
     let level = core.settings.read().unwrap().default_loglevel.clone();
     let name = if name.trim().is_empty() { origin.trim_start_matches("http://").trim_start_matches("https://").to_string() } else { name };
-    let mut t = import::add_simple(&core.db, TunnelKind::Quick, &name, &project, Some(origin), &level).map_err(err)?;
+    let mut t = import::add_simple(&core.db, TunnelKind::Quick, &name, &group, Some(origin), &level).map_err(err)?;
     if inspect {
         t.inspect = true;
         core.db.upsert_tunnel(&t).map_err(err)?;
@@ -124,14 +124,14 @@ pub fn add_quick_tunnel(core: CoreState<'_>, name: String, origin: String, proje
 }
 
 #[tauri::command]
-pub fn add_token_tunnel(core: CoreState<'_>, name: String, token: String, project: String) -> Res<String> {
+pub fn add_token_tunnel(core: CoreState<'_>, name: String, token: String, group: String) -> Res<String> {
     let token = token.trim().trim_start_matches("cloudflared tunnel run --token ").trim().to_string();
     if token.len() < 20 {
         return Err("That doesn't look like a tunnel token. Copy it from the tunnel's install command in the Cloudflare dashboard.".into());
     }
     let level = core.settings.read().unwrap().default_loglevel.clone();
     let name = if name.trim().is_empty() { "Remote tunnel".to_string() } else { name };
-    let t = import::add_simple(&core.db, TunnelKind::Token, &name, &project, None, &level).map_err(err)?;
+    let t = import::add_simple(&core.db, TunnelKind::Token, &name, &group, None, &level).map_err(err)?;
     tokens::set(&t.id, &token).map_err(|e| format!("Couldn't save the token in the keychain: {e}"))?;
     core.db.kv_set(&format!("token:{}", t.id), "1").map_err(err)?;
     core.notify_changed();
@@ -142,12 +142,18 @@ pub fn add_token_tunnel(core: CoreState<'_>, name: String, token: String, projec
 #[serde(rename_all = "camelCase")]
 pub struct TunnelPatch {
     pub name: Option<String>,
-    pub project: Option<String>,
+    #[serde(default, deserialize_with = "deserialize_group_patch")]
+    pub group: Option<Option<String>>,
     pub inspect: Option<bool>,
     pub autostart: Option<bool>,
     pub loglevel: Option<String>,
     pub origin_url: Option<String>,
     pub token: Option<String>,
+}
+
+// A missing group leaves membership unchanged; explicit null removes it.
+fn deserialize_group_patch<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<Option<Option<String>>, D::Error> {
+    Option::<String>::deserialize(deserializer).map(Some)
 }
 
 #[tauri::command]
@@ -161,8 +167,12 @@ fn update_tunnel_inner(core: &Core, id: String, patch: TunnelPatch) -> Res<()> {
     if let Some(n) = patch.name.filter(|n| !n.trim().is_empty()) {
         t.name = n.trim().to_string();
     }
-    if let Some(p) = patch.project.filter(|p| !p.trim().is_empty()) {
-        t.project_id = core.db.ensure_project(&p).map_err(err)?.id;
+    if let Some(group) = patch.group {
+        match group {
+            None => t.group_id = None,
+            Some(name) if !name.trim().is_empty() => t.group_id = Some(core.db.ensure_group(&name).map_err(err)?.id),
+            Some(_) => {}
+        }
     }
     if let Some(i) = patch.inspect {
         needs_restart |= i != t.inspect;
@@ -189,7 +199,7 @@ fn update_tunnel_inner(core: &Core, id: String, patch: TunnelPatch) -> Res<()> {
         needs_restart = true;
     }
     core.db.upsert_tunnel(&t).map_err(err)?;
-    core.db.prune_empty_projects().map_err(err)?;
+    core.db.prune_empty_groups().map_err(err)?;
     if needs_restart {
         core.restart_if_running(&id).map_err(err)?;
     }
@@ -485,6 +495,19 @@ pub fn e2e_report(nonce: String, text: String) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn group_patch_distinguishes_omitted_null_and_name() {
+        let omitted: TunnelPatch = serde_json::from_str(r#"{"name":"Renamed","autostart":true}"#).unwrap();
+        assert_eq!(omitted.group, None);
+        assert_eq!(omitted.name.as_deref(), Some("Renamed"));
+        assert_eq!(omitted.autostart, Some(true));
+        let removed: TunnelPatch = serde_json::from_str(r#"{"group":null}"#).unwrap();
+        assert_eq!(removed.group, Some(None));
+        let assigned: TunnelPatch = serde_json::from_str(r#"{"group":"Personal"}"#).unwrap();
+        assert_eq!(assigned.group, Some(Some("Personal".into())));
+        assert!(serde_json::from_str::<TunnelPatch>(r#"{"group":false}"#).is_err());
+    }
 
     #[test]
     fn editor_source_path_requires_a_readable_regular_file() {

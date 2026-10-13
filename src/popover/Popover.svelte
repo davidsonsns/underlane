@@ -88,11 +88,11 @@
   }
 
   const groups = $derived.by(() => {
-    const map = new Map<string, { name: string; tunnels: Tunnel[] }>();
+    const map = new Map<string | null, { name: string; tunnels: Tunnel[] }>();
     for (const t of store.tunnels) {
-      const g = map.get(t.project_id) ?? { name: t.project_name, tunnels: [] };
+      const g = map.get(t.group_id) ?? { name: t.group_name, tunnels: [] };
       g.tunnels.push(t);
-      map.set(t.project_id, g);
+      map.set(t.group_id, g);
     }
     return [...map.entries()].map(([id, g]) => ({ id, ...g }));
   });
@@ -168,7 +168,7 @@
     {:else}
       {#each groups as g (g.id)}
         <div class="not-first:mt-1.5" animate:flip={{ duration: motion(220) }}>
-          <div class="px-2 pt-1.5 pb-0.75 text-xs font-semibold text-muted-foreground">{g.name}</div>
+          {#if g.id !== null}<div class="px-2 pt-1.5 pb-0.75 text-xs font-semibold text-muted-foreground">{g.name}</div>{/if}
           {#each g.tunnels as t (t.id)}
             {@const m = t.state.mappings.find((m) => m.hostname) ?? t.state.mappings[0]}
             {@const url = publicUrl(t)}

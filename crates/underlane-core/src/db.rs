@@ -7,10 +7,10 @@ use std::sync::Mutex;
 use rusqlite::{params, Connection, OptionalExtension, Row};
 use serde::Serialize;
 
-use crate::model::{LogLine, Project, Settings, Tunnel, TunnelKind};
+use crate::model::{LogLine, Group, Settings, Tunnel, TunnelKind};
 use crate::proxy::capture::{BodyCapture, CapturedExchange, ExchangeKind};
 
-const SCHEMA_VERSION: i64 = 1;
+const SCHEMA_VERSION: i64 = 3;
 
 const MIGRATIONS: [&str; SCHEMA_VERSION as usize] = [
     "CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -59,6 +59,23 @@ const MIGRATIONS: [&str; SCHEMA_VERSION as usize] = [
                     error TEXT);
                  CREATE INDEX IF NOT EXISTS requests_tunnel_ts ON requests(tunnel_id, ts);
                  CREATE INDEX IF NOT EXISTS requests_ts ON requests(ts);",
+    "ALTER TABLE projects RENAME TO groups;
+     ALTER TABLE tunnels RENAME COLUMN project_id TO group_id;",
+    "CREATE TABLE tunnels_ungrouped (
+        id TEXT PRIMARY KEY,
+        group_id TEXT REFERENCES groups(id) ON DELETE CASCADE,
+        name TEXT NOT NULL,
+        kind TEXT NOT NULL,
+        config_path TEXT,
+        origin_url TEXT,
+        inspect INTEGER NOT NULL DEFAULT 0,
+        autostart INTEGER NOT NULL DEFAULT 0,
+        loglevel TEXT NOT NULL DEFAULT 'info',
+        created_at INTEGER NOT NULL,
+        sort INTEGER NOT NULL DEFAULT 0);
+     INSERT INTO tunnels_ungrouped SELECT * FROM tunnels;
+     DROP TABLE tunnels;
+     ALTER TABLE tunnels_ungrouped RENAME TO tunnels;",
 ];
 
 pub struct Db {
@@ -185,43 +202,43 @@ impl Db {
         Ok(())
     }
 
-    // ---- projects & tunnels ----
+    // ---- groups & tunnels ----
 
-    pub fn projects(&self) -> anyhow::Result<Vec<Project>> {
+    pub fn groups(&self) -> anyhow::Result<Vec<Group>> {
         self.with(|c| {
-            let mut st = c.prepare("SELECT id, name, sort FROM projects ORDER BY sort, name")?;
-            let rows = st.query_map([], |r| Ok(Project { id: r.get(0)?, name: r.get(1)?, sort: r.get(2)? }))?;
+            let mut st = c.prepare("SELECT id, name, sort FROM groups ORDER BY sort, name")?;
+            let rows = st.query_map([], |r| Ok(Group { id: r.get(0)?, name: r.get(1)?, sort: r.get(2)? }))?;
             rows.collect()
         })
     }
 
-    /// Find a project by name (case-insensitive) or create it.
-    pub fn ensure_project(&self, name: &str) -> anyhow::Result<Project> {
+    /// Find a group by name (case-insensitive) or create it.
+    pub fn ensure_group(&self, name: &str) -> anyhow::Result<Group> {
         let name = name.trim();
         let name = if name.is_empty() { "Default" } else { name };
         let existing = self.with(|c| {
             c.query_row(
-                "SELECT id, name, sort FROM projects WHERE lower(name) = lower(?1)",
+                "SELECT id, name, sort FROM groups WHERE lower(name) = lower(?1)",
                 [name],
-                |r| Ok(Project { id: r.get(0)?, name: r.get(1)?, sort: r.get(2)? }),
+                |r| Ok(Group { id: r.get(0)?, name: r.get(1)?, sort: r.get(2)? }),
             )
             .optional()
         })?;
         if let Some(p) = existing {
             return Ok(p);
         }
-        let p = Project {
+        let p = Group {
             id: uuid::Uuid::new_v4().to_string(),
             name: name.to_string(),
-            sort: self.with(|c| c.query_row("SELECT COALESCE(MAX(sort), -1) + 1 FROM projects", [], |r| r.get(0)))?,
+            sort: self.with(|c| c.query_row("SELECT COALESCE(MAX(sort), -1) + 1 FROM groups", [], |r| r.get(0)))?,
         };
-        self.with(|c| c.execute("INSERT INTO projects(id, name, sort) VALUES (?1, ?2, ?3)", params![p.id, p.name, p.sort]))?;
+        self.with(|c| c.execute("INSERT INTO groups(id, name, sort) VALUES (?1, ?2, ?3)", params![p.id, p.name, p.sort]))?;
         Ok(p)
     }
 
-    /// Delete projects that no longer have tunnels.
-    pub fn prune_empty_projects(&self) -> anyhow::Result<()> {
-        self.with(|c| c.execute("DELETE FROM projects WHERE id NOT IN (SELECT project_id FROM tunnels)", []))?;
+    /// Delete groups that no longer have tunnels.
+    pub fn prune_empty_groups(&self) -> anyhow::Result<()> {
+        self.with(|c| c.execute("DELETE FROM groups WHERE id NOT IN (SELECT group_id FROM tunnels WHERE group_id IS NOT NULL)", []))?;
         Ok(())
     }
 
@@ -229,7 +246,7 @@ impl Db {
         let kind: String = r.get(3)?;
         Ok(Tunnel {
             id: r.get(0)?,
-            project_id: r.get(1)?,
+            group_id: r.get(1)?,
             name: r.get(2)?,
             kind: TunnelKind::parse(&kind).unwrap_or(TunnelKind::Config),
             config_path: r.get(4)?,
@@ -243,7 +260,7 @@ impl Db {
     }
 
     const TUNNEL_COLS: &'static str =
-        "id, project_id, name, kind, config_path, origin_url, inspect, autostart, loglevel, created_at, sort";
+        "id, group_id, name, kind, config_path, origin_url, inspect, autostart, loglevel, created_at, sort";
 
     pub fn tunnels(&self) -> anyhow::Result<Vec<Tunnel>> {
         self.with(|c| {
@@ -274,15 +291,15 @@ impl Db {
     pub fn upsert_tunnel(&self, t: &Tunnel) -> anyhow::Result<()> {
         self.with(|c| {
             c.execute(
-                "INSERT INTO tunnels(id, project_id, name, kind, config_path, origin_url, inspect, autostart, loglevel, created_at, sort)
+                "INSERT INTO tunnels(id, group_id, name, kind, config_path, origin_url, inspect, autostart, loglevel, created_at, sort)
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
-                 ON CONFLICT(id) DO UPDATE SET project_id = excluded.project_id, name = excluded.name,
+                 ON CONFLICT(id) DO UPDATE SET group_id = excluded.group_id, name = excluded.name,
                     kind = excluded.kind, config_path = excluded.config_path, origin_url = excluded.origin_url,
                     inspect = excluded.inspect, autostart = excluded.autostart, loglevel = excluded.loglevel,
                     sort = excluded.sort",
                 params![
                     t.id,
-                    t.project_id,
+                    t.group_id,
                     t.name,
                     t.kind.as_str(),
                     t.config_path,
@@ -304,7 +321,7 @@ impl Db {
             c.execute("DELETE FROM logs WHERE tunnel_id = ?1", [id])?;
             c.execute("DELETE FROM requests WHERE tunnel_id = ?1", [id])
         })?;
-        self.prune_empty_projects()
+        self.prune_empty_groups()
     }
 
     // ---- logs ----
@@ -609,7 +626,12 @@ mod migration_tests {
             conn,
             "SELECT type, name, tbl_name, sql FROM sqlite_schema ORDER BY name",
         );
-        let data = ["settings", "projects", "tunnels", "logs", "requests", "sqlite_sequence"]
+        let group_table = if conn.query_row(
+            "SELECT EXISTS(SELECT 1 FROM sqlite_schema WHERE name = 'groups' AND type = 'table')",
+            [],
+            |row| row.get::<_, bool>(0),
+        ).unwrap() { "groups" } else { "projects" };
+        let data = ["settings", group_table, "tunnels", "logs", "requests", "sqlite_sequence"]
             .iter()
             .map(|table| rows(conn, &format!("SELECT * FROM {table} ORDER BY rowid")))
             .collect();
@@ -635,7 +657,7 @@ mod migration_tests {
     }
 
     #[test]
-    fn fresh_creation_uses_only_v1_schema() {
+    fn fresh_creation_uses_current_schema() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("fresh.db");
         let db = Db::open(&path).unwrap();
@@ -643,14 +665,14 @@ mod migration_tests {
         assert_eq!(
             conn.query_row("PRAGMA user_version", [], |row| row.get::<_, i64>(0))
                 .unwrap(),
-            1
+            SCHEMA_VERSION
         );
         assert_eq!(
             rows(
                 &conn,
                 "SELECT name FROM sqlite_schema WHERE type = 'table' ORDER BY name"
             ),
-            ["logs", "projects", "requests", "settings", "sqlite_sequence", "tunnels"]
+            ["groups", "logs", "requests", "settings", "sqlite_sequence", "tunnels"]
                 .map(|name| vec![Value::Text(name.into())])
         );
         assert!(snapshot(&conn).1.iter().all(Vec::is_empty));
@@ -668,18 +690,38 @@ mod migration_tests {
     }
 
     #[test]
-    fn populated_v1_and_repeated_opens_preserve_schema_and_every_row() {
+    fn populated_v1_renames_groups_and_repeated_opens_preserve_every_row() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("existing.db");
         let conn = populated_v1(&path);
         let before = snapshot(&conn);
         drop(conn);
+        let mut migrated = None;
         for _ in 0..3 {
             let db = Db::open(&path).unwrap();
-            assert_eq!(snapshot(&db.conn.lock().unwrap()), before);
+            let after = snapshot(&db.conn.lock().unwrap());
+            assert_eq!(after.1, before.1, "migration preserves all stored rows");
+            assert_eq!(after.2, SCHEMA_VERSION);
+            if let Some(previous) = &migrated {
+                assert_eq!(&after, previous, "reopening does not repeat migrations");
+            }
+            migrated = Some(after);
             assert_eq!(db.settings().unwrap().theme, "dark");
-            assert_eq!(db.projects().unwrap()[0].name, "Shop");
+            assert_eq!(db.groups().unwrap()[0].name, "Shop");
+            assert_eq!(db.tunnel("t1").unwrap().unwrap().group_id.as_deref(), Some("p1"));
             assert_eq!(db.tunnel("t1").unwrap().unwrap().sort, 4);
+            let conn = db.conn.lock().unwrap();
+            assert!(rows(&conn, "SELECT name FROM sqlite_schema WHERE name = 'projects'").is_empty());
+            let columns = rows(&conn, "SELECT name FROM pragma_table_info('tunnels')");
+            assert!(columns.contains(&vec![Value::Text("group_id".into())]));
+            assert!(!columns.contains(&vec![Value::Text("project_id".into())]));
+            assert_eq!(
+                rows(&conn, "SELECT [table], [from], [to], on_delete FROM pragma_foreign_key_list('tunnels')"),
+                vec![vec![Value::Text("groups".into()), Value::Text("group_id".into()), Value::Text("id".into()), Value::Text("CASCADE".into())]]
+            );
+            assert!(rows(&conn, "PRAGMA foreign_key_check").is_empty());
+            assert!(conn.execute("UPDATE tunnels SET group_id = 'missing' WHERE id = 't1'", []).is_err());
+            drop(conn);
             assert_eq!(
                 db.query_logs(&LogQuery {
                     limit: 10,
@@ -694,16 +736,82 @@ mod migration_tests {
     }
 
     #[test]
+    fn populated_v2_allows_ungrouped_tunnels_without_losing_data_or_constraints() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("grouped.db");
+        let conn = populated_v1(&path);
+        conn.execute_batch(MIGRATIONS[1]).unwrap();
+        conn.execute_batch(
+            "INSERT INTO tunnels VALUES ('config', 'p1', 'Config', 'config', '/tmp/config.yml', NULL, 0, 1, 'warn', 321, 9);
+             PRAGMA user_version = 2;",
+        ).unwrap();
+        let before = snapshot(&conn);
+        let columns = rows(&conn, "SELECT name, type, [notnull], dflt_value, pk FROM pragma_table_info('tunnels')");
+        let foreign_keys = rows(&conn, "PRAGMA foreign_key_list('tunnels')");
+        drop(conn);
+
+        let db = Db::open(&path).unwrap();
+        let conn = db.conn.lock().unwrap();
+        assert_eq!(snapshot(&conn).1, before.1);
+        assert_eq!(snapshot(&conn).2, SCHEMA_VERSION);
+        let mut expected_columns = columns;
+        expected_columns[1][2] = Value::Integer(0);
+        assert_eq!(rows(&conn, "SELECT name, type, [notnull], dflt_value, pk FROM pragma_table_info('tunnels')"), expected_columns);
+        assert_eq!(rows(&conn, "PRAGMA foreign_key_list('tunnels')"), foreign_keys);
+        assert!(rows(&conn, "PRAGMA foreign_key_check").is_empty());
+        assert!(conn.execute("UPDATE tunnels SET group_id = 'missing' WHERE id = 't1'", []).is_err());
+        drop(conn);
+        assert_eq!(db.tunnel_by_config_path("/tmp/config.yml").unwrap().unwrap().id, "config");
+
+        let mut tunnel = db.tunnel("t1").unwrap().unwrap();
+        let original = tunnel.clone();
+        tunnel.group_id = None;
+        db.upsert_tunnel(&tunnel).unwrap();
+        db.prune_empty_groups().unwrap();
+        assert_eq!(db.groups().unwrap().len(), 1, "the config tunnel still uses its group");
+        let empty = db.ensure_group("Empty").unwrap();
+        db.prune_empty_groups().unwrap();
+        assert!(!db.groups().unwrap().iter().any(|group| group.id == empty.id), "NULL membership must not prevent pruning");
+        assert_eq!(db.tunnel("t1").unwrap().unwrap(), tunnel);
+        assert_eq!(serde_json::to_value(&tunnel).unwrap()["group_id"], serde_json::Value::Null);
+        assert_eq!(db.get_request("r1").unwrap().unwrap().req_body.bytes, vec![1, 2, 3]);
+        drop(db);
+
+        let db = Db::open(&path).unwrap();
+        assert_eq!(db.tunnel("t1").unwrap().unwrap(), tunnel, "ungrouped membership survives reopening");
+        let new_group = db.ensure_group("Reassigned").unwrap();
+        tunnel.group_id = Some(new_group.id.clone());
+        db.upsert_tunnel(&tunnel).unwrap();
+        assert_eq!(db.tunnel("t1").unwrap().unwrap(), tunnel);
+        let conn = db.conn.lock().unwrap();
+        conn.execute("DELETE FROM groups WHERE id = ?1", [&new_group.id]).unwrap();
+        drop(conn);
+        assert!(db.tunnel("t1").unwrap().is_none(), "group deletion still cascades");
+        assert_eq!(db.tunnel("config").unwrap().unwrap().group_id, original.group_id);
+    }
+
+    #[test]
+    fn clearing_last_group_preserves_the_tunnel() {
+        let db = Db::open_in_memory().unwrap();
+        let mut tunnel = crate::import::add_simple(&db, TunnelKind::Quick, "Quick", "Personal", Some("http://localhost:1".into()), "info").unwrap();
+        tunnel.group_id = None;
+        db.upsert_tunnel(&tunnel).unwrap();
+        db.prune_empty_groups().unwrap();
+        assert!(db.groups().unwrap().is_empty());
+        assert_eq!(db.tunnels().unwrap(), vec![tunnel]);
+    }
+
+    #[test]
     fn failed_step_rolls_back_schema_rows_and_version() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("rollback.db");
         let conn = populated_v1(&path);
         let before = snapshot(&conn);
-        let failing_v2 = "ALTER TABLE projects ADD COLUMN test_column TEXT;
+        let failing_v2 = format!("{} ALTER TABLE groups ADD COLUMN test_column TEXT;
                           UPDATE settings SET value = 'changed' WHERE key = 'fixture';
-                          CREATE TABLE test_table (project_id TEXT REFERENCES projects(id) DEFERRABLE INITIALLY DEFERRED);
-                          INSERT INTO test_table VALUES ('missing-project');";
-        let error = Db::init_with_migrations(conn, &[MIGRATIONS[0], failing_v2])
+                          CREATE TABLE test_table (group_id TEXT REFERENCES groups(id) DEFERRABLE INITIALLY DEFERRED);
+                          INSERT INTO test_table VALUES ('missing-group');", MIGRATIONS[1]);
+        let error = Db::init_with_migrations(conn, &[MIGRATIONS[0], &failing_v2])
             .err()
             .unwrap();
         assert!(error.to_string().contains("FOREIGN KEY constraint failed"));
@@ -727,18 +835,18 @@ mod migration_tests {
     }
 
     #[test]
-    fn test_only_v2_advances_in_order_and_does_not_repeat() {
+    fn test_only_v4_advances_in_order_and_does_not_repeat() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("advance.db");
         let conn = populated_v1(&path);
         let before = snapshot(&conn);
-        let test_v2 = "CREATE TABLE migration_probe (value TEXT NOT NULL);
+        let test_v4 = "CREATE TABLE migration_probe (value TEXT NOT NULL);
                        INSERT INTO migration_probe SELECT value FROM settings WHERE key = 'fixture';";
-        let migrations = [MIGRATIONS[0], test_v2];
+        let migrations = [MIGRATIONS[0], MIGRATIONS[1], MIGRATIONS[2], test_v4];
         let db = Db::init_with_migrations(conn, &migrations).unwrap();
         let after = snapshot(&db.conn.lock().unwrap());
         assert_eq!(after.1, before.1);
-        assert_eq!(after.2, 2);
+        assert_eq!(after.2, 4);
         assert_eq!(
             rows(&db.conn.lock().unwrap(), "SELECT value FROM migration_probe"),
             vec![vec![Value::Text("preserve me".into())]]
@@ -748,7 +856,7 @@ mod migration_tests {
         assert_eq!(snapshot(&db.conn.lock().unwrap()), after);
 
         let fresh = Db::init_with_migrations(Connection::open_in_memory().unwrap(), &migrations).unwrap();
-        assert_eq!(snapshot(&fresh.conn.lock().unwrap()).2, 2);
+        assert_eq!(snapshot(&fresh.conn.lock().unwrap()).2, 4);
     }
 
     #[test]
@@ -768,7 +876,7 @@ mod migration_tests {
             let error = Db::open(&path).err().unwrap();
             assert!(error
                 .to_string()
-                .contains("schema version 2 is newer than supported version 1"));
+                .contains(&format!("schema version {} is newer than supported version {SCHEMA_VERSION}", SCHEMA_VERSION + 1)));
             assert_eq!(std::fs::read(&path).unwrap(), before);
             assert_eq!(
                 std::fs::read_dir(dir.path()).unwrap().count(),

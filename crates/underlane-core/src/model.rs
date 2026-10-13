@@ -3,7 +3,7 @@
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
-pub struct Project {
+pub struct Group {
     pub id: String,
     pub name: String,
     pub sort: i64,
@@ -46,7 +46,7 @@ impl TunnelKind {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Tunnel {
     pub id: String,
-    pub project_id: String,
+    pub group_id: Option<String>,
     pub name: String,
     pub kind: TunnelKind,
     /// Config file (kind = config).

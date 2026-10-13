@@ -46,8 +46,8 @@
   let error = $state<string | null>(null);
   let busy = $state(false);
 
-  let quick = $state({ origin: "", name: "", project: "Quick tunnels", inspect: false });
-  let token = $state({ token: "", name: "", project: "Remote" });
+  let quick = $state({ origin: "", name: "", group: "Quick tunnels", inspect: false });
+  let token = $state({ token: "", name: "", group: "Remote" });
 
   // Addresses, names and tokens aren't prose (same as TunnelDetail): no autocorrect or
   // capitalisation, and no spelling bubble, whose dismissal would eat the first Escape.
@@ -88,7 +88,7 @@
     busy = true;
     error = null;
     try {
-      const id = await api.addQuick(quick.name, quick.origin, quick.project, quick.inspect);
+      const id = await api.addQuick(quick.name, quick.origin, quick.group, quick.inspect);
       await api.start(id);
       await onadded(id); // busy until the list shows it, so it can't be submitted twice
     } catch (e) {
@@ -102,7 +102,7 @@
     busy = true;
     error = null;
     try {
-      const id = await api.addToken(token.name, token.token, token.project);
+      const id = await api.addToken(token.name, token.token, token.group);
       await onadded(id); // busy until the list shows it, so it can't be submitted twice
     } catch (e) {
       error = errorText(e);
@@ -149,7 +149,7 @@
         {:else if scanError}
           <StatePanel kind="error" title="Couldn't read ~/.cloudflared" message={scanError} />
         {:else if candidates && candidates.length === 0}
-          <StatePanel kind="empty" title="No config files found here" message="Choose files or a project folder below instead." />
+          <StatePanel kind="empty" title="No config files found here" message="Choose files or a folder below instead." />
         {:else if candidates}
           <ul class="max-h-60 overflow-auto">
             {#each candidates as c, i (c.path)}
@@ -161,7 +161,7 @@
                     <span class="font-medium">{c.name} <span class="font-normal text-muted-foreground">{c.path.split("/").pop()}</span></span>
                     <span class="truncate font-mono text-code text-muted-foreground" title={c.hostnames.join(", ")}>{hosts(c)}</span>
                   </span>
-                  <span class="text-xs text-muted-foreground">{c.imported ? "Imported" : c.project}</span>
+                  <span class="text-xs text-muted-foreground">{c.imported ? "Imported" : c.group}</span>
                 </Label>
               </li>
             {/each}
@@ -201,8 +201,8 @@
         <Input id={id("q-origin")} {...plainText} class="font-mono" placeholder="localhost:3000" bind:value={quick.origin} required />
         <Label for={id("q-name")} class="justify-self-end">Name:</Label>
         <Input id={id("q-name")} {...plainText} placeholder="Optional" bind:value={quick.name} />
-        <Label for={id("q-project")} class="justify-self-end">Project:</Label>
-        <Input id={id("q-project")} {...plainText} bind:value={quick.project} />
+        <Label for={id("q-group")} class="justify-self-end">Group:</Label>
+        <Input id={id("q-group")} {...plainText} bind:value={quick.group} />
         <span></span>
         <div class="flex items-start gap-2 pt-1">
           <!-- Bits' Switch is type="button", so it never submits this form (decisions §15, 02 F15). -->
@@ -231,8 +231,8 @@
         <Textarea id={id("t-token")} {...plainText} class="max-h-28 resize-none font-mono break-all" rows={3} placeholder="eyJhIjoi…" bind:value={token.token} required />
         <Label for={id("t-name")} class="justify-self-end">Name:</Label>
         <Input id={id("t-name")} {...plainText} placeholder="Remote tunnel" bind:value={token.name} />
-        <Label for={id("t-project")} class="justify-self-end">Project:</Label>
-        <Input id={id("t-project")} {...plainText} bind:value={token.project} />
+        <Label for={id("t-group")} class="justify-self-end">Group:</Label>
+        <Input id={id("t-group")} {...plainText} bind:value={token.group} />
       </div>
       {@render failure()}
       <Dialog.Footer>

@@ -54,6 +54,9 @@ const AT = { tunnels: [60, 92], settings: [60, 179], system: [864, 368], light: 
 if (execFileSync("sh", ["-c", "pgrep -f 'MacOS/Underlane$' || true"]).toString().trim()) {
   throw new Error("quit Underlane first");
 }
+if (Number(sql("PRAGMA user_version")) !== 3) {
+  throw new Error("Launch the updated Underlane once, then quit it to initialize schema v3 before running this check.");
+}
 
 // A local origin for the auto-start tunnel. It serves an empty temp folder with just the file the
 // curl below asks for, not the repo: the tunnel makes it public on a trycloudflare URL.
@@ -61,8 +64,8 @@ const originDir = mkdtempSync(join(tmpdir(), "underlane-release-origin-"));
 writeFileSync(join(originDir, "release-check"), "ok\n");
 const origin = spawn("python3", ["-m", "http.server", "18777", "--bind", "127.0.0.1", "--directory", originDir], { stdio: "ignore", detached: true });
 const TID = "release-check-tunnel";
-sql(`INSERT OR IGNORE INTO projects(id,name,sort) VALUES ('release-check','Release check',99);
-     INSERT OR REPLACE INTO tunnels(id,project_id,name,kind,config_path,origin_url,inspect,autostart,loglevel,created_at,sort)
+sql(`INSERT OR IGNORE INTO groups(id,name,sort) VALUES ('release-check','Release check',99);
+     INSERT OR REPLACE INTO tunnels(id,group_id,name,kind,config_path,origin_url,inspect,autostart,loglevel,created_at,sort)
      VALUES ('${TID}','release-check','autostart-demo','quick',NULL,'http://127.0.0.1:18777',1,1,'info',${Date.now()},99);`);
 log(`seeded tunnel: ${sql(`SELECT name, kind, inspect, autostart FROM tunnels WHERE id='${TID}'`)}`);
 
@@ -160,7 +163,7 @@ try {
     log(`login item ${loginBefore.enabled ? "re-enable" : "disable"}: ${sh(BIN, ["--login-item", loginBefore.enabled ? "enable" : "disable"])}`);
   });
   await step("remove the seeded tunnel", () => {
-    sql(`DELETE FROM tunnels WHERE id='${TID}'; DELETE FROM logs WHERE tunnel_id='${TID}'; DELETE FROM requests WHERE tunnel_id='${TID}'; DELETE FROM projects WHERE id NOT IN (SELECT project_id FROM tunnels);`);
+    sql(`DELETE FROM tunnels WHERE id='${TID}'; DELETE FROM logs WHERE tunnel_id='${TID}'; DELETE FROM requests WHERE tunnel_id='${TID}'; DELETE FROM groups WHERE id NOT IN (SELECT group_id FROM tunnels WHERE group_id IS NOT NULL);`);
     log(`tunnels left in the real data folder: ${sql("SELECT name, autostart FROM tunnels")}`);
   });
   // The run ends on System; put the owner's theme back (Underlane has quit, so write the row).

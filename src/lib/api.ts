@@ -7,10 +7,10 @@ export const api = {
   overview: () => invoke<Overview>("overview"),
   scanDefault: () => invoke<Candidate[]>("scan_default"),
   importPaths: (paths: string[]) => invoke<ImportReport>("import_paths", { paths }),
-  addQuick: (name: string, origin: string, project: string, inspect: boolean) =>
-    invoke<string>("add_quick_tunnel", { name, origin, project, inspect }),
-  addToken: (name: string, token: string, project: string) => invoke<string>("add_token_tunnel", { name, token, project }),
-  updateTunnel: (id: string, patch: Partial<{ name: string; project: string; inspect: boolean; autostart: boolean; loglevel: string; originUrl: string; token: string }>) =>
+  addQuick: (name: string, origin: string, group: string, inspect: boolean) =>
+    invoke<string>("add_quick_tunnel", { name, origin, group, inspect }),
+  addToken: (name: string, token: string, group: string) => invoke<string>("add_token_tunnel", { name, token, group }),
+  updateTunnel: (id: string, patch: Partial<{ name: string; group: string | null; inspect: boolean; autostart: boolean; loglevel: string; originUrl: string; token: string }>) =>
     invoke<void>("update_tunnel", { id, patch }),
   deleteTunnel: (id: string) => invoke<void>("delete_tunnel", { id }),
   start: (id: string) => invoke<void>("start_tunnel", { id }),

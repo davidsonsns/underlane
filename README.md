@@ -104,7 +104,7 @@ a script.
     secret redaction; SQLite migration tests also cover preservation, rollback and newer schemas
 - `src/lib/*.test.ts` (Vitest) cover the UI's pure helpers: `format` (copy as curl, hex dump, JSON
   detection), `listnav` (list keyboard navigation), `latest` (debounced latest-only async jobs),
-  `combobox` (the project picker's rows), `focus` (returning focus when a dialog closes) and `utils`
+  `combobox` (the group picker's rows), `focus` (returning focus when a dialog closes) and `utils`
   (class merging with the custom text sizes).
 - `e2e/run.mjs` launches the real app with an isolated data folder and a local echo server. It
   exposes the echo server as a quick tunnel with inspection on, POSTs JSON to the
@@ -136,7 +136,7 @@ a script.
 │   ├─ proxy (hyper) ◀── cloudflared (derived config: service → 127.0.0.1:port)     │
 │   │      └──▶ real origin (http/https, originRequest TLS options)                 │
 │   ├─ config / derived / import    (read-only on your YAML)                        │
-│   └─ db (SQLite: settings, projects, tunnels, logs, requests; TTL + size cap)     │
+│   └─ db (SQLite: settings, groups, tunnels, logs, requests; TTL + size cap)     │
 └───────────────────────────────────────────────────────────────────────────────────┘
 ```
 

@@ -126,7 +126,10 @@ no Go toolchain here; fewer reference tray apps).
 
 - SQLite at `~/Library/Application Support/com.davidsonsns.underlane/underlane.db` (Tauri's
   `app_data_dir`), using `rusqlite` with the `bundled` feature and WAL mode.
-- Tables: `settings`, `projects`, `tunnels`, `logs`, `requests`.
+- Tables: `settings`, `groups`, `tunnels`, `logs`, `requests`.
+- Schema v2 renames `projects` to `groups` and `tunnels.project_id` to `group_id`.
+  The rename runs transactionally on startup; older schema-v1 builds cannot open it afterward.
+- Schema v3 makes `tunnels.group_id` nullable so a tunnel can be ungrouped.
 - A background sweep every 10 minutes (and once at startup) deletes `logs` and `requests` older
   than the TTL (default 7 days). It then enforces the size cap (default 256 MB) by deleting the
   oldest rows in batches. It then runs `PRAGMA incremental_vacuum` (the database is created with
@@ -187,11 +190,11 @@ Windows Credential Manager and the Secret Service later). They're passed to clou
 the `TUNNEL_TOKEN` environment variable, never on the command line. Trade-off: an ad-hoc-signed
 rebuild may make the Keychain ask once for access again.
 
-## 10b. Projects
+## 10b. Groups
 
 On import, a tunnel is grouped by its config's folder. A file at `<dir>/.cloudflared/x.yml` or
-`<dir>/x.yml` goes to the project named `<dir>`'s folder name, and files directly in
-`~/.cloudflared` go to **Personal**. Tunnels can be moved between projects.
+`<dir>/x.yml` goes to the group named `<dir>`'s folder name, and files directly in
+`~/.cloudflared` go to **Personal**. Tunnels can be moved between groups or removed from a group. Ungrouped tunnels stay visible without a group heading; the Group selector shows **None**.
 
 ## 11. cloudflared discovery
 
@@ -375,7 +378,7 @@ unchanged. No `mode-watcher`: the toast component gets the theme setting as a pr
 beaten every `!` utility once inside a cascade layer.
 
 **Selects.** shadcn's `Select` (`ui/select`, Bits UI) everywhere: the tunnel picker and both
-log-level pickers. Its trigger is drawn like the Project combobox's (outline button, plain
+log-level pickers. Its trigger is drawn like the Group combobox's (outline button, plain
 up/down chevron) and its list uses the same menu material and rows (`mac.ts`), so every pop-up in
 the app looks the same. This replaced the native `<select>` that Phase 3 shipped: the native
 NSMenu looked nothing like the combobox's popover next to it. Rejected: shadcn's `native-select`
@@ -572,11 +575,11 @@ and so does the Combobox's search field (Bits already sets the first and third).
 Settings' path and redact fields and the Add sheet's fields are candidates for the same (their
 phases).
 
-**Combobox matching (Phase 2b).** The project picker filters by a case-insensitive substring of
+**Combobox matching (Phase 2b).** The group picker filters by a case-insensitive substring of
 the trimmed search, not Bits' fuzzy scorer, which hid "Work" when the search was " Work" and
 let Enter pick "website" for "web". An exact match is listed and highlighted first, so Enter picks
 it; any other non-empty search lists `Create "<name>"` first and highlighted, with the matches
-after it. It opens with the current project highlighted, so Return alone changes nothing. The
+after it. It opens with the current group highlighted, so Return alone changes nothing. The
 filtering and order are done in `comboRows` (`src/lib/combobox.ts`, unit-tested), and Bits runs
 with `shouldFilter={false}` rather than a custom `filter`: with a filter Bits reorders the rows by
 moving their DOM nodes, which is fragile under Svelte's keyed blocks and would leave the order

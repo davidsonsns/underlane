@@ -281,7 +281,7 @@ mod tests {
         let spec = crate::supervisor::RunSpec {
             tunnel: crate::model::Tunnel {
                 id: "test".into(),
-                project_id: "test".into(),
+                group_id: Some("test".into()),
                 name: "Test".into(),
                 kind: crate::model::TunnelKind::Token,
                 config_path: None,

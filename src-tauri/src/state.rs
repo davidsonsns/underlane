@@ -58,14 +58,14 @@ pub struct Core {
 pub struct TunnelView {
     #[serde(flatten)]
     pub tunnel: Tunnel,
-    pub project_name: String,
+    pub group_name: String,
     pub state: TunnelState,
     pub has_token: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
 pub struct Overview {
-    pub projects: Vec<underlane_core::model::Project>,
+    pub groups: Vec<underlane_core::model::Group>,
     pub tunnels: Vec<TunnelView>,
     pub cloudflared: Option<Binary>,
     pub settings: Settings,
@@ -98,9 +98,9 @@ mod config_change_tests {
         let text = "url: http://localhost:1\n";
         std::fs::write(&path, text).unwrap();
         let db = Db::open_in_memory().unwrap();
-        let project = db.ensure_project("Synthetic config check").unwrap();
+        let group = db.ensure_group("Synthetic config check").unwrap();
         let tunnel = Tunnel {
-            id: "config-check".into(), project_id: project.id, name: "Synthetic".into(),
+            id: "config-check".into(), group_id: Some(group.id), name: "Synthetic".into(),
             kind: TunnelKind::Config, config_path: Some(path.to_string_lossy().into_owned()),
             origin_url: None, inspect: false, autostart: false, loglevel: "info".into(), created_at: 0, sort: 0,
         };
@@ -301,21 +301,21 @@ impl Core {
     }
 
     pub fn overview(&self) -> anyhow::Result<Overview> {
-        let projects = self.db.projects()?;
-        let names: HashMap<String, String> = projects.iter().map(|p| (p.id.clone(), p.name.clone())).collect();
+        let groups = self.db.groups()?;
+        let names: HashMap<String, String> = groups.iter().map(|p| (p.id.clone(), p.name.clone())).collect();
         let tunnels = self
             .db
             .tunnels()?
             .into_iter()
             .map(|t| TunnelView {
-                project_name: names.get(&t.project_id).cloned().unwrap_or_default(),
+                group_name: t.group_id.as_ref().and_then(|id| names.get(id)).cloned().unwrap_or_default(),
                 state: self.state_with_routes(&t),
                 has_token: t.kind == TunnelKind::Token && self.db.kv_get(&format!("token:{}", t.id)).ok().flatten().is_some(),
                 tunnel: t,
             })
             .collect();
         Ok(Overview {
-            projects,
+            groups,
             tunnels,
             cloudflared: self.binary.read().unwrap().clone(),
             settings: self.settings.read().unwrap().clone(),

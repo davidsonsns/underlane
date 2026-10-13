@@ -61,7 +61,7 @@ fn supervisor(f: &Fake, tune: impl FnOnce(&mut SupervisorConfig)) -> (Arc<Superv
 fn tunnel(kind: TunnelKind) -> Tunnel {
     Tunnel {
         id: "tun-1".into(),
-        project_id: "p".into(),
+        group_id: Some("p".into()),
         name: "web".into(),
         kind,
         config_path: None,

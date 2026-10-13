@@ -44,8 +44,8 @@ export interface ConfigChange {
 
 export interface Tunnel {
   id: string;
-  project_id: string;
-  project_name: string;
+  group_id: string | null;
+  group_name: string;
   name: string;
   kind: TunnelKind;
   config_path: string | null;
@@ -59,7 +59,7 @@ export interface Tunnel {
   has_token: boolean;
 }
 
-interface Project {
+interface Group {
   id: string;
   name: string;
   sort: number;
@@ -83,7 +83,7 @@ export interface Settings {
 }
 
 export interface Overview {
-  projects: Project[];
+  groups: Group[];
   tunnels: Tunnel[];
   cloudflared: Binary | null;
   settings: Settings;
@@ -138,7 +138,7 @@ export interface RequestDetail extends Omit<RequestSummary, "resp_size"> {
 export interface Candidate {
   path: string;
   name: string;
-  project: string;
+  group: string;
   hostnames: string[];
   imported: boolean;
 }

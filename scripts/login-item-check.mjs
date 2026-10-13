@@ -29,10 +29,13 @@ async function quit() {
 }
 
 if (pid()) throw new Error("quit Underlane first");
+if (Number(sql("PRAGMA user_version")) !== 3) {
+  throw new Error("Launch the updated Underlane once, then quit it to initialize schema v3 before running this check.");
+}
 const origin = spawn("python3", ["-m", "http.server", "18779", "--bind", "127.0.0.1"], { stdio: "ignore", detached: true });
 const TID = "login-item-check";
-sql(`INSERT OR IGNORE INTO projects(id,name,sort) VALUES ('lic','Login check',99);
-     INSERT OR REPLACE INTO tunnels(id,project_id,name,kind,origin_url,inspect,autostart,loglevel,created_at,sort)
+sql(`INSERT OR IGNORE INTO groups(id,name,sort) VALUES ('lic','Login check',99);
+     INSERT OR REPLACE INTO tunnels(id,group_id,name,kind,origin_url,inspect,autostart,loglevel,created_at,sort)
      VALUES ('${TID}','lic','starts-at-login','quick','http://127.0.0.1:18779',0,1,'info',${Date.now()},99);`);
 let expanded = false;
 try {
@@ -87,7 +90,7 @@ try {
   await quit();
   log(`after quit: ${execFileSync("sh", ["-c", "ps -axo command | grep -cE '[c]om.davidsonsns.underlane/neutral' || true"]).toString().trim()} cloudflared left`);
   log(`unregister: ${sh(BIN, ["--login-item", "disable"])}`);
-  sql(`DELETE FROM tunnels WHERE id='${TID}'; DELETE FROM logs WHERE tunnel_id='${TID}'; DELETE FROM projects WHERE id NOT IN (SELECT project_id FROM tunnels);`);
+  sql(`DELETE FROM tunnels WHERE id='${TID}'; DELETE FROM logs WHERE tunnel_id='${TID}'; DELETE FROM groups WHERE id NOT IN (SELECT group_id FROM tunnels WHERE group_id IS NOT NULL);`);
   log(`tunnels left: ${sql("SELECT name, autostart FROM tunnels")}`);
   try { process.kill(-origin.pid); } catch {}
   if (expanded) { const c = extras("Hidden Bar")[0]; click(c.x + c.w / 2, 12); }

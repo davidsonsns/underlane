@@ -33,11 +33,11 @@
   });
 
   const groups = $derived.by(() => {
-    const map = new Map<string, { name: string; tunnels: Tunnel[] }>();
+    const map = new Map<string | null, { name: string; tunnels: Tunnel[] }>();
     for (const t of store.tunnels) {
-      const g = map.get(t.project_id) ?? { name: t.project_name, tunnels: [] };
+      const g = map.get(t.group_id) ?? { name: t.group_name, tunnels: [] };
       g.tunnels.push(t);
-      map.set(t.project_id, g);
+      map.set(t.group_id, g);
     }
     return [...map.entries()].map(([id, g]) => ({ id, ...g }));
   });
@@ -114,7 +114,7 @@
       <nav class="flex flex-col gap-2 overflow-y-auto border-e-[0.5px] border-border bg-sidebar/40 p-3" aria-label="Tunnels" bind:this={list} onkeydown={onListKey}>
         {#each groups as g (g.id)}
           <div animate:flip={{ duration: motion(200) }}>
-            <div class="px-2 py-1 text-xs font-semibold text-muted-foreground">{g.name}</div>
+            {#if g.id !== null}<div class="px-2 py-1 text-xs font-semibold text-muted-foreground">{g.name}</div>{/if}
             {#each g.tunnels as t (t.id)}
               <button
                 class={cn("flex w-full items-center gap-2.5 rounded-md px-2.5 py-2.5 transition-colors text-left", t.id === selected ? "bg-(--selected)" : "hover:bg-fill", kbRing)}

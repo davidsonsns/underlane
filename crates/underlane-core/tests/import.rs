@@ -1,14 +1,14 @@
 use std::path::PathBuf;
 
 use underlane_core::db::Db;
-use underlane_core::import::{import_configs, project_name_for};
+use underlane_core::import::{import_configs, group_name_for};
 
 #[test]
-fn project_names_come_from_the_folder() {
+fn group_names_come_from_the_folder() {
     let home = PathBuf::from(std::env::var("HOME").unwrap());
-    assert_eq!(project_name_for(&home.join(".cloudflared/example.yml")), "Personal");
-    assert_eq!(project_name_for(&home.join("code/shop/.cloudflared/config.yml")), "shop");
-    assert_eq!(project_name_for(&home.join("code/blog/tunnel.yml")), "blog");
+    assert_eq!(group_name_for(&home.join(".cloudflared/example.yml")), "Personal");
+    assert_eq!(group_name_for(&home.join("code/shop/.cloudflared/config.yml")), "shop");
+    assert_eq!(group_name_for(&home.join("code/blog/tunnel.yml")), "blog");
 }
 
 #[test]
@@ -29,7 +29,7 @@ fn imports_files_and_folders_once() {
     let t = &db.tunnels().unwrap()[0];
     assert_eq!(t.name, "shop");
     assert!(!t.inspect, "inspection is off by default");
-    assert_eq!(db.projects().unwrap()[0].name, "shop");
+    assert_eq!(db.groups().unwrap()[0].name, "shop");
 
     let again = import_configs(&db, &[shop], "info");
     assert!(again.added.is_empty());

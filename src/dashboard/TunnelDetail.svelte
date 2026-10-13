@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount, tick, untrack, type Snippet } from "svelte";
-  import { mergeProps } from "bits-ui";
+  import { DropdownMenu, mergeProps } from "bits-ui";
   import { slide } from "svelte/transition";
   import { revealItemInDir } from "@tauri-apps/plugin-opener";
   import Check from "@lucide/svelte/icons/check";
@@ -15,11 +15,12 @@
   import RotateCw from "@lucide/svelte/icons/rotate-cw";
   import ScrollText from "@lucide/svelte/icons/scroll-text";
   import Square from "@lucide/svelte/icons/square";
+  import Ellipsis from "@lucide/svelte/icons/ellipsis";
   import Trash2 from "@lucide/svelte/icons/trash-2";
   import { store } from "../lib/store.svelte";
   import { api, errorText } from "../lib/api";
   import { motion } from "../lib/theme";
-  import { formatUptime, isOn, statusHint, statusLabel } from "../lib/format";
+  import { formatUptime, isOn, statusHint } from "../lib/format";
   import type { ConfigChange, Status, Tunnel, Validation } from "../lib/types";
   import { configChecker } from "$lib/config-change";
   import { failurePresentation } from "$lib/failure";
@@ -31,7 +32,8 @@
   import Combobox from "$lib/components/app/Combobox.svelte";
   import SettingsGroup from "$lib/components/app/SettingsGroup.svelte";
   import SettingsRow from "$lib/components/app/SettingsRow.svelte";
-  import { kbRing } from "$lib/components/ui/mac";
+  import { kbRing, menuContent, menuItem } from "$lib/components/ui/mac";
+  import { cn } from "$lib/utils";
   import { Button } from "$lib/components/ui/button/index.js";
   import { Input } from "$lib/components/ui/input/index.js";
   import { Switch } from "$lib/components/ui/switch/index.js";
@@ -68,6 +70,11 @@
     ? failurePresentation(s.failure, s.detail, s.hint)
     : null);
   const on = $derived(isOn(tunnel));
+  const headerMeta = $derived([
+    s.status === "connected" && s.started_at ? formatUptime(s.started_at, now) : "",
+    s.connections > 0 ? `${s.connections} edge connection${s.connections === 1 ? "" : "s"}` : "",
+    s.restarts > 0 ? `${s.restarts} restart${s.restarts === 1 ? "" : "s"}` : "",
+  ].filter(Boolean).join(" · "));
   $effect(() => {
     [tunnel.id, s.run, s.config_revision, s.status];
     validation = null;
@@ -107,14 +114,6 @@
     };
   });
   const kindText = { config: "Named tunnel from a config file", token: "Remotely managed tunnel (token)", quick: "Quick tunnel on trycloudflare.com" };
-  // Status words use the AA text shades of the status colours (01 §3.3).
-  const statusText: Record<Status, string> = {
-    connected: "text-ok-text",
-    starting: "text-starting-text",
-    degraded: "text-degraded-text",
-    crashed: "text-bad-text",
-    stopped: "text-muted-foreground",
-  };
   const noticeVariant: Record<Status, Alert.AlertVariant> = {
     connected: "success",
     starting: "default",
@@ -152,7 +151,10 @@
     await run(async () => {
       const request = validationRequest;
       const result = await api.validate(tunnel.id);
-      if (mounted && request === validationRequest) validation = result;
+      if (mounted && request === validationRequest) {
+        if (result.ok) notify.success("The config is valid.");
+        else validation = result;
+      }
     });
   }
 
@@ -250,11 +252,11 @@
   </div>
 {/snippet}
 
-<header class="mb-3.5 flex flex-col gap-1.5">
-  <div class="flex items-center gap-2.5">
-    <!-- The status word follows in text, so the dot's hint is hover-only (no tab stop). -->
+<header class="mb-3.5 flex min-w-0 items-center gap-3">
+  <div class="flex min-w-0 max-w-1/2 items-center gap-2.5">
+    <!-- StatusDot carries the accessible status; the tooltip adds detail. -->
     <Tip text={statusHint[s.status]}>
-      {#snippet children({ props })}<span {...{ ...props, tabindex: undefined }} class="flex"><StatusDot status={s.status} size={10} /></span>{/snippet}
+      {#snippet children({ props })}<button {...props} type="button" aria-label={statusHint[s.status]} class="flex shrink-0 rounded-sm {kbRing}"><StatusDot status={s.status} size={10} /></button>{/snippet}
     </Tip>
     {#if mode === "editing"}
       <Input
@@ -262,7 +264,7 @@
         bind:value={nameDraft}
         {...plainText}
         aria-label="Tunnel name"
-        class="h-7.5 w-70 text-lg"
+        class="h-7.5 min-w-0 w-70 text-lg"
         onkeydown={onNameKey}
         onblur={() => {
           if (mode === "editing") {
@@ -279,31 +281,39 @@
           <button
             {...mergeProps(props, { onclick: startRename, "aria-describedby": renameHintId })}
             bind:this={nameButton}
-            class="cursor-text rounded-sm text-left text-xl font-semibold tracking-[-0.01em] {kbRing}">{tunnel.name}</button
+            class="min-w-0 cursor-text truncate rounded-sm text-left text-xl font-semibold tracking-[-0.01em] {kbRing}" title={tunnel.name}>{tunnel.name}</button
           >
         {/snippet}
       </Tip>
       <span id={renameHintId} class="sr-only">Rename</span>
     {/if}
   </div>
-  <div class="flex gap-3 ps-5 text-callout">
-    <span class={statusText[s.status]}>{statusLabel[s.status]}</span>
-    {#if s.status === "connected" && s.started_at}<span class="text-muted-foreground">for {formatUptime(s.started_at, now)}</span>{/if}
-    {#if s.connections > 0}<span class="text-muted-foreground">{s.connections} edge connection{s.connections === 1 ? "" : "s"}</span>{/if}
-    {#if s.restarts > 0}<span class="text-muted-foreground">{s.restarts} restart{s.restarts === 1 ? "" : "s"}</span>{/if}
-  </div>
-  <div class="mt-2 flex flex-wrap gap-2">
+  <span class="min-w-0 flex-1 truncate text-callout text-muted-foreground" title={headerMeta}>{headerMeta}</span>
+  <div class="flex shrink-0 items-center gap-2">
     {#if on}
       <Button variant="outline" disabled={busy} onclick={() => run(() => api.stop(tunnel.id))}><Square class="size-2.5 fill-current" /> Stop</Button>
-      <Button variant="outline" disabled={busy} onclick={restart}><RotateCw class="size-3.5" /> {restarting ? "Restarting…" : s.status === "crashed" ? "Try again now" : "Restart"}</Button>
     {:else}
-      <Button disabled={busy || !store.overview?.cloudflared} onclick={() => run(() => api.start(tunnel.id))}>
-        <Play class="size-2.5 fill-current" /> {s.status === "crashed" ? "Try again" : "Start"}
+      <Button variant="outline" disabled={busy || !store.overview?.cloudflared} onclick={() => run(() => api.start(tunnel.id))}>
+        <Play class="size-2.5 fill-current" /> Start
       </Button>
     {/if}
-    {#if tunnel.kind === "config"}
-      <Button variant="outline" disabled={busy} onclick={validate}><Check class="size-3.5" /> Validate</Button>
-    {/if}
+    <DropdownMenu.Root>
+      <DropdownMenu.Trigger>
+        {#snippet child({ props })}
+          <Button {...props} variant="outline" size="icon" aria-label="More tunnel actions"><Ellipsis class="size-3.5" /></Button>
+        {/snippet}
+      </DropdownMenu.Trigger>
+      <DropdownMenu.Portal>
+        <DropdownMenu.Content align="end" sideOffset={3} class={cn(menuContent, "min-w-32")}>
+          <DropdownMenu.Item class={cn(menuItem, "ps-2")} disabled={busy || !on} onSelect={restart}>
+            <RotateCw class="size-3.5" /> {restarting ? "Restarting…" : "Restart"}
+          </DropdownMenu.Item>
+          {#if tunnel.kind === "config"}
+            <DropdownMenu.Item class={cn(menuItem, "ps-2")} disabled={busy} onSelect={validate}><Check class="size-3.5" /> Validate</DropdownMenu.Item>
+          {/if}
+        </DropdownMenu.Content>
+      </DropdownMenu.Portal>
+    </DropdownMenu.Root>
   </div>
 </header>
 
@@ -338,17 +348,12 @@
   {#snippet configErrorBody()}<div class="whitespace-pre-wrap select-text">{configError ?? configChange?.message ?? "Couldn't read the config file. The running config is still loaded."}</div>{/snippet}
   {@render notice("degraded", configErrorBody, "alert")}
 {/if}
-{#if validation}
-  {#if validation.ok}
-    {#snippet validationBody()}<div>The config is valid.</div>{/snippet}
-    {@render notice("connected", validationBody)}
-  {:else}
-    {#key JSON.stringify(validation)}
-      <div class="mb-3.5" transition:slide={{ duration: motion(180) }}>
-        <FailureNotice failure={failurePresentation(validation.failure, validation.raw, validation.hint)} />
-      </div>
-    {/key}
-  {/if}
+{#if validation && !validation.ok}
+  {#key JSON.stringify(validation)}
+    <div class="mb-3.5" transition:slide={{ duration: motion(180) }}>
+      <FailureNotice failure={failurePresentation(validation.failure, validation.raw, validation.hint)} />
+    </div>
+  {/key}
 {/if}
 
 <Routes {tunnel} />
@@ -379,18 +384,27 @@
       </Select.Root>
     {/snippet}
   </SettingsRow>
-  <SettingsRow label="Project">
+  <SettingsRow label="Group">
     {#snippet control({ id, labelId })}
-      <!-- Named by the row label plus its own text, so it reads "Project, <name>". -->
-      <Combobox
-        {id}
-        aria-labelledby="{labelId} {id}"
-        value={tunnel.project_name}
-        items={(store.overview?.projects ?? []).map((p) => p.name)}
-        class="w-40"
-        placeholder="Move to project…"
-        onpick={(project) => patch({ project })}
-      />
+      <!-- Named by the row label plus its own text, so it reads "Group, <name>". -->
+      <div class="flex items-center gap-2.5">
+        {#if tunnel.group_id !== null}
+          <Button variant="link" aria-label="Remove from group" onclick={async () => {
+            await patch({ group: null });
+            await tick();
+            document.getElementById(id)?.focus({ preventScroll: true });
+          }}>Remove</Button>
+        {/if}
+        <Combobox
+          {id}
+          aria-labelledby="{labelId} {id}"
+          value={tunnel.group_name}
+          items={(store.overview?.groups ?? []).map((p) => p.name)}
+          class="w-40"
+          placeholder="Move to group…"
+          onpick={(group) => patch({ group })}
+        />
+      </div>
     {/snippet}
   </SettingsRow>
 </SettingsGroup>

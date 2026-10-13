@@ -121,7 +121,7 @@ fn requests_round_trip_and_upsert() {
 }
 
 #[test]
-fn settings_projects_and_tunnels_persist() {
+fn settings_groups_and_tunnels_persist() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("b.db");
     {
@@ -131,11 +131,11 @@ fn settings_projects_and_tunnels_persist() {
         s.theme = "dark".into();
         s.log_ttl_days = 3;
         db.save_settings(&s).unwrap();
-        let p = db.ensure_project("Shop").unwrap();
-        assert_eq!(db.ensure_project("shop").unwrap().id, p.id, "case-insensitive");
+        let p = db.ensure_group("Shop").unwrap();
+        assert_eq!(db.ensure_group("shop").unwrap().id, p.id, "case-insensitive");
         db.upsert_tunnel(&Tunnel {
             id: "t1".into(),
-            project_id: p.id.clone(),
+            group_id: Some(p.id.clone()),
             name: "web".into(),
             kind: TunnelKind::Quick,
             config_path: None,
@@ -153,5 +153,5 @@ fn settings_projects_and_tunnels_persist() {
     let t = db.tunnel("t1").unwrap().unwrap();
     assert!(t.inspect && t.autostart);
     db.delete_tunnel("t1").unwrap();
-    assert!(db.projects().unwrap().is_empty(), "empty projects are pruned");
+    assert!(db.groups().unwrap().is_empty(), "empty groups are pruned");
 }

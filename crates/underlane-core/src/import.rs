@@ -18,9 +18,9 @@ pub struct ImportReport {
     pub failed: Vec<(String, String)>,
 }
 
-/// Project for a config file: the folder that holds it (skipping `.cloudflared`), or
+/// Group for a config file: the folder that holds it (skipping `.cloudflared`), or
 /// "Personal" for files directly in `~/.cloudflared` or the home folder.
-pub fn project_name_for(path: &Path) -> String {
+pub fn group_name_for(path: &Path) -> String {
     let mut dir = path.parent();
     if dir.and_then(|d| d.file_name()).and_then(|n| n.to_str()) == Some(".cloudflared") {
         dir = dir.and_then(Path::parent);
@@ -78,10 +78,10 @@ pub fn import_configs(db: &Db, paths: &[PathBuf], default_loglevel: &str) -> Imp
                 continue;
             }
         }
-        let result = db.ensure_project(&project_name_for(&path)).and_then(|project| {
+        let result = db.ensure_group(&group_name_for(&path)).and_then(|group| {
             let t = Tunnel {
                 id: uuid::Uuid::new_v4().to_string(),
-                project_id: project.id,
+                group_id: Some(group.id),
                 name: config.display_name(),
                 kind: TunnelKind::Config,
                 config_path: Some(key.clone()),
@@ -104,11 +104,11 @@ pub fn import_configs(db: &Db, paths: &[PathBuf], default_loglevel: &str) -> Imp
 }
 
 /// Create a quick or token tunnel.
-pub fn add_simple(db: &Db, kind: TunnelKind, name: &str, project: &str, origin_url: Option<String>, default_loglevel: &str) -> anyhow::Result<Tunnel> {
-    let project = db.ensure_project(project)?;
+pub fn add_simple(db: &Db, kind: TunnelKind, name: &str, group: &str, origin_url: Option<String>, default_loglevel: &str) -> anyhow::Result<Tunnel> {
+    let group = db.ensure_group(group)?;
     let t = Tunnel {
         id: uuid::Uuid::new_v4().to_string(),
-        project_id: project.id,
+        group_id: Some(group.id),
         name: name.trim().to_string(),
         kind,
         config_path: None,

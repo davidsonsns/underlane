@@ -4,7 +4,7 @@
   // by substring and offers `Create "<text>"` first unless it names an item (comboRows). Enter
   // commits the highlighted row, Escape closes, and focus goes back to the trigger explicitly
   // (02 R7: WebKit doesn't focus a button on click), unless an outside click put it in another field.
-  //   <Combobox value={project} items={names} placeholder="Move to project…" onpick={(name) => …} />
+  //   <Combobox value={group} items={names} placeholder="Move to group…" onpick={(name) => …} />
   import Check from "@lucide/svelte/icons/check";
   import ChevronDown from "@lucide/svelte/icons/chevron-down";
   import * as Popover from "$lib/components/ui/popover/index.js";
@@ -31,7 +31,7 @@
   }: {
     value: string;
     items: string[];
-    /** The search field's placeholder, e.g. "Move to project…". */
+    /** The search field's placeholder, e.g. "Move to group…". */
     placeholder: string;
     heading?: string;
     /** Called with an existing item or the typed name; not called when `value` is picked again. */
@@ -55,7 +55,7 @@
 
   // Bits highlights the first row one tick after every search change. When the search is blank
   // again (cleared, or only spaces), put the highlight back on the current value, so Enter can't
-  // move the tunnel to whatever project happens to be first.
+  // move the tunnel to whatever group happens to be first.
   let cmd = $state<CommandPrimitive.Root | null>(null);
   async function restoreHighlight() {
     await tick();
@@ -75,7 +75,7 @@
   <Popover.Trigger bind:ref={trigger}>
     {#snippet child({ props })}
       <Button {...props} {id} aria-describedby={describedBy} aria-labelledby={labelledBy} variant="outline" class={cn("w-55 justify-between", className)}>
-        <span class="truncate">{value}</span><ChevronDown class="size-3 text-muted-foreground" />
+        <span class="truncate">{value || "None"}</span><ChevronDown class="size-3 text-muted-foreground" />
       </Button>
     {/snippet}
   </Popover.Trigger>

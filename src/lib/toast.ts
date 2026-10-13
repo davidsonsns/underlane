@@ -1,6 +1,6 @@
 // The only import site for svelte-sonner's `toast` (02 §1.4). Each window mounts one
-// <Toaster /> (ui/sonner); screens call notify.* for events. Persistent state (validation,
-// a stopped tunnel) stays inline, not in a toast.
+// <Toaster /> (ui/sonner); screens call notify.* for events. Persistent state (validation
+// failures, a stopped tunnel) stays inline.
 //
 // svelte-sonner loads on the first toast (02 O10): the popover's first open doesn't pay for
 // it. The dashboard imports the Toaster statically, so there the import resolves at once.
@@ -29,6 +29,10 @@ function show(fn: (toast: typeof Toast) => void) {
 }
 
 export const notify = {
+  /** A successful action. */
+  success(message: string) {
+    show((t) => t.success(message));
+  },
   /** "Copied <what>". Repeated copies replace each other instead of stacking. */
   copied(what: string) {
     show((t) => t.success(`Copied ${what}`, { id: "copied", duration: 1400 }));
