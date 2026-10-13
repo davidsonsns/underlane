@@ -323,3 +323,73 @@ popover's arrow keys) with a visible focus ring on each.
   at login.
 - `~/Applications/Burrow.app` is the latest release build.
 - The owner's own `example.yml` cloudflared process (pid 48763) was never touched.
+
+## Phase 0 foundations — 2026-10-12
+
+Implemented the reviewed workspace kickoff on `codex/phase0-foundations`. Phase 0 is complete;
+later phases remain separate work. Baseline was clean `main` at `7934847`.
+
+| Fix | Result | Verification |
+| --- | --- | --- |
+| A1 token-file identity | PASS | Both `--token-file PATH` and `--token-file=PATH` exclude default-config matches; explicit config/name positives remain. |
+| A2 accurate matching | PASS | Bare cloudflared and Access commands do not identify a running tunnel; positive `tunnel run` cases remain. |
+| A3 external argv secrets | PASS | Token flags, credential JSON with spaces and secret assignments are redacted before external-process hints/Debug. Parsed and persisted logs contain no invented secrets. |
+| A4 target-or-neutral config | PASS | Runner constructs explicit target/neutral config before the subcommand, preserves target cwd, and rejects config-free tunnel calls even with leading global flags. Version stays config-free. Conflicting-default real contracts pass. |
+| A5 documentation drift | PASS | Decisions §9 adds Restart Running Tunnels; §11 documents process/login-shell PATH search and actual fallback locations. Research §2.1 describes the app's Keychain + TUNNEL_TOKEN transport while retaining the CLI alternatives. |
+
+| Foundation | Result | Verification |
+| --- | --- | --- |
+| B1 migration ladder | PASS | Production schema remains v1. Six tests cover fresh initialization, populated settings/projects/tunnels/logs/requests, repeat-open, test-only v2 advancement, rollback (including commit-time failure) and future rejection before writes. |
+| B2 secrets | PASS | Zeroizing, non-serializable Secret wraps Keychain→RunSpec→child tokens and secret stdout. Debug/Display, hints, callbacks, malformed tails and persisted child logs redact invented values. |
+| B3 platform boundary | PASS | Core platform owns home lookup, ps parsing, process groups, signals and cleanup. Existing macOS supervisor/shim/orphan regressions pass. Unsupported process operations return explicit errors outside Unix. |
+| B4 one-shot runner | PASS | Timeout, cancellation, dropped caller, queued cancellation/drop, process-group escalation/reaping and permit release pass against fake children, including a SIGTERM-ignoring descendant. Actual inherited secret environment values are tested in an isolated test subprocess. Only existing version/validate calls were ported. |
+| B5 classification | PASS | Rc-0 usage/login refusal are failures; outdated warnings and already-routed results succeed. Known error fixtures, unknown/nonzero/malformed output and sanitized hints are covered. Arbitrary JSON names/IDs and validation filenames do not become error anchors. |
+| B6 fixtures/contracts | PASS | Shared Python fixture retains supervisor behavior and adds one-shot command/error fixtures. The ignored real suite was explicitly executed, including the safe offline hidden-flag probe. |
+
+Checks executed:
+
+```text
+rtk make test                         # baseline: 51 Rust passed, 1 ignored; 42 frontend passed
+rtk proxy make test                   # final: 74 Rust passed, 2 ignored; 42 frontend passed
+rtk proxy cargo test -p underlane-core --test cli_contract -- --ignored --nocapture
+                                      # 1 real contract test passed; 8 direct probes + 2 production-runner target checks
+rtk proxy make e2e                    # E2E PASSED; HTTP 200, SQLite/UI bodies, redaction, menu count and no orphan
+rtk proxy git diff --check            # passed
+```
+
+Type check: 0 errors, 0 warnings. The Vite native-config advisory about existing `__dirname`
+usage also appeared at baseline; frontend configuration was not changed.
+
+Real binary: `/opt/homebrew/Cellar/cloudflared/2026.9.1/bin/cloudflared`, version **2026.9.1**,
+built **2026-09-10T20:52:23Z**. All probes used cleared environment, isolated HOME/cwd,
+synthetic configs and a five-second timeout. No real cert, credential-file or token contents
+were read. No account, DNS, binary-update or service-control command was executed.
+
+Exact argv from the final offline run (the binary above precedes each array):
+
+```json
+["--version"]
+["tunnel","--config","/var/folders/k9/rcb7cjf15y19jxyzfgqvdpnr0000gn/T/.tmpotCUog/valid.yml","ingress","validate"]
+["tunnel","--config","/var/folders/k9/rcb7cjf15y19jxyzfgqvdpnr0000gn/T/.tmpotCUog/invalid.yml","ingress","validate"]
+["tunnel","--config","/var/folders/k9/rcb7cjf15y19jxyzfgqvdpnr0000gn/T/.tmpotCUog/neutral.yml","ingress","validate","--json","{\"ingress\":[{\"hostname\":\"contract.example.invalid\",\"service\":\"http://localhost:43210\"},{\"service\":\"http_status:404\"}]}"]
+["tunnel","--config","/var/folders/k9/rcb7cjf15y19jxyzfgqvdpnr0000gn/T/.tmpotCUog/neutral.yml","ingress","validate","--json","{invalid-json}"]
+["tunnel","--config","/var/folders/k9/rcb7cjf15y19jxyzfgqvdpnr0000gn/T/.tmpotCUog/valid.yml","ingress","rule","https://contract.example.invalid/path"]
+["access","ssh-config","--hostname","ssh.example.invalid"]
+["tunnel","--config","/var/folders/k9/rcb7cjf15y19jxyzfgqvdpnr0000gn/T/.tmpotCUog/invalid.yml","--protocol","http2","--ha-connections","1","ingress","validate"]
+```
+
+Exit codes in that order: `0, 0, 1, 0, 1, 0, 0, 1`. The two target-validation argv were also
+executed through the production runner and produced the expected success/failure despite the
+conflicting default config. The temporary fixtures are removed by the suite; rerun the test to
+regenerate them. Hidden flags were accepted by the offline ingress validator; connector behavior
+with those flags is outside this phase.
+
+Frontend source/configuration/dependency files are unchanged from baseline. E2E rebuilt a stale
+generated dashboard bundle left from `1b555fe`, before the existing sidebar-weight fix. The
+original generated bundle was reconstructed in an isolated directory and all **10 files** were
+restored to their exact baseline SHA-256 hashes; no frontend change is part of Phase 0.
+
+Independent review cleared the final implementation after config-policy/classifier/hint
+regressions were fixed. Deferred: account/login/DNS/service/update features, new schema fields,
+later-phase UI and the existing proxy latency benchmark. Non-Unix compilation was not run;
+cross-platform support remains outside v1. No Phase 0 check remains UNVERIFIED.

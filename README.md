@@ -94,6 +94,8 @@ a script.
   - log parsing and validation hints
   - the supervisor against a fake `cloudflared`: connect, crash with backoff, a derived config run
     from the config directory, the watchdog shim, and orphan reaping
+  - one-shot command classification, config selection, timeout/cancellation/drop cleanup, and
+    secret redaction; SQLite migration tests also cover preservation, rollback and newer schemas
 - `src/lib/*.test.ts` (Vitest) cover the UI's pure helpers: `format` (copy as curl, hex dump, JSON
   detection), `listnav` (list keyboard navigation), `latest` (debounced latest-only async jobs),
   `combobox` (the project picker's rows), `focus` (returning focus when a dialog closes) and `utils`
@@ -107,6 +109,9 @@ a script.
   Evidence lands in `e2e/out/`.
 - `cargo test --release -p underlane-core --test proxy_capture -- --ignored --nocapture` measures the
   latency the proxy adds (about 0.03 ms at p50 on loopback).
+- `cargo test -p underlane-core --test cli_contract -- --ignored --nocapture` explicitly runs
+  offline cloudflared contracts with isolated HOME and synthetic configs. Set
+  `CLOUDFLARED_CONTRACT_BIN` to an absolute binary path if discovery cannot find it.
 
 ## Architecture
 
@@ -133,7 +138,11 @@ a script.
     to the cap, redacts before storage, and passes WebSocket and SSE through.
   - `supervisor.rs` handles process lifecycle, health, restarts, orphan reaping and detecting the
     same tunnel running outside Underlane.
-  - `db.rs` is the SQLite layer.
+  - `cli.rs` runs bounded one-shot commands with explicit target/neutral configs, cancellation,
+    process cleanup, secret stdout and output-based errors; it is separate from the supervisor.
+  - `platform.rs` owns Unix process listing, groups, termination and home lookup.
+  - `secret.rs` wraps and zeroizes backend tokens and secret command output and redacts diagnostics.
+  - `db.rs` is the SQLite layer, with transactional versioned migrations (current schema v1).
   - `shim.rs` is the watchdog that kills cloudflared if the app dies.
   - `decode.rs` handles display-time gzip/br/deflate decoding.
 - **`src-tauri`** is the app shell:

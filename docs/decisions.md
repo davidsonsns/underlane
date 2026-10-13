@@ -158,7 +158,7 @@ mapping.
   always tracked, and the e2e test asserts the title is empty or 0, then 1, then empty again.
 - Left click toggles a **popover** (a borderless, always-on-top webview positioned under the icon
   with `tauri-plugin-positioner` `TrayCenter`; it hides on blur). Right click shows a native menu
-  with Open Dashboard, Start All, Stop All, and Quit, so there's always a non-webview path.
+  with Open Dashboard, Start All, Restart Running Tunnels, Stop All, and Quit, so there's always a non-webview path.
 - Underlane runs as an accessory app with no Dock icon. The dashboard window is a normal window that is
   **destroyed on close**, which frees its WebContent process. The popover is built on first use.
 - "Copy public URL" uses the quick tunnel URL, or the first non-wildcard hostname, as `https://`.
@@ -198,9 +198,9 @@ On import, a tunnel is grouped by its config's folder. A file at `<dir>/.cloudfl
 Discovery checks, in order:
 
 1. The user setting.
-2. `PATH` from a login shell (`$SHELL -lc 'command -v cloudflared'`). GUI apps launched by launchd
-   get a minimal `PATH`.
-3. `/opt/homebrew/bin`, `/usr/local/bin`, `~/.local/bin`, `/usr/bin`.
+2. The process `PATH`, then the login-shell `PATH` (`$SHELL -lc 'printf %s "$PATH"'`), searching each
+   directory for an executable cloudflared. GUI apps launched by launchd get a minimal `PATH`.
+3. `/opt/homebrew/bin`, `/usr/local/bin`, `~/.local/bin`, `~/bin`, `/usr/bin`, `/home/linuxbrew/.linuxbrew/bin`.
 
 The login-shell lookup has a 3 s timeout, so a slow shell profile can't hang discovery. The version
 comes from `cloudflared --version`. If none is found, the UI shows
@@ -713,3 +713,12 @@ or enumerate proxied CNAME targets, and the cert's zone ID does not establish it
 Automated routing and overwrite move to the optional Phase 3 scoped-token API slice, requiring
 authoritative zone/account binding and existing-record inspection before mutation. The detailed
 contract and Phase 0 completion gates are in roadmap §4.1 and §8.
+
+Phase 0 foundations retain schema v1. Each ordered SQLite migration executes its DDL and
+`user_version` update in one transaction; newer schemas are rejected before database writes.
+One-shot version/validation calls use the bounded `cli` runner, separate from Supervisor, with
+explicit config selection, process-group cleanup and output-based failure classification.
+Core `platform` owns Unix process handling; `secret::Secret` zeroizes backend tokens and secret
+stdout and redacts formatting. External-process hints and persisted cloudflared logs redact
+token/credentials flags, sensitive JSON fields and login callbacks. No later-phase UI or
+account command is enabled by these foundations.

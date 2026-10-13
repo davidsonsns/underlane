@@ -67,7 +67,7 @@ for an always-on utility. Wails v3 is still in beta.
 | Kind | Command (verified with `--help`) | Notes |
 | --- | --- | --- |
 | **Named, from a config file** | `cloudflared tunnel --config <file> run [TUNNEL]` | The tunnel name or UUID comes from the `tunnel:` key or the positional argument. Needs the credentials JSON (`credentials-file:`) but not `cert.pem` when identified by UUID ("does not need access to cert.pem … if you identify the tunnel by UUID", from `tunnel run --help`). |
-| **Token-based (remotely managed)** | `cloudflared tunnel run --token <TOKEN>`, or `--token-file <path>` (prefer the file so the token never appears in `ps`), or `TUNNEL_TOKEN` env | Ingress is configured in the dashboard and pushed to the connector. Local ingress cannot be rewritten (see §3). |
+| **Token-based (remotely managed)** | cloudflared supports `--token <TOKEN>`, `--token-file <path>` and `TUNNEL_TOKEN` env. Underlane stores the token in Keychain and runs `cloudflared tunnel --config <app-owned neutral.yml> run` with `TUNNEL_TOKEN` env, keeping the token out of argv and token files. | Ingress is configured in the dashboard and pushed to the connector. Local ingress cannot be rewritten (see §3). |
 | **Quick tunnel** | `cloudflared tunnel --url http://127.0.0.1:PORT` | Prints `https://<random>.trycloudflare.com`. Verified live: the URL served HTTP 200. [Documented limits](https://developers.cloudflare.com/cloudflare-one/networks/connectors/cloudflare-tunnel/do-more-with-tunnels/trycloudflare/): 200 in-flight requests (then 429), **no SSE**, no uptime guarantee, a new hostname each run. |
 
 Gotchas found in testing:
