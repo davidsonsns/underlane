@@ -12,6 +12,55 @@ use crate::proxy::capture::{BodyCapture, CapturedExchange, ExchangeKind};
 
 const SCHEMA_VERSION: i64 = 1;
 
+const MIGRATIONS: [&str; SCHEMA_VERSION as usize] = [
+    "CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+                 CREATE TABLE IF NOT EXISTS projects (
+                    id TEXT PRIMARY KEY, name TEXT NOT NULL, sort INTEGER NOT NULL DEFAULT 0);
+                 CREATE TABLE IF NOT EXISTS tunnels (
+                    id TEXT PRIMARY KEY,
+                    project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+                    name TEXT NOT NULL,
+                    kind TEXT NOT NULL,
+                    config_path TEXT,
+                    origin_url TEXT,
+                    inspect INTEGER NOT NULL DEFAULT 0,
+                    autostart INTEGER NOT NULL DEFAULT 0,
+                    loglevel TEXT NOT NULL DEFAULT 'info',
+                    created_at INTEGER NOT NULL,
+                    sort INTEGER NOT NULL DEFAULT 0);
+                 CREATE TABLE IF NOT EXISTS logs (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    tunnel_id TEXT NOT NULL,
+                    ts INTEGER NOT NULL,
+                    level TEXT NOT NULL,
+                    message TEXT NOT NULL,
+                    fields TEXT NOT NULL DEFAULT '{}');
+                 CREATE INDEX IF NOT EXISTS logs_tunnel_id ON logs(tunnel_id, id);
+                 CREATE INDEX IF NOT EXISTS logs_ts ON logs(ts);
+                 CREATE TABLE IF NOT EXISTS requests (
+                    id TEXT PRIMARY KEY,
+                    tunnel_id TEXT NOT NULL,
+                    rule_index INTEGER NOT NULL,
+                    ts INTEGER NOT NULL,
+                    duration_ms INTEGER,
+                    kind TEXT NOT NULL,
+                    method TEXT NOT NULL,
+                    host TEXT NOT NULL,
+                    path TEXT NOT NULL,
+                    status INTEGER,
+                    req_headers TEXT NOT NULL,
+                    resp_headers TEXT NOT NULL,
+                    req_body BLOB,
+                    req_size INTEGER NOT NULL DEFAULT 0,
+                    req_truncated INTEGER NOT NULL DEFAULT 0,
+                    resp_body BLOB,
+                    resp_size INTEGER NOT NULL DEFAULT 0,
+                    resp_truncated INTEGER NOT NULL DEFAULT 0,
+                    error TEXT);
+                 CREATE INDEX IF NOT EXISTS requests_tunnel_ts ON requests(tunnel_id, ts);
+                 CREATE INDEX IF NOT EXISTS requests_ts ON requests(ts);",
+];
+
 pub struct Db {
     conn: Mutex<Connection>,
 }
@@ -67,6 +116,17 @@ impl Db {
     }
 
     fn init(conn: Connection) -> anyhow::Result<Self> {
+        Self::init_with_migrations(conn, &MIGRATIONS)
+    }
+
+    fn init_with_migrations(mut conn: Connection, migrations: &[&str]) -> anyhow::Result<Self> {
+        let version: i64 = conn.query_row("PRAGMA user_version", [], |r| r.get(0))?;
+        let supported = migrations.len() as i64;
+        anyhow::ensure!(
+            version <= supported,
+            "database schema version {version} is newer than supported version {supported}"
+        );
+        // Check compatibility before pragmas that can change the database file.
         // auto_vacuum must be set before the first table exists to take effect.
         conn.execute_batch(
             "PRAGMA auto_vacuum = INCREMENTAL;
@@ -75,57 +135,11 @@ impl Db {
              PRAGMA foreign_keys = ON;
              PRAGMA busy_timeout = 5000;",
         )?;
-        let version: i64 = conn.query_row("PRAGMA user_version", [], |r| r.get(0))?;
-        if version < 1 {
-            conn.execute_batch(
-                "CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
-                 CREATE TABLE IF NOT EXISTS projects (
-                    id TEXT PRIMARY KEY, name TEXT NOT NULL, sort INTEGER NOT NULL DEFAULT 0);
-                 CREATE TABLE IF NOT EXISTS tunnels (
-                    id TEXT PRIMARY KEY,
-                    project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-                    name TEXT NOT NULL,
-                    kind TEXT NOT NULL,
-                    config_path TEXT,
-                    origin_url TEXT,
-                    inspect INTEGER NOT NULL DEFAULT 0,
-                    autostart INTEGER NOT NULL DEFAULT 0,
-                    loglevel TEXT NOT NULL DEFAULT 'info',
-                    created_at INTEGER NOT NULL,
-                    sort INTEGER NOT NULL DEFAULT 0);
-                 CREATE TABLE IF NOT EXISTS logs (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    tunnel_id TEXT NOT NULL,
-                    ts INTEGER NOT NULL,
-                    level TEXT NOT NULL,
-                    message TEXT NOT NULL,
-                    fields TEXT NOT NULL DEFAULT '{}');
-                 CREATE INDEX IF NOT EXISTS logs_tunnel_id ON logs(tunnel_id, id);
-                 CREATE INDEX IF NOT EXISTS logs_ts ON logs(ts);
-                 CREATE TABLE IF NOT EXISTS requests (
-                    id TEXT PRIMARY KEY,
-                    tunnel_id TEXT NOT NULL,
-                    rule_index INTEGER NOT NULL,
-                    ts INTEGER NOT NULL,
-                    duration_ms INTEGER,
-                    kind TEXT NOT NULL,
-                    method TEXT NOT NULL,
-                    host TEXT NOT NULL,
-                    path TEXT NOT NULL,
-                    status INTEGER,
-                    req_headers TEXT NOT NULL,
-                    resp_headers TEXT NOT NULL,
-                    req_body BLOB,
-                    req_size INTEGER NOT NULL DEFAULT 0,
-                    req_truncated INTEGER NOT NULL DEFAULT 0,
-                    resp_body BLOB,
-                    resp_size INTEGER NOT NULL DEFAULT 0,
-                    resp_truncated INTEGER NOT NULL DEFAULT 0,
-                    error TEXT);
-                 CREATE INDEX IF NOT EXISTS requests_tunnel_ts ON requests(tunnel_id, ts);
-                 CREATE INDEX IF NOT EXISTS requests_ts ON requests(ts);",
-            )?;
-            conn.execute_batch(&format!("PRAGMA user_version = {SCHEMA_VERSION};"))?;
+        for (index, sql) in migrations.iter().enumerate().skip(version as usize) {
+            let tx = conn.transaction()?;
+            tx.execute_batch(sql)?;
+            tx.pragma_update(None, "user_version", (index + 1) as i64)?;
+            tx.commit()?;
         }
         Ok(Db { conn: Mutex::new(conn) })
     }
@@ -573,4 +587,194 @@ impl Db {
 
 fn escape_like(s: &str) -> String {
     s.replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_")
+}
+
+#[cfg(test)]
+mod migration_tests {
+    use super::*;
+    use rusqlite::types::Value;
+
+    fn rows(conn: &Connection, sql: &str) -> Vec<Vec<Value>> {
+        let mut statement = conn.prepare(sql).unwrap();
+        let columns = statement.column_count();
+        statement
+            .query_map([], |row| (0..columns).map(|index| row.get(index)).collect())
+            .unwrap()
+            .collect::<rusqlite::Result<_>>()
+            .unwrap()
+    }
+
+    fn snapshot(conn: &Connection) -> (Vec<Vec<Value>>, Vec<Vec<Vec<Value>>>, i64) {
+        let schema = rows(
+            conn,
+            "SELECT type, name, tbl_name, sql FROM sqlite_schema ORDER BY name",
+        );
+        let data = ["settings", "projects", "tunnels", "logs", "requests", "sqlite_sequence"]
+            .iter()
+            .map(|table| rows(conn, &format!("SELECT * FROM {table} ORDER BY rowid")))
+            .collect();
+        let version = conn.query_row("PRAGMA user_version", [], |row| row.get(0)).unwrap();
+        (schema, data, version)
+    }
+
+    fn populated_v1(path: &Path) -> Connection {
+        let conn = Connection::open(path).unwrap();
+        conn.execute_batch(MIGRATIONS[0]).unwrap();
+        conn.execute_batch(
+            "INSERT INTO settings VALUES ('settings', '{\"theme\":\"dark\"}');
+             INSERT INTO settings VALUES ('fixture', 'preserve me');
+             INSERT INTO projects VALUES ('p1', 'Shop', 7);
+             INSERT INTO tunnels VALUES ('t1', 'p1', 'web', 'quick', NULL, 'http://localhost:3000', 1, 1, 'debug', 123, 4);
+             INSERT INTO logs VALUES (42, 't1', 456, 'info', 'fixture log', '{\"key\":\"value\"}');
+             INSERT INTO requests VALUES ('r1', 't1', 2, 789, 12, 'http', 'POST', 'app.example.com', '/items', 201,
+                '[[\"content-type\",\"application/json\"]]', '[]', X'010203', 5, 1, X'040506', 3, 0, NULL);
+             PRAGMA user_version = 1;",
+        )
+        .unwrap();
+        conn
+    }
+
+    #[test]
+    fn fresh_creation_uses_only_v1_schema() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("fresh.db");
+        let db = Db::open(&path).unwrap();
+        let conn = db.conn.lock().unwrap();
+        assert_eq!(
+            conn.query_row("PRAGMA user_version", [], |row| row.get::<_, i64>(0))
+                .unwrap(),
+            1
+        );
+        assert_eq!(
+            rows(
+                &conn,
+                "SELECT name FROM sqlite_schema WHERE type = 'table' ORDER BY name"
+            ),
+            ["logs", "projects", "requests", "settings", "sqlite_sequence", "tunnels"]
+                .map(|name| vec![Value::Text(name.into())])
+        );
+        assert!(snapshot(&conn).1.iter().all(Vec::is_empty));
+        assert_eq!(
+            conn.query_row("PRAGMA auto_vacuum", [], |row| row.get::<_, i64>(0))
+                .unwrap(),
+            2
+        );
+        assert_eq!(
+            conn.query_row("PRAGMA foreign_keys", [], |row| row.get::<_, i64>(0))
+                .unwrap(),
+            1
+        );
+        assert_eq!(Db::open_in_memory().unwrap().settings().unwrap(), Settings::default());
+    }
+
+    #[test]
+    fn populated_v1_and_repeated_opens_preserve_schema_and_every_row() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("existing.db");
+        let conn = populated_v1(&path);
+        let before = snapshot(&conn);
+        drop(conn);
+        for _ in 0..3 {
+            let db = Db::open(&path).unwrap();
+            assert_eq!(snapshot(&db.conn.lock().unwrap()), before);
+            assert_eq!(db.settings().unwrap().theme, "dark");
+            assert_eq!(db.projects().unwrap()[0].name, "Shop");
+            assert_eq!(db.tunnel("t1").unwrap().unwrap().sort, 4);
+            assert_eq!(
+                db.query_logs(&LogQuery {
+                    limit: 10,
+                    ..Default::default()
+                })
+                .unwrap()[0]
+                    .message,
+                "fixture log"
+            );
+            assert_eq!(db.get_request("r1").unwrap().unwrap().req_body.bytes, vec![1, 2, 3]);
+        }
+    }
+
+    #[test]
+    fn failed_step_rolls_back_schema_rows_and_version() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("rollback.db");
+        let conn = populated_v1(&path);
+        let before = snapshot(&conn);
+        let failing_v2 = "ALTER TABLE projects ADD COLUMN test_column TEXT;
+                          UPDATE settings SET value = 'changed' WHERE key = 'fixture';
+                          CREATE TABLE test_table (project_id TEXT REFERENCES projects(id) DEFERRABLE INITIALLY DEFERRED);
+                          INSERT INTO test_table VALUES ('missing-project');";
+        let error = Db::init_with_migrations(conn, &[MIGRATIONS[0], failing_v2])
+            .err()
+            .unwrap();
+        assert!(error.to_string().contains("FOREIGN KEY constraint failed"));
+        let conn = Connection::open(&path).unwrap();
+        assert_eq!(snapshot(&conn), before);
+    }
+
+    #[test]
+    fn failed_fresh_creation_rolls_back_all_ddl_and_version() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("rollback-fresh.db");
+        let failing_v1 = format!("{} INSERT INTO nonexistent_table VALUES (1);", MIGRATIONS[0]);
+        assert!(Db::init_with_migrations(Connection::open(&path).unwrap(), &[&failing_v1]).is_err());
+        let conn = Connection::open(&path).unwrap();
+        assert!(rows(&conn, "SELECT name FROM sqlite_schema").is_empty());
+        assert_eq!(
+            conn.query_row("PRAGMA user_version", [], |row| row.get::<_, i64>(0))
+                .unwrap(),
+            0
+        );
+    }
+
+    #[test]
+    fn test_only_v2_advances_in_order_and_does_not_repeat() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("advance.db");
+        let conn = populated_v1(&path);
+        let before = snapshot(&conn);
+        let test_v2 = "CREATE TABLE migration_probe (value TEXT NOT NULL);
+                       INSERT INTO migration_probe SELECT value FROM settings WHERE key = 'fixture';";
+        let migrations = [MIGRATIONS[0], test_v2];
+        let db = Db::init_with_migrations(conn, &migrations).unwrap();
+        let after = snapshot(&db.conn.lock().unwrap());
+        assert_eq!(after.1, before.1);
+        assert_eq!(after.2, 2);
+        assert_eq!(
+            rows(&db.conn.lock().unwrap(), "SELECT value FROM migration_probe"),
+            vec![vec![Value::Text("preserve me".into())]]
+        );
+        drop(db);
+        let db = Db::init_with_migrations(Connection::open(&path).unwrap(), &migrations).unwrap();
+        assert_eq!(snapshot(&db.conn.lock().unwrap()), after);
+
+        let fresh = Db::init_with_migrations(Connection::open_in_memory().unwrap(), &migrations).unwrap();
+        assert_eq!(snapshot(&fresh.conn.lock().unwrap()).2, 2);
+    }
+
+    #[test]
+    fn future_version_is_rejected_before_any_database_write() {
+        // The empty-schema case catches auto_vacuum writes as well as journal-mode changes.
+        for schema in [
+            "",
+            "CREATE TABLE future_data (value TEXT); INSERT INTO future_data VALUES ('keep');",
+        ] {
+            let dir = tempfile::tempdir().unwrap();
+            let path = dir.path().join("future.db");
+            let conn = Connection::open(&path).unwrap();
+            conn.execute_batch(schema).unwrap();
+            conn.pragma_update(None, "user_version", SCHEMA_VERSION + 1).unwrap();
+            drop(conn);
+            let before = std::fs::read(&path).unwrap();
+            let error = Db::open(&path).err().unwrap();
+            assert!(error
+                .to_string()
+                .contains("schema version 2 is newer than supported version 1"));
+            assert_eq!(std::fs::read(&path).unwrap(), before);
+            assert_eq!(
+                std::fs::read_dir(dir.path()).unwrap().count(),
+                1,
+                "no WAL or journal files created"
+            );
+        }
+    }
 }
