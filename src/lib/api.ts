@@ -5,6 +5,7 @@ import type {
 
 export const api = {
   overview: () => invoke<Overview>("overview"),
+  renameGroup: (id: string, name: string) => invoke<void>("rename_group", { id, name }),
   scanDefault: () => invoke<Candidate[]>("scan_default"),
   importPaths: (paths: string[]) => invoke<ImportReport>("import_paths", { paths }),
   addQuick: (name: string, origin: string, group: string, inspect: boolean) =>

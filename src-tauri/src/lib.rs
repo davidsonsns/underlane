@@ -79,6 +79,7 @@ pub fn run() {
             commands::import_paths,
             commands::add_quick_tunnel,
             commands::add_token_tunnel,
+            commands::rename_group,
             commands::update_tunnel,
             commands::delete_tunnel,
             commands::start_tunnel,

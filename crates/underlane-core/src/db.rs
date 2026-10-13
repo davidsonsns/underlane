@@ -214,26 +214,28 @@ impl Db {
 
     /// Find a group by name (case-insensitive) or create it.
     pub fn ensure_group(&self, name: &str) -> anyhow::Result<Group> {
-        let name = name.trim();
-        let name = if name.is_empty() { "Default" } else { name };
-        let existing = self.with(|c| {
-            c.query_row(
-                "SELECT id, name, sort FROM groups WHERE lower(name) = lower(?1)",
-                [name],
-                |r| Ok(Group { id: r.get(0)?, name: r.get(1)?, sort: r.get(2)? }),
-            )
-            .optional()
-        })?;
-        if let Some(p) = existing {
+        let name = if name.trim().is_empty() { "Default" } else { name };
+        let name = normalize_name(name)?;
+        let conn = self.conn.lock().unwrap();
+        if let Some(p) = group_by_name(&conn, &name, None)? {
             return Ok(p);
         }
         let p = Group {
             id: uuid::Uuid::new_v4().to_string(),
-            name: name.to_string(),
-            sort: self.with(|c| c.query_row("SELECT COALESCE(MAX(sort), -1) + 1 FROM groups", [], |r| r.get(0)))?,
+            name,
+            sort: conn.query_row("SELECT COALESCE(MAX(sort), -1) + 1 FROM groups", [], |r| r.get(0))?,
         };
-        self.with(|c| c.execute("INSERT INTO groups(id, name, sort) VALUES (?1, ?2, ?3)", params![p.id, p.name, p.sort]))?;
+        conn.execute("INSERT INTO groups(id, name, sort) VALUES (?1, ?2, ?3)", params![p.id, p.name, p.sort])?;
         Ok(p)
+    }
+
+    pub fn rename_group(&self, id: &str, name: &str) -> anyhow::Result<()> {
+        let name = normalize_name(name)?;
+        let conn = self.conn.lock().unwrap();
+        anyhow::ensure!(group_by_name(&conn, &name, Some(id))?.is_none(), "A group with that name already exists.");
+        let updated = conn.execute("UPDATE groups SET name = ?1 WHERE id = ?2", params![name, id])?;
+        anyhow::ensure!(updated != 0, "Group not found.");
+        Ok(())
     }
 
     /// Delete groups that no longer have tunnels.
@@ -604,6 +606,90 @@ impl Db {
 
 fn escape_like(s: &str) -> String {
     s.replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_")
+}
+
+pub fn normalize_name(name: &str) -> anyhow::Result<String> {
+    let name = name.split_whitespace().collect::<Vec<_>>().join(" ");
+    anyhow::ensure!(!name.is_empty(), "Name cannot be empty.");
+    anyhow::ensure!(name.chars().count() <= 64, "Name must be 64 characters or fewer.");
+    Ok(name)
+}
+
+fn group_by_name(conn: &Connection, name: &str, exclude_id: Option<&str>) -> rusqlite::Result<Option<Group>> {
+    let name = name.to_lowercase();
+    let mut statement = conn.prepare("SELECT id, name, sort FROM groups WHERE ?1 IS NULL OR id != ?1")?;
+    let groups = statement.query_map([exclude_id], |r| Ok(Group { id: r.get(0)?, name: r.get(1)?, sort: r.get(2)? }))?;
+    for group in groups {
+        let group = group?;
+        if group.name.to_lowercase() == name {
+            return Ok(Some(group));
+        }
+    }
+    Ok(None)
+}
+
+#[cfg(test)]
+mod group_tests {
+    use super::*;
+
+    #[test]
+    fn ensure_group_normalizes_whitespace_and_reuses_case_insensitive_names() {
+        let db = Db::open_in_memory().unwrap();
+        let group = db.ensure_group(" \tÉquipe\u{a0}  Web\n ").unwrap();
+        assert_eq!(group.name, "Équipe Web");
+        assert_eq!(db.ensure_group("éQUIPE   web").unwrap().id, group.id);
+        assert_eq!(db.groups().unwrap().len(), 1);
+        let default = db.ensure_group(" \t\n\u{a0}").unwrap();
+        assert_eq!(default.name, "Default");
+        assert_eq!(db.ensure_group("").unwrap().id, default.id);
+    }
+
+    #[test]
+    fn group_name_limits_count_unicode_characters_after_normalization() {
+        let db = Db::open_in_memory().unwrap();
+        let name = "💻".repeat(64);
+        let group = db.ensure_group(&format!("\t{name} \n")).unwrap();
+        assert_eq!(group.name, name);
+        assert!(db.ensure_group(&"💻".repeat(65)).is_err());
+        for invalid in [" \t\n\u{a0}".to_string(), "💻".repeat(65)] {
+            assert!(db.rename_group(&group.id, &invalid).is_err());
+        }
+        assert_eq!(db.groups().unwrap().len(), 1);
+        assert_eq!(db.groups().unwrap()[0].name, name);
+    }
+
+    #[test]
+    fn rename_group_preserves_identity_sort_and_tunnel_membership_after_reopen() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("groups.db");
+        let db = Db::open(&path).unwrap();
+        let tunnel = crate::import::add_simple(&db, TunnelKind::Quick, "Web", "Old", Some("http://localhost:3000".into()), "info").unwrap();
+        let group = db.groups().unwrap().remove(0);
+        db.rename_group(&group.id, " \tNew   project\n ").unwrap();
+        drop(db);
+
+        let db = Db::open(&path).unwrap();
+        let renamed = db.groups().unwrap().remove(0);
+        assert_eq!(renamed.id, group.id);
+        assert_eq!(renamed.sort, group.sort);
+        assert_eq!(renamed.name, "New project");
+        assert_eq!(db.tunnel(&tunnel.id).unwrap().unwrap(), tunnel);
+    }
+
+    #[test]
+    fn rename_group_rejects_duplicates_but_allows_its_own_name() {
+        let db = Db::open_in_memory().unwrap();
+        let first = db.ensure_group("First").unwrap();
+        let second = db.ensure_group("Équipe Web").unwrap();
+        let error = db.rename_group(&first.id, "éQUIPE  web").unwrap_err();
+        assert_eq!(error.to_string(), "A group with that name already exists.");
+        assert_eq!(db.groups().unwrap()[0].name, "First");
+        assert_eq!(db.groups().unwrap()[1].id, second.id);
+        db.rename_group(&first.id, "First").unwrap();
+        db.rename_group(&first.id, " FIRST ").unwrap();
+        assert_eq!(db.groups().unwrap()[0].name, "FIRST");
+        assert_eq!(db.rename_group("missing", "New").unwrap_err().to_string(), "Group not found.");
+    }
 }
 
 #[cfg(test)]

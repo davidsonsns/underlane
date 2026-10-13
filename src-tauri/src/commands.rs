@@ -170,6 +170,15 @@ fn deserialize_group_patch<'de, D: serde::Deserializer<'de>>(deserializer: D) ->
 }
 
 #[tauri::command]
+pub async fn rename_group(core: CoreState<'_>, id: String, name: String) -> Res<()> {
+    blocking(&core, move |c| {
+        c.db.rename_group(&id, &name).map_err(err)?;
+        c.notify_changed();
+        Ok(())
+    }).await
+}
+
+#[tauri::command]
 pub async fn update_tunnel(core: CoreState<'_>, id: String, patch: TunnelPatch) -> Res<()> {
     blocking(&core, move |c| update_tunnel_inner(c, id, patch)).await
 }
@@ -177,8 +186,8 @@ pub async fn update_tunnel(core: CoreState<'_>, id: String, patch: TunnelPatch) 
 fn update_tunnel_inner(core: &Core, id: String, patch: TunnelPatch) -> Res<()> {
     let mut t = core.db.tunnel(&id).map_err(err)?.ok_or("Tunnel not found")?;
     let mut needs_restart = false;
-    if let Some(n) = patch.name.filter(|n| !n.trim().is_empty()) {
-        t.name = n.trim().to_string();
+    if let Some(name) = patch.name {
+        t.name = underlane_core::db::normalize_name(&name).map_err(err)?;
     }
     if let Some(group) = patch.group {
         match group {
