@@ -25,6 +25,9 @@ thinking about them: no terminal windows, no juggling `config.yml` files.
 - **Know when a running config is stale.** Imported tunnels show “Config changed on disk · Restart
   to apply” after an external edit, checked when you revisit the detail or return to the dashboard.
   Restart is explicit; Open in Editor uses the file's registered app, and Show in Finder reveals it.
+- **Test hostname rules offline.** In Hostnames, choose “Test a URL…” to match the latest config
+  on disk. See the matching rule and source service without sending a request to that URL.
+  A running tunnel keeps its loaded rules until you explicitly restart it.
 
 Underlane drives the `cloudflared` binary; it does not reimplement the tunnel protocol. It isn't
 affiliated with Cloudflare.

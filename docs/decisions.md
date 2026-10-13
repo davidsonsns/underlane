@@ -734,4 +734,18 @@ focus/visibility, with duplicate and stale-result guards. A filesystem watcher a
 polling are deferred. External edits never trigger an automatic restart. Missing/unreadable
 files have separate feedback. Open in Editor resolves the imported path by tunnel ID and uses
 the native registered handler; it does not broaden frontend opener permissions. Show in Finder
-remains available. The ingress tester and runtime explainers are later deliverables.
+remains available.
+
+Phase 1 P2 tests a submitted HTTP(S) URL offline with `ingress rule`. It captures the latest
+source bytes into a private temporary config, selects that file explicitly and uses the
+original config's directory as cwd. A disk reread rejects persistent edits during the test;
+the immutable snapshot prevents a transient edit from changing which rules the CLI matched.
+Credentials, query strings and fragments are removed from the submitted URL before invocation;
+compact source rules and diagnostics are redacted before IPC. The source YAML is never written.
+
+The Hostnames section labels results “Config on disk”, uses numbered text/checkmarks to mark
+matching rows, and shows a separate source-rule result when those rules differ from the
+displayed live configuration. P1's mismatch warning stays visible. Selection, reload, input
+and focus changes cancel or invalidate pending results. Quick/token tunnels explain why the
+local tester is unsupported; configs without an ingress list receive an explanatory error.
+Runtime explainers remain P3.

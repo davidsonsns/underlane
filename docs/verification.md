@@ -467,3 +467,81 @@ These existing contracts are regression checks; P1's file comparisons spawn no c
 Independent source review found no actionable defects. No required P1 check remains UNVERIFIED.
 Deferred: P2/P3, file watchers, config diffs and the other roadmap features. Non-Unix compilation
 was not run; platform support remains unchanged.
+
+## Phase 1 P2 — offline ingress rule tester — 2026-10-12
+
+Implemented P2 on `codex/phase1-config-tools`, starting from main `1317491`. P1 stays active;
+P3 runtime explainers remain deferred. Production schema is still v1; no dependency was added.
+
+| Gate | Result | Evidence |
+| --- | --- | --- |
+| Ordered offline matching | PASS | Exact hostname, wildcard, path, first-rule precedence and catch-all fixtures; invalid URL/config, missing ingress, malformed/multiple/out-of-range indices. Target cwd is the source directory, including relative credential references. Missing credentials do not need to be opened for rule matching. |
+| One source version | PASS | Private immutable source snapshot (0700 directory/0600 file) prevents A→B→A races. Exact before/after source bytes reject replacement, comment edits and deletion while pending. Snapshot cleanup and source preservation are asserted. Rules contain the source service, never the inspection proxy address. |
+| Cancellation and secrecy | PASS | Native request registry covers cancellation before start, duplicate requests and cleanup; saved-tunnel boundary rejects replaced/removed/unsupported sources. Frontend guards ID/path/run/revision/request changes and cancels on replacement/input/focus/unmount. URL credentials/query/fragment are stripped before invocation; synthetic secrets are absent from Debug, IPC, diagnostics and persisted logs. An actual local HTTP listener receives zero requests for the submitted URL. |
+| Visible behavior | PASS | Enter submits; numbered text/checkmarks identify matches in light theme. Dark-theme live-A/disk-B check shows source B separately, with the P1 warning and old A rows intact. Native Cancel reaps a hanging test child while the connector stays connected. Invalid URL feedback is visible. Quick/token copy explains the unsupported local tester; single-origin configs receive an explanatory backend error. |
+
+Checks executed:
+
+```text
+rtk proxy make test
+  96 Rust passed, 2 ignored; 70 frontend passed; Svelte check 0 errors/0 warnings
+rtk proxy make e2e
+  E2E PASSED: real account-free quick tunnel, HTTP 200, SQLite/UI bodies,
+  redaction, menu count 0→1→0 and no leftover cloudflared
+rtk proxy npx tauri build --debug --bundles app --features e2e
+  final app rebuilt after the ingress-payload classifier regression
+rtk proxy node e2e/ingress-rule.mjs target/debug/bundle/macos/Underlane.app
+  INGRESS RULE E2E PASSED: 22 local assertions against the real app/shared fake
+rtk proxy cargo test -p underlane-core --test cli_contract -- --ignored --nocapture
+  1 real offline contract passed: 9 raw probes, 2 production ingress matches,
+  and 2 production target-validation regressions
+rtk proxy git diff --check
+  passed
+```
+
+The first full run found a borrowing error in the new gated fixture, which was fixed. A later
+test/bundle overlap collided in shared Rust doctest artifacts; the final full suite was run
+sequentially and passed. The existing Vite `__dirname` advisory remains unchanged.
+
+Independent review caught a transient source-file race and overbroad redaction of short tunnel
+names. Immutable snapshots and a bounded secret-field collector fix these; both have regression
+coverage. Successful ingress output is recognized as a narrow rc-0 payload envelope so rule text
+containing “Incorrect Usage” does not become an error. Stderr, nonzero and ordinary rc-0 usage
+failures retain classification. Final independent review found no actionable defects.
+
+Native manual fixture: `/tmp/underlane-p2-qa/config.yml`, isolated data and the shared fake.
+Keyboard Return matched `https://test.example.invalid/api/users` as visible rule 1 (CLI index 0),
+with text/checkmark on the first row. After starting A at `43210`, an external edit to `43212`
+and revisiting the detail retained the P1 warning and the live `43210` row. Return in dark theme
+showed a compact Config-on-disk result at `43212`, with no highlighted live row. Cancel during a
+hanging test restored the Test control without a match; its child was gone and the original
+connector PID remained connected. An `ftp://` input showed the complete HTTP(S)-URL error.
+The fixture was restored, stopped and exited. Normal installed app data was untouched.
+
+| Before P2 | Matched source rule (light) |
+| --- | --- |
+| ![Before tester](screenshots/phase1-ingress-tester/before.jpg) | ![Keyboard match](screenshots/phase1-ingress-tester/matched-light.jpg) |
+
+![Disk B result with live A and P1 warning](screenshots/phase1-ingress-tester/disk-versus-live-dark.jpg)
+
+Real offline binary: `/opt/homebrew/Cellar/cloudflared/2026.9.1/bin/cloudflared`, **2026.9.1**,
+built **2026-09-10T20:52:23Z**. The raw contracts clear the environment and use an isolated HOME,
+config and cwd with five-second bounds. A conflicting default config is present. Exact P2
+first/catch-all argv from the final run (binary above precedes each array):
+
+```json
+["tunnel","--config","/var/folders/k9/rcb7cjf15y19jxyzfgqvdpnr0000gn/T/.tmptTFa6e/valid.yml","ingress","rule","https://contract.example.invalid/path"]
+["tunnel","--config","/var/folders/k9/rcb7cjf15y19jxyzfgqvdpnr0000gn/T/.tmptTFa6e/valid.yml","ingress","rule","https://unmatched.example.invalid/path"]
+```
+
+Both exit 0 and return indices 0/1, with `http://localhost:43210`/`http_status:404` respectively.
+The same inputs also passed through the new production operation: explicit private snapshot
+target, original cwd `/var/folders/k9/rcb7cjf15y19jxyzfgqvdpnr0000gn/T/.tmptTFa6e`, ten-second
+timeout and a cleared environment containing PATH only. Production diagnostics remap the
+temporary snapshot filename to the original source path. The source operation reads no account
+credentials, writes no imported YAML and makes no HTTP request.
+
+No required P2 gate remains UNVERIFIED. Non-Unix compilation/permissions were not exercised.
+Abrupt app termination can leave its private snapshot in the OS temporary directory; normal,
+error, cancellation and dropped-future exits remove it. Future cloudflared output changes remain
+guarded by the explicit contract suite. P3 and the wider roadmap features remain deferred.
