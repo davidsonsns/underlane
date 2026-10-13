@@ -45,16 +45,6 @@ pub async fn check_config_change(core: CoreState<'_>, id: String) -> Res<Option<
 }
 
 #[tauri::command]
-pub async fn test_ingress_rule(core: CoreState<'_>, id: String, url: String, request_id: String) -> Res<underlane_core::ingress::IngressMatch> {
-    core.inner().test_ingress_rule(id, url, request_id).await
-}
-
-#[tauri::command]
-pub fn cancel_ingress_test(core: CoreState<'_>, request_id: String) -> Res<()> {
-    core.cancel_ingress_test(&request_id)
-}
-
-#[tauri::command]
 pub async fn open_config_in_editor(core: CoreState<'_>, app: AppHandle, id: String) -> Res<()> {
     blocking(&core, move |c| {
         let tunnel = c.db.tunnel(&id).map_err(err)?.ok_or("Tunnel not found")?;

@@ -49,21 +49,6 @@ fn classification_handles_rc_zero_failures_and_warning_success() {
     assert!(!format!("{error:?}").contains("invented-secret"));
 }
 
-#[test]
-fn successful_ingress_rule_payload_is_not_a_diagnostic_but_stderr_and_failures_are() {
-    let matched = "Using rules from /synthetic/Incorrect Usage.yml\nMatched rule #0\n\thostname: existing-certificate-overwrite.example.invalid\n\tpath: Incorrect Usage\n\tservice: http://existing-certificate-overwrite.invalid\n";
-    assert!(CfError::classify(Some(0), matched, "").is_ok());
-    let usage = "Incorrect Usage: flag provided but not defined: fake";
-    assert_eq!(CfError::classify(Some(0), matched, usage).unwrap_err().kind, ErrorKind::Usage);
-    assert_eq!(CfError::classify(Some(0), usage, "").unwrap_err().kind, ErrorKind::Usage);
-    assert!(CfError::classify(Some(1), matched, "").is_err(), "nonzero is never suppressed");
-    for malformed in [
-        "Using rules from /synthetic.yml\nMatched rule #bogus\n\tpath: Incorrect Usage",
-        "prefix\nUsing rules from /synthetic.yml\nMatched rule #0\n\tpath: Incorrect Usage",
-        "Using rules from /synthetic.yml\nMatched rule #0\nIncorrect Usage",
-    ] { assert!(CfError::classify(Some(0), malformed, "").is_err(), "{malformed}"); }
-}
-
 #[tokio::test]
 async fn config_policy_and_cwd_are_explicit_and_version_is_config_free() {
     let f = fake("ok");

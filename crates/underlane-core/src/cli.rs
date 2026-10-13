@@ -122,18 +122,11 @@ impl CfError {
 
     /// Exit status alone is insufficient: cloudflared also reports some failures with rc 0.
     pub fn classify(code: Option<i32>, stdout: &str, stderr: &str) -> Result<Vec<Warning>, Self> {
-        // JSON and successful ingress rule fields are user data, not diagnostics.
-        let mut lines = stdout.lines();
-        let ingress_payload = code == Some(0)
-            && lines.next().is_some_and(|line| line.strip_prefix("Using rules from ").is_some_and(|path| !path.is_empty()))
-            && lines.next().and_then(|line| line.strip_prefix("Matched rule #")).is_some_and(|index| index.parse::<usize>().is_ok())
-            && lines.all(|line| line.is_empty() || line.starts_with('\t'));
-        let diagnostic_out = if ingress_payload { "" } else {
-            match serde_json::from_str::<serde_json::Value>(stdout) {
-                Ok(serde_json::Value::Object(map)) if map.contains_key("level") => stdout,
-                Ok(serde_json::Value::Object(_) | serde_json::Value::Array(_)) => "",
-                _ => stdout,
-            }
+        // JSON payloads can contain arbitrary user names and IDs; they are not diagnostics.
+        let diagnostic_out = match serde_json::from_str::<serde_json::Value>(stdout) {
+            Ok(serde_json::Value::Object(map)) if map.contains_key("level") => stdout,
+            Ok(serde_json::Value::Object(_) | serde_json::Value::Array(_)) => "",
+            _ => stdout,
         };
         let text = format!("{diagnostic_out}\n{stderr}");
         let diagnostics = diagnostic_text(&text);
@@ -241,9 +234,6 @@ impl Cancellation {
     pub fn cancel(&self) {
         self.0.send_replace(true);
     }
-    pub fn is_cancelled(&self) -> bool {
-        *self.0.borrow()
-    }
     async fn cancelled(&self) {
         let mut rx = self.0.subscribe();
         loop {
@@ -269,7 +259,6 @@ pub enum ConfigPolicy {
 pub struct Invocation {
     pub args: Vec<OsString>,
     pub config: ConfigPolicy,
-    pub cwd: Option<PathBuf>,
     pub env: Vec<(String, Secret<String>)>,
     pub clear_env: bool,
     pub timeout: Duration,
@@ -282,7 +271,6 @@ impl Invocation {
         Self {
             args: args.into_iter().map(Into::into).collect(),
             config,
-            cwd: None,
             env: Vec::new(),
             clear_env: false,
             timeout: Duration::from_secs(20),
@@ -298,7 +286,6 @@ impl std::fmt::Debug for Invocation {
         f.debug_struct("Invocation")
             .field("args", &redact_text(&args))
             .field("config", &self.config)
-            .field("cwd", &self.cwd)
             .field("stdout", &self.stdout)
             .field("env", &"[redacted]")
             .finish()
@@ -395,9 +382,6 @@ fn command(bin: &Path, inv: &Invocation) -> Result<Command, CfError> {
                 }
             }
         }
-    }
-    if let Some(cwd) = &inv.cwd {
-        cmd.current_dir(cwd);
     }
     for key in ["TUNNEL_TOKEN", "TUNNEL_TOKEN_FILE", "TUNNEL_CRED_CONTENTS", "TUNNEL_CREDENTIALS_CONTENTS"] {
         cmd.env_remove(key);

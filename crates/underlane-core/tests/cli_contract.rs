@@ -172,25 +172,6 @@ async fn real_cloudflared_offline_contracts() {
     let out = run(&bin, home.path(), &["tunnel", "--config", neutral, "ingress", "validate", "--json", "{invalid-json}"]).await;
     assert!(!out.status.success());
 
-    let out = run(&bin, home.path(), &["tunnel", "--config", valid, "ingress", "rule", "https://contract.example.invalid/path"]).await;
-    assert!(out.status.success(), "{}", combined(&out));
-    assert!(combined(&out).contains("Matched rule #0"));
-    let out = run(&bin, home.path(), &["tunnel", "--config", valid, "ingress", "rule", "https://unmatched.example.invalid/path"]).await;
-    assert!(out.status.success(), "{}", combined(&out));
-    assert!(combined(&out).contains("Matched rule #1"));
-
-    // The operation itself uses the captured private snapshot, keeping original relative cwd.
-    for (url, index, service) in [
-        ("https://contract.example.invalid/path", 0, "http://localhost:43210"),
-        ("https://unmatched.example.invalid/path", 1, "http_status:404"),
-    ] {
-        let result = underlane_core::ingress::test_rule(&bin, Path::new(valid), url, underlane_core::cli::Cancellation::new()).await.unwrap();
-        eprintln!("production ingress: binary={bin:?} source={valid:?} argv=[tunnel, --config, <private snapshot>/config.yml, ingress, rule, {url:?}] cwd={:?} index={} service={} raw={}", home.path(), result.rule_index, result.rules[result.rule_index].service, result.raw);
-        assert_eq!(result.rule_index, index);
-        assert_eq!(result.rules[index].service, service);
-        assert_eq!(result.source_path, valid);
-        assert!(!result.raw.contains("underlane-ingress-"));
-    }
     let out = run(&bin, home.path(), &["access", "ssh-config", "--hostname", "ssh.example.invalid"]).await;
     assert!(out.status.success(), "{}", combined(&out));
     assert!(combined(&out).contains("access ssh --hostname %h"));

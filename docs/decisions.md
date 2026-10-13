@@ -696,7 +696,7 @@ otherwise. Top-level version probes stay config-free; `ingress validate --json` 
 Phases: 0 fixes and foundations (the token-file detection bug in `cloudflared.rs:364`, the argv leak in the
 "already running" hint at `supervisor.rs:430`, explicit `--config`, DB migrations, a `Secret<T>`
 type, a one-shot CLI runner with an error taxonomy, a fake cloudflared with subcommand dispatch);
-1 account-read-only (update notice/action, config-changed badge, ingress tester, explainers, diag, metrics,
+1 account-read-only (update notice/action, config-changed badge, explainers, diag, metrics,
 hostname health, external-runner detection, Account view, run options); 2 create and change
 (login, owned configs, new-tunnel wizard, dashboard DNS handoff, ingress editor, delete
 with a known-hostname checklist and unverified DNS status, Access forwards); 3 à la carte.
@@ -736,21 +736,9 @@ files have separate feedback. Open in Editor resolves the imported path by tunne
 the native registered handler; it does not broaden frontend opener permissions. Show in Finder
 remains available.
 
-Phase 1 P2 tests a submitted HTTP(S) URL offline with `ingress rule`. It captures the latest
-source bytes into a private temporary config, selects that file explicitly and uses the
-original config's directory as cwd. A disk reread rejects persistent edits during the test;
-the immutable snapshot prevents a transient edit from changing which rules the CLI matched.
-Credentials, query strings and fragments are removed from the submitted URL before invocation;
-compact source rules and diagnostics are redacted before IPC. The source YAML is never written.
-
-The Hostnames section labels results “Config on disk”, uses numbered text/checkmarks to mark
-matching rows, and shows a separate source-rule result when those rules differ from the
-displayed live configuration. P1's mismatch warning stays visible. Selection, reload, input
-and focus changes cancel or invalidate pending results. Quick/token tunnels explain why the
-local tester is unsupported; configs without an ingress list receive an explanatory error.
 Phase 1 P3 adds ephemeral cause/action/raw explanations to tunnel state and validation results.
 The shared classifier examines diagnostic messages and structured error fields, excluding
-payload names/IDs, filenames, warning/info records and successful ingress output. Redaction
+payload names/IDs, filenames, warning/info records and successful validation output. Redaction
 precedes classification, event publication and log storage; raw diagnostics also redact URL
 credentials and sensitive queries across multiline/structured output. A bounded exit tail
 retains the most recent observed error even if later informational lines displace it.
@@ -761,4 +749,4 @@ messages stay available without an inferred account or DNS diagnosis. Preparatio
 invent a child exit. Stop/restart clear explanations, and successful edge readiness clears
 obsolete connection errors. An observed origin error remains until Stop/restart: edge readiness
 cannot establish origin recovery, and this slice adds no origin probes. Imported files and
-schema v1 remain unchanged; P1–P3 of the config-tools slice are complete.
+schema v1 remain unchanged; the config-change badge and failure explainers are complete.

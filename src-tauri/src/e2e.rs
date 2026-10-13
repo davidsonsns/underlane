@@ -135,14 +135,6 @@ mod server {
                 Ok(()) => reply(200, json!({"ok": true})),
                 Err(e) => reply(400, json!({"error": e.to_string()})),
             },
-            ("POST", "/ingress-rule") => match core.test_ingress_rule(id, q.get("url").cloned().unwrap_or_default(), q.get("requestId").cloned().unwrap_or_default()).await {
-                Ok(result) => reply(200, json!(result)),
-                Err(error) => reply(400, json!({"error": error})),
-            },
-            ("POST", "/cancel-ingress") => match core.cancel_ingress_test(q.get("requestId").map(String::as_str).unwrap_or_default()) {
-                Ok(()) => reply(200, json!({"ok": true})),
-                Err(error) => reply(400, json!({"error": error})),
-            },
             ("GET", "/config-change") => {
                 match tokio::task::spawn_blocking(move || core.check_config_change(&id)).await {
                     Ok(Ok(result)) => reply(200, json!(result)),

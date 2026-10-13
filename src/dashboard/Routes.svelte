@@ -1,20 +1,15 @@
 <script lang="ts">
   // A tunnel's ingress rules as an aligned table: public hostname, then the local service.
   // Each service is probed while the window is visible so it's obvious which ones are running.
-  import { onMount, tick, untrack } from "svelte";
   import { openUrl } from "@tauri-apps/plugin-opener";
-  import Check from "@lucide/svelte/icons/check";
   import { store } from "../lib/store.svelte";
-  import { api, errorText } from "../lib/api";
+  import { api } from "../lib/api";
   import { reachSummary, serviceLabel, shortService } from "../lib/format";
-  import type { IngressMatch, Tunnel } from "../lib/types";
-  import { ingressTester, sameIngressRules } from "$lib/ingress-test";
+  import type { Tunnel } from "../lib/types";
   import { mergeProps } from "bits-ui";
   import CopyButton from "$lib/components/app/CopyButton.svelte";
   import Tip from "$lib/components/app/Tip.svelte";
   import { kbRing } from "$lib/components/ui/mac";
-  import { Button } from "$lib/components/ui/button/index.js";
-  import { Input } from "$lib/components/ui/input/index.js";
 
   let { tunnel }: { tunnel: Tunnel } = $props();
   const PROBE_EVERY_MS = 3000;
@@ -31,64 +26,7 @@
   const services = $derived([...new Set(routes.map((m) => m.service))]);
   const servicesKey = $derived(services.join("\n"));
 
-  const testTarget = $derived(tunnel.kind === "config" && tunnel.config_path
-    ? { id: tunnel.id, source_path: tunnel.config_path, run: s.run, config_revision: s.config_revision }
-    : null);
-  const testKey = $derived(JSON.stringify(testTarget));
-  let testOpen = $state(false);
-  let testUrl = $state("");
-  let testInput = $state<HTMLInputElement | null>(null);
-  let testing = $state(false);
-  let match = $state<IngressMatch | null>(null);
-  let testError = $state<string | null>(null);
-  let expired = $state(false);
-  const tester = ingressTester(
-    () => testTarget,
-    api.testIngressRule,
-    api.cancelIngressTest,
-    (result) => { match = result; testing = false; },
-    (error) => { testError = errorText(error); testing = false; },
-  );
-  function clearTest(stale = false) {
-    tester.cancel();
-    expired = stale && (expired || match !== null || testing);
-    match = null;
-    testError = null;
-    testing = false;
-  }
-  $effect(() => {
-    testKey;
-    untrack(() => { clearTest(); testUrl = ""; testOpen = false; });
-  });
-  onMount(() => {
-    // A focus change can follow an external edit, including for a stopped tunnel with no P1 baseline.
-    const invalidate = () => clearTest(true);
-    const visible = () => { if (document.visibilityState === "visible") invalidate(); };
-    window.addEventListener("focus", invalidate);
-    document.addEventListener("visibilitychange", visible);
-    return () => {
-      tester.cancel();
-      window.removeEventListener("focus", invalidate);
-      document.removeEventListener("visibilitychange", visible);
-    };
-  });
-  async function showTest() {
-    testOpen = true;
-    await tick();
-    testInput?.focus();
-  }
-  async function test(e: SubmitEvent) {
-    e.preventDefault();
-    clearTest();
-    if (!testUrl.trim()) return;
-    testing = true;
-    await tester.test(testUrl.trim());
-  }
-  const matchedRow = $derived(match && sameIngressRules(match.rules, routes) ? match.rule_index : null);
-  const matchedRule = $derived(match?.rules[match.rule_index]);
   const headingId = $props.id();
-  const testDescriptionId = `${headingId}-test-description`;
-  const testInputId = `${headingId}-test-input`;
 
   /** service -> listening? (null: nothing to probe, e.g. http_status:404) */
   let reach = $state<Record<string, boolean | null>>({});
@@ -182,7 +120,7 @@
         {@const r = reachOf(m.service)}
         {@const tip = reachTip(m.service, r)}
         {@const linkable = live && host && !host.includes("*")}
-        <li class="group/route routes-row min-h-11 items-center py-2.5 not-first:border-t not-first:border-border {matchedRow === i ? 'bg-tint/8' : ''}">
+        <li class="group/route routes-row min-h-11 items-center py-2.5 not-first:border-t not-first:border-border">
           <span class="flex min-w-0 items-center gap-1">
             {#if linkable}
               <!-- The path is a regex in cloudflared, so the link opens the hostname alone. -->
@@ -235,50 +173,8 @@
             </Tip>
           </span>
           {#if m.note && tunnel.inspect}<span class="col-span-full mt-0.5 text-xs text-muted-foreground">{m.note}</span>{/if}
-          {#if matchedRow === i}<span class="col-span-full mt-0.5 flex items-center gap-1 text-xs font-medium text-tint"><Check class="size-3" aria-hidden="true" /> Matched rule {i + 1} · Config on disk</span>{/if}
         </li>
       {/each}
     </ul>
-  {/if}
-
-  {#if testTarget}
-    {#if !testOpen}
-      <Button variant="ghost" class="mt-2" onclick={showTest}>Test a URL…</Button>
-    {:else}
-      <form class="mt-3 space-y-2" onsubmit={test} aria-busy={testing}>
-        <label for={testInputId} class="ms-0.5 text-xs font-medium">Test a URL · Config on disk</label>
-        <div class="flex items-center gap-2">
-          <Input id={testInputId} bind:ref={testInput} bind:value={testUrl} oninput={() => clearTest()}
-            aria-describedby={testDescriptionId} aria-invalid={testError ? true : undefined}
-            placeholder="https://app.example.com/path" class="font-mono text-callout"
-            autocorrect="off" autocapitalize="off" spellcheck={false} writingsuggestions={false} />
-          <Button type="submit" disabled={testing || !testUrl.trim()}>{testing ? "Testing…" : "Test"}</Button>
-          {#if testing}<Button variant="outline" onclick={() => clearTest()}>Cancel</Button>{/if}
-        </div>
-        <p id={testDescriptionId} class="ms-0.5 text-xs text-muted-foreground">Matches the latest file offline. No request is sent to the URL.</p>
-        {#if testError}<p role="alert" class="ms-0.5 text-xs text-bad-text">{testError}</p>{/if}
-        {#if expired}<p role="status" class="ms-0.5 text-xs text-muted-foreground">The config may have changed. Test the URL again.</p>{/if}
-        {#if match && matchedRule}
-          <div role="status" class="rounded-lg bg-card px-3 py-2 text-xs">
-            <p class="flex items-center gap-1 font-medium"><Check class="size-3" aria-hidden="true" /> Matched rule {match.rule_index + 1} · Config on disk</p>
-            {#if matchedRow === null}
-              <p class="mt-1 text-muted-foreground">The file's rules differ from the displayed hostnames.</p>
-              <p class="mt-1 break-all"><span>{matchedRule.hostname ?? "Any other hostname"}{matchedRule.path ?? ""}</span> → <span class="font-mono">{serviceLabel(matchedRule.service)}</span></p>
-            {/if}
-          </div>
-          {#if match.raw}
-            <details class="ms-0.5 text-xs text-muted-foreground">
-              <summary class="cursor-pointer rounded-xs {kbRing}">Diagnostics</summary>
-              <pre class="mt-2 max-h-40 overflow-auto whitespace-pre-wrap break-all select-text">{match.raw}</pre>
-            </details>
-          {/if}
-        {/if}
-      </form>
-    {/if}
-  {:else}
-    <p class="mt-3 ms-0.5 text-xs text-muted-foreground">
-      {#if tunnel.kind === "quick"}URL testing requires a local config with ingress rules. Quick tunnels use one local service.
-      {:else}URL testing requires a local config with ingress rules. Token tunnels are managed in the Cloudflare dashboard.{/if}
-    </p>
   {/if}
 </section>

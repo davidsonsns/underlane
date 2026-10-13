@@ -71,8 +71,6 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::overview,
             commands::check_config_change,
-            commands::test_ingress_rule,
-            commands::cancel_ingress_test,
             commands::open_config_in_editor,
             commands::scan_default,
             commands::import_paths,
