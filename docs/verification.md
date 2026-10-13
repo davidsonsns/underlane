@@ -393,3 +393,77 @@ Independent review cleared the final implementation after config-policy/classifi
 regressions were fixed. Deferred: account/login/DNS/service/update features, new schema fields,
 later-phase UI and the existing proxy latency benchmark. Non-Unix compilation was not run;
 cross-platform support remains outside v1. No Phase 0 check remains UNVERIFIED.
+
+## Phase 1 P1 — config-changed badge — 2026-10-12
+
+Implemented P1 only on `codex/phase1-config-tools`, starting from main `8a01c65`. P2 (rule tester)
+and P3 (runtime explainers) remain deferred. Imported source files stay read-only; schema stays v1.
+
+| Gate | Result | Evidence |
+| --- | --- | --- |
+| Exact loaded source | PASS | Fingerprint is computed from the parsing read used for the derived config. The fake-connector test changes the file during gated validation and proves the baseline/derived copy still describe the loaded bytes. Metadata publishes only after successful spawn. |
+| Lifecycle and failures | PASS | Tests cover A→B edits, restored bytes, comments, atomic replacement, deletion and read failure. Comparisons leave the child/derived A unchanged; successful restart loads B. Validation/spawn failures retain the previous baseline; internal respawns advance revision; stop clears comparison. |
+| Race and secrecy boundaries | PASS | Backend discards results after run/revision/baseline/stop/path changes, using synchronous supervisor state rather than delayed app events. Frontend covers selection/path/run/revision/unmount races and duplicate checks. Quick/token tunnels have no imported comparison. Synthetic config secrets are absent from serialized comparison state and Debug. |
+| Visible behavior and actions | PASS | Native manual checks verified focus-triggered badge, missing-file warning, registered Xcode opening, Finder selection, errors for both missing-file actions and keyboard Restart in light/dark themes. Restart clears the badge and updates the visible service. No automatic restart occurs. |
+
+Checks executed:
+
+```text
+rtk proxy make test
+  baseline: 74 Rust passed, 2 ignored; 42 frontend passed; type check 0 errors/0 warnings
+  final:    83 Rust passed, 2 ignored; 55 frontend passed; type check 0 errors/0 warnings
+rtk proxy make e2e
+  E2E PASSED: real account-free quick tunnel, HTTP 200, SQLite/UI bodies, redaction,
+  menu count and no leftover cloudflared process
+rtk proxy node e2e/config-badge.mjs target/debug/bundle/macos/Underlane.app
+  CONFIG BADGE E2E PASSED: 20 local assertions against the real app/shared fake connector
+rtk proxy cargo test -p underlane-core --test cli_contract -- --ignored --nocapture
+  1 real offline contract test passed, 8 raw probes + 2 production runner target checks
+rtk proxy git diff --check
+  passed
+```
+
+An initial full-suite failure exposed parallel test fixtures using the same clock-based file
+name. Their names now include an atomic per-process sequence, and the full suite passes. No
+dependency was added. The existing Vite `__dirname` advisory remains unchanged from baseline.
+
+Manual fixture: `/tmp/underlane-p1-qa/config.yml`, separate data folder and fake binary; no
+account credentials were used. Open in Editor launched `/Applications/Xcode.app` and displayed
+that file. Editing `43210`→`43211`, saving and returning focus showed the warning while the
+running mapping remained `43210`. Keyboard navigation to the badge's Restart and Return
+loaded `43211` and cleared the warning. Repeating with an external comment edit verified the
+same keyboard behavior in dark theme. Finder selected the exact disposable YAML. Moving the
+source aside produced an unreadable warning while the child remained connected; both source
+actions produced visible missing-file errors. The fixture was restored, and the connector was
+stopped and the QA app exited after verification. Normal installed app settings were untouched.
+
+| Before P1 | After an external edit (light) |
+| --- | --- |
+| ![Before badge](screenshots/phase1-config-badge/before-light.png) | ![Changed config badge](screenshots/phase1-config-badge/after-light.jpg) |
+
+| After an external edit (dark) | Source actions (dark) |
+| --- | --- |
+| ![Dark badge](screenshots/phase1-config-badge/after-dark.jpg) | ![Editor and Finder](screenshots/phase1-config-badge/source-actions-dark.jpg) |
+
+Real offline binary: `/opt/homebrew/Cellar/cloudflared/2026.9.1/bin/cloudflared`, **2026.9.1**,
+built **2026-09-10T20:52:23Z**. Cleared environment, isolated HOME/config/cwd, five-second bounds.
+Exact argv from this run (binary above precedes each array):
+
+```json
+["--version"]
+["tunnel","--config","/var/folders/k9/rcb7cjf15y19jxyzfgqvdpnr0000gn/T/.tmpulgGFf/valid.yml","ingress","validate"]
+["tunnel","--config","/var/folders/k9/rcb7cjf15y19jxyzfgqvdpnr0000gn/T/.tmpulgGFf/invalid.yml","ingress","validate"]
+["tunnel","--config","/var/folders/k9/rcb7cjf15y19jxyzfgqvdpnr0000gn/T/.tmpulgGFf/neutral.yml","ingress","validate","--json","{\"ingress\":[{\"hostname\":\"contract.example.invalid\",\"service\":\"http://localhost:43210\"},{\"service\":\"http_status:404\"}]}"]
+["tunnel","--config","/var/folders/k9/rcb7cjf15y19jxyzfgqvdpnr0000gn/T/.tmpulgGFf/neutral.yml","ingress","validate","--json","{invalid-json}"]
+["tunnel","--config","/var/folders/k9/rcb7cjf15y19jxyzfgqvdpnr0000gn/T/.tmpulgGFf/valid.yml","ingress","rule","https://contract.example.invalid/path"]
+["access","ssh-config","--hostname","ssh.example.invalid"]
+["tunnel","--config","/var/folders/k9/rcb7cjf15y19jxyzfgqvdpnr0000gn/T/.tmpulgGFf/invalid.yml","--protocol","http2","--ha-connections","1","ingress","validate"]
+```
+
+Exit codes: `0, 0, 1, 0, 1, 0, 0, 1`. The valid/invalid target commands also passed through the
+production runner with the expected result. Fixtures are temporary; the suite regenerates them.
+These existing contracts are regression checks; P1's file comparisons spawn no cloudflared command.
+
+Independent source review found no actionable defects. No required P1 check remains UNVERIFIED.
+Deferred: P2/P3, file watchers, config diffs and the other roadmap features. Non-Unix compilation
+was not run; platform support remains unchanged.

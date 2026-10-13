@@ -22,6 +22,9 @@ thinking about them: no terminal windows, no juggling `config.yml` files.
 - **Launch at login** (native `SMAppService`) and per-tunnel **start automatically**.
 - **Your config files are never modified.** Request inspection uses a derived copy in Underlane's data
   folder.
+- **Know when a running config is stale.** Imported tunnels show “Config changed on disk · Restart
+  to apply” after an external edit, checked when you revisit the detail or return to the dashboard.
+  Restart is explicit; Open in Editor uses the file's registered app, and Show in Finder reveals it.
 
 Underlane drives the `cloudflared` binary; it does not reimplement the tunnel protocol. It isn't
 affiliated with Cloudflare.
@@ -112,6 +115,9 @@ a script.
 - `cargo test -p underlane-core --test cli_contract -- --ignored --nocapture` explicitly runs
   offline cloudflared contracts with isolated HOME and synthetic configs. Set
   `CLOUDFLARED_CONTRACT_BIN` to an absolute binary path if discovery cannot find it.
+- `node e2e/config-badge.mjs target/debug/bundle/macos/Underlane.app` tests the config-change UI
+  locally against the shared fake connector after an `e2e` feature build. It covers edits,
+  restoration, restart, missing files and failure recovery without a Cloudflare account.
 
 ## Architecture
 

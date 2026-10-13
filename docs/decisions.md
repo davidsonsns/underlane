@@ -722,3 +722,16 @@ Core `platform` owns Unix process handling; `secret::Secret` zeroizes backend to
 stdout and redacts formatting. External-process hints and persisted cloudflared logs redact
 token/credentials flags, sensitive JSON fields and login callbacks. No later-phase UI or
 account command is enabled by these foundations.
+
+Phase 1 P1 compares imported config source bytes with the snapshot used to build the last
+successfully spawned connector's derived config. The fingerprint and baseline live in memory;
+only a successful-load revision and safe comparison results reach IPC. Internal respawns advance
+that revision even when the supervisor run number stays the same. Failed restarts preserve the
+previous baseline, and stopping clears the running comparison. No schema change is required.
+
+Config checks run off the UI thread when the detail mounts or the dashboard regains
+focus/visibility, with duplicate and stale-result guards. A filesystem watcher and background
+polling are deferred. External edits never trigger an automatic restart. Missing/unreadable
+files have separate feedback. Open in Editor resolves the imported path by tunnel ID and uses
+the native registered handler; it does not broaden frontend opener permissions. Show in Finder
+remains available. The ingress tester and runtime explainers are later deliverables.
