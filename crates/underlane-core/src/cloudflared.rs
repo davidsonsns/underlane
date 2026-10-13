@@ -9,6 +9,8 @@ use tokio::process::Command;
 
 use crate::config::{expand_tilde, home_dir};
 use crate::proxy::capture::redact_json_headers;
+use crate::cli::{self, ConfigPolicy, Invocation};
+use crate::secret::redact_text;
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
 pub struct Binary {
@@ -95,8 +97,8 @@ pub async fn discover(configured: Option<&str>) -> Option<Binary> {
 
 /// `cloudflared version 2026.9.1 (built ...)` -> `2026.9.1`.
 pub async fn version(bin: &Path) -> Option<String> {
-    let out = Command::new(bin).arg("--version").stdin(Stdio::null()).output().await.ok()?;
-    let text = String::from_utf8_lossy(&out.stdout).to_string() + &String::from_utf8_lossy(&out.stderr);
+    let out = cli::exec(bin, Invocation::new(["--version"], ConfigPolicy::None)).await.ok()?;
+    let text = out.stdout.text().unwrap_or_default().to_string() + &out.stderr;
     parse_version(&text)
 }
 
@@ -117,42 +119,34 @@ pub struct Validation {
 /// Run `cloudflared tunnel --config <file> ingress validate` from the config's directory
 /// (cloudflared resolves relative paths against its working directory).
 pub async fn validate(bin: &Path, config: &Path) -> Validation {
-    let mut cmd = Command::new(bin);
-    if let Some(dir) = config.parent().filter(|d| d.is_dir()) {
-        cmd.current_dir(dir);
-    }
-    cmd.arg("tunnel").arg("--config").arg(config).args(["ingress", "validate"]).stdin(Stdio::null()).kill_on_drop(true);
-    let out = match tokio::time::timeout(std::time::Duration::from_secs(20), cmd.output()).await {
-        Ok(r) => r,
-        Err(_) => {
-            return Validation {
-                ok: false,
-                raw: "`cloudflared tunnel ingress validate` didn't finish within 20 seconds.".into(),
-                hint: Some("Check that the cloudflared path in Settings points at the real binary.".into()),
-            }
-        }
-    };
-    match out {
+    let inv = Invocation::new(["ingress", "validate"], ConfigPolicy::Target(config.into()));
+    match cli::exec(bin, inv).await {
         Ok(o) => {
-            let text = format!("{}{}", String::from_utf8_lossy(&o.stdout), String::from_utf8_lossy(&o.stderr));
-            interpret_validation(o.status.success(), &text)
+            let text = format!("{}{}", o.stdout.text().unwrap_or_default(), o.stderr);
+            interpret_validation(true, &text)
         }
-        Err(e) => Validation { ok: false, raw: e.to_string(), hint: Some("cloudflared could not be started.".into()) },
+        Err(e) => {
+            let mut validation = interpret_validation(false, &e.message);
+            validation.hint = validation.hint.or(e.hint);
+            validation
+        }
     }
 }
 
 pub fn interpret_validation(success: bool, output: &str) -> Validation {
-    let raw = output
+    let safe = redact_text(output);
+    let raw = safe
         .lines()
         .map(str::trim)
         .filter(|l| !l.is_empty() && !l.starts_with("Validating rules from"))
         .collect::<Vec<_>>()
         .join("\n");
     let raw = raw.strip_prefix("Validation failed: ").unwrap_or(&raw).to_string();
-    if success {
+    if success && cli::CfError::classify(Some(0), &raw, "").is_ok() {
         return Validation { ok: true, raw, hint: None };
     }
-    Validation { ok: false, hint: friendly_hint(&raw), raw }
+    let hint = friendly_hint(&raw).or_else(|| cli::CfError::classify(Some(0), &raw, "").err().and_then(|e| e.hint));
+    Validation { ok: false, hint, raw }
 }
 
 /// Map known cloudflared validation errors to plain language.
@@ -213,6 +207,8 @@ fn redact_query_in_json(v: &mut serde_json::Value, q: &HashSet<String>) {
 
 /// Like [`parse_log_line`], also redacting query parameters in the message and all fields.
 pub fn parse_log_line_with(line: &str, redact: &HashSet<String>, query_redact: Option<&HashSet<String>>) -> Option<ParsedLog> {
+    let safe = redact_text(line);
+    let line = safe.as_str();
     let line = line.trim_end();
     if line.trim().is_empty() {
         return None;
@@ -344,6 +340,9 @@ pub struct TunnelIdentity {
 impl TunnelIdentity {
     fn matches(&self, cmd: &str) -> bool {
         let tokens: Vec<&str> = cmd.split_whitespace().collect();
+        if !tokens.contains(&"tunnel") || !tokens.contains(&"run") || tokens.get(1) == Some(&"access") {
+            return false;
+        }
         if let Some(p) = self.config_path.as_deref().filter(|p| !p.is_empty()) {
             if cmd.contains(p) {
                 return true;
@@ -361,7 +360,7 @@ impl TunnelIdentity {
         if self.is_default_config {
             let has_config = tokens.iter().any(|t| *t == "--config" || t.starts_with("--config="));
             let runs = tokens.contains(&"run") && tokens.contains(&"tunnel");
-            let has_other_source = tokens.iter().any(|t| *t == "--token" || *t == "--url" || t.starts_with("--token="));
+            let has_other_source = tokens.iter().any(|t| *t == "--token" || *t == "--token-file" || *t == "--url" || t.starts_with("--token=") || t.starts_with("--token-file=") || t.starts_with("--url="));
             if runs && !has_config && !has_other_source && !cmd.contains("TUNNEL_TOKEN") {
                 return true;
             }
@@ -373,19 +372,21 @@ impl TunnelIdentity {
 /// cloudflared processes not started by Underlane (their command line doesn't mention
 /// `data_marker`) that run the given tunnel.
 pub fn find_external(id: &TunnelIdentity, data_marker: &str) -> Vec<ExternalProcess> {
-    let out = match std::process::Command::new("ps").args(["-axww", "-o", "pid=,command="]).output() {
-        Ok(o) => String::from_utf8_lossy(&o.stdout).to_string(),
+    let processes = match crate::platform::processes() {
+        Ok(p) => p,
         Err(_) => return Vec::new(),
     };
-    external_from_ps(&out, id, data_marker)
+    external_from_processes(processes, id, data_marker)
 }
 
 pub fn external_from_ps(ps: &str, id: &TunnelIdentity, data_marker: &str) -> Vec<ExternalProcess> {
-    ps.lines()
-        .filter_map(|l| {
-            let l = l.trim_start();
-            let (pid, cmd) = l.split_once(' ')?;
-            let cmd = cmd.trim();
+    external_from_processes(crate::platform::process_rows(ps), id, data_marker)
+}
+
+fn external_from_processes(processes: Vec<crate::platform::Process>, id: &TunnelIdentity, data_marker: &str) -> Vec<ExternalProcess> {
+    processes.into_iter()
+        .filter_map(|p| {
+            let cmd = p.command.as_str();
             let exe = cmd.split_whitespace().next()?;
             let is_cloudflared = Path::new(exe).file_name().and_then(|f| f.to_str()) == Some("cloudflared");
             if !is_cloudflared || cmd.contains(data_marker) {
@@ -394,7 +395,7 @@ pub fn external_from_ps(ps: &str, id: &TunnelIdentity, data_marker: &str) -> Vec
             if !id.matches(cmd) {
                 return None;
             }
-            Some(ExternalProcess { pid: pid.parse().ok()?, command: cmd.to_string() })
+            Some(ExternalProcess { pid: p.pid, command: redact_text(cmd) })
         })
         .collect()
 }

@@ -100,3 +100,36 @@ fn detects_cloudflared_running_outside_underlane() {
     let pids: Vec<u32> = external_from_ps(ps3, &default, marker).iter().map(|p| p.pid).collect();
     assert_eq!(pids, vec![7]);
 }
+
+#[test]
+fn token_file_and_access_processes_do_not_claim_default_config() {
+    let id = TunnelIdentity { config_path: Some("/synthetic/config.yml".into()), tunnel: Some("site".into()), is_default_config: true };
+    let ps = "1 cloudflared tunnel run\n2 cloudflared tunnel run --token-file token.txt\n3 cloudflared tunnel run --token-file=token.txt\n4 cloudflared\n5 cloudflared access tcp --hostname site\n6 cloudflared access ssh --hostname tunnel --url run\n7 cloudflared tunnel --config /synthetic/config.yml run --token-file token.txt\n8 cloudflared tunnel run site --token-file=token.txt\n9 cloudflared tunnel --url=http://localhost:1 run\n";
+    let pids: Vec<_> = external_from_ps(ps, &id, "/underlane-data").into_iter().map(|p| p.pid).collect();
+    assert_eq!(pids, [1, 7, 8]);
+}
+
+#[test]
+fn foreign_argv_and_persisted_logs_never_expose_run_secrets() {
+    use underlane_core::db::{Db, LogQuery};
+    use underlane_core::model::LogLine;
+    let id = TunnelIdentity { config_path: Some("/synthetic/config.yml".into()), ..Default::default() };
+    for source in [
+        "--token invented-foreign-token",
+        "--token=invented-foreign-token",
+        r#"--credentials-contents {"AccountTag": "invented-account", "TunnelSecret": "invented-credential"}"#,
+        "TUNNEL_TOKEN=invented-foreign-token",
+    ] {
+        let cmd = format!("1 cloudflared tunnel --config /synthetic/config.yml run {source}");
+        let processes = external_from_ps(&cmd, &id, "/underlane-data");
+        assert_eq!(processes.len(), 1);
+        assert!(!format!("{processes:?}").contains("invented-"));
+        assert!(!processes[0].command.contains("invented-"));
+        let parsed = parse_log_line(&cmd, &HashSet::new()).unwrap();
+        let db = Db::open_in_memory().unwrap();
+        db.insert_logs(&[LogLine { id: 0, tunnel_id: "t".into(), ts: 1, level: parsed.level, message: parsed.message, fields: parsed.fields }]).unwrap();
+        let logs = db.query_logs(&LogQuery { limit: 100, ..Default::default() }).unwrap();
+        assert_eq!(logs.len(), 1);
+        assert!(!format!("{logs:?}").contains("invented-"));
+    }
+}

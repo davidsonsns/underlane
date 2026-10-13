@@ -2,6 +2,7 @@
 //! inspecting proxy and storage. Nothing in here depends on Tauri.
 
 pub mod cloudflared;
+pub mod cli;
 pub mod config;
 pub mod db;
 pub mod decode;
