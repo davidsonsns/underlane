@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="src-tauri/icons/app-icon.png" alt="Underlane's Lane Cut logo" width="128" height="128">
+</p>
+
 # Underlane
 
 A macOS menu bar app that runs your `cloudflared` tunnels for you. Set them up once, then stop
