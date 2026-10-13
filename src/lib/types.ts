@@ -9,11 +9,18 @@ export interface RouteMapping {
   note: string | null;
 }
 
+export interface FailureExplanation {
+  cause: string;
+  action: string | null;
+  raw: string;
+}
+
 export interface TunnelState {
   id: string;
   status: Status;
   detail: string | null;
   hint: string | null;
+  failure: FailureExplanation | null;
   public_url: string | null;
   mappings: RouteMapping[];
   pid: number | null;
@@ -153,6 +160,7 @@ export interface Validation {
   ok: boolean;
   raw: string;
   hint: string | null;
+  failure: FailureExplanation | null;
 }
 
 export interface LoginItem {

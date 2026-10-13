@@ -22,6 +22,7 @@
   import { formatUptime, isOn, statusHint, statusLabel } from "../lib/format";
   import type { ConfigChange, Status, Tunnel, Validation } from "../lib/types";
   import { configChecker } from "$lib/config-change";
+  import { failurePresentation } from "$lib/failure";
   import { notify } from "$lib/toast";
   import { returnFocusTo } from "$lib/focus";
   import StatusDot from "$lib/components/app/StatusDot.svelte";
@@ -38,6 +39,7 @@
   import * as AlertDialog from "$lib/components/ui/alert-dialog/index.js";
   import * as Alert from "$lib/components/ui/alert/index.js";
   import Routes from "./Routes.svelte";
+  import FailureNotice from "./FailureNotice.svelte";
 
   let { tunnel, onremove }: { tunnel: Tunnel; onremove: (id: string) => Promise<void> } = $props();
   let busy = $state(false);
@@ -46,6 +48,7 @@
   let configChange = $state<ConfigChange | null>(null);
   let configError = $state<string | null>(null);
   let validation = $state<Validation | null>(null);
+  let validationRequest = 0;
   let removeOpen = $state(false);
   let removeTrigger = $state<HTMLElement | null>(null);
   let nameButton = $state<HTMLElement | null>(null);
@@ -61,7 +64,15 @@
   });
 
   const s = $derived(tunnel.state);
+  const failure = $derived(s.failure || s.status === "crashed"
+    ? failurePresentation(s.failure, s.detail, s.hint)
+    : null);
   const on = $derived(isOn(tunnel));
+  $effect(() => {
+    [tunnel.id, s.run, s.config_revision, s.status];
+    validation = null;
+    validationRequest += 1;
+  });
   const configTarget = $derived(tunnel.kind === "config" && tunnel.config_path && on && s.status !== "stopped" && s.config_revision > 0
     ? { id: tunnel.id, source_path: tunnel.config_path, run: s.run, config_revision: s.config_revision }
     : null);
@@ -115,6 +126,8 @@
   async function run(fn: () => Promise<unknown>) {
     busy = true;
     error = null;
+    validation = null;
+    validationRequest += 1;
     try {
       await fn();
     } catch (e) {
@@ -137,7 +150,9 @@
 
   async function validate() {
     await run(async () => {
-      validation = await api.validate(tunnel.id);
+      const request = validationRequest;
+      const result = await api.validate(tunnel.id);
+      if (mounted && request === validationRequest) validation = result;
     });
   }
 
@@ -292,7 +307,13 @@
   </div>
 </header>
 
-{#if s.detail || s.hint}
+{#if failure}
+  {#key JSON.stringify([tunnel.id, s.run, s.status, failure])}
+    <div class="mb-3.5" transition:slide={{ duration: motion(180) }}>
+      <FailureNotice {failure} status={s.status} detail={s.detail} />
+    </div>
+  {/key}
+{:else if s.detail || s.hint}
   {#snippet stateBody()}
     {#if s.detail}<div class="whitespace-pre-wrap select-text">{s.detail}</div>{/if}
     {#if s.hint}<div class="mt-1.5 whitespace-pre-wrap text-muted-foreground select-text">{s.hint}</div>{/if}
@@ -318,15 +339,16 @@
   {@render notice("degraded", configErrorBody, "alert")}
 {/if}
 {#if validation}
-  {#snippet validationBody()}
-    {#if validation?.ok}
-      <div>The config is valid.</div>
-    {:else}
-      <div class="whitespace-pre-wrap select-text">{validation?.raw}</div>
-      {#if validation?.hint}<div class="mt-1.5 whitespace-pre-wrap text-muted-foreground">{validation.hint}</div>{/if}
-    {/if}
-  {/snippet}
-  {@render notice(validation.ok ? "connected" : "crashed", validationBody)}
+  {#if validation.ok}
+    {#snippet validationBody()}<div>The config is valid.</div>{/snippet}
+    {@render notice("connected", validationBody)}
+  {:else}
+    {#key JSON.stringify(validation)}
+      <div class="mb-3.5" transition:slide={{ duration: motion(180) }}>
+        <FailureNotice failure={failurePresentation(validation.failure, validation.raw, validation.hint)} />
+      </div>
+    {/key}
+  {/if}
 {/if}
 
 <Routes {tunnel} />
