@@ -545,3 +545,78 @@ No required P2 gate remains UNVERIFIED. Non-Unix compilation/permissions were no
 Abrupt app termination can leave its private snapshot in the OS temporary directory; normal,
 error, cancellation and dropped-future exits remove it. Future cloudflared output changes remain
 guarded by the explicit contract suite. P3 and the wider roadmap features remain deferred.
+
+## Phase 1 P3 — runtime failure explainers — 2026-10-12
+
+Implemented P3 directly on main from `cbe3a49`, as requested. P1–P3 of the config-tools slice
+are complete; wider Phase 1 features remain separate. No dependency or schema migration was added.
+
+| Gate | Result | Evidence |
+| --- | --- | --- |
+| Cause and next action | PASS | Known preparation, spawn, credentials, config, origin and edge failures receive safe cause/action/raw explanations. Structured message/error fields participate; JSON names/IDs, malformed payload fields and path operands do not. Unknown errors retain useful raw evidence without an invented diagnosis. |
+| Classification regressions | PASS | Rc-0 usage and refused-login errors remain failures; warning/info/success records do not create explanations. Tests retain successful validation/ingress payloads and cover quoted filenames with spaces/contractions, origin status 403/429 attribution and a known error followed by 40 informational lines before exit. |
+| Redaction and lifecycle | PASS | URL credentials, sensitive multiline queries, malformed JSON token fields and echoed run tokens stay absent from explanations, hints, Debug and persisted logs. Retry/backoff, Stop and user Restart remain intact. Edge recovery clears obsolete errors without replacing the child. Readiness cannot claim origin recovery, so the observed origin error persists until Stop/Restart. |
+| UI and controls | PASS | Native keyboard Return toggles Raw diagnostic; Tab/Return copies it. The AX tree names Raw diagnostic and Copy diagnostic. Pasting into an unsaved disposable input confirmed the exact safe clipboard value. Light/dark screenshots, unknown-error raw evidence, validation replacement and recovery clearing were checked. |
+
+Checks executed:
+
+```text
+rtk proxy make test
+  106 Rust passed, 2 ignored; 73 frontend passed; Svelte check 0 errors/0 warnings
+rtk proxy make e2e
+  E2E PASSED: real account-free quick tunnel, HTTP 200, SQLite/UI bodies,
+  redaction, menu count 0→1→0 and no leftover cloudflared
+rtk proxy npx tauri build --debug --bundles app --features e2e
+  final app rebuilt after preserving exit diagnostics through informational bursts
+rtk proxy node e2e/failure-explainers.mjs target/debug/bundle/macos/Underlane.app
+  FAILURE EXPLAINERS E2E PASSED: 17 assertions against the real app/shared fake
+rtk proxy cargo test -p underlane-core --test cli_contract -- --ignored --nocapture
+  1 real offline contract passed: 9 raw probes, 2 production ingress matches,
+  and 2 production target-validation regressions
+rtk proxy git diff --check
+  passed
+```
+
+Independent review found and verified fixes for multiline URL query redaction, quoted path
+operands/contractions, origin errors cleared by edge readiness, and invented preparation exit
+context. Final parent review added the informational-burst regression and plain-text exit
+status formatting. The first local app run used an overly literal assertion requiring the word
+“catch-all”; it now checks the actual existing `http_status:404` fix, and the final run passes.
+The existing Vite `__dirname` advisory remains unchanged.
+
+Native fixture: `/tmp/underlane-p3-qa`, with separate data and the shared fake. A held edge error
+showed cause/action while retaining Starting, Stop and Restart. Return closed/reopened the
+diagnostic; keyboard Copy diagnostic produced a copied toast, and paste confirmed the redacted
+value without saving it. Switching the fake's readiness to healthy cleared the explanation
+with the same connector PID. A malformed unknown failure in dark theme showed a neutral cause,
+next action, exit status 7 and redacted raw output while Try again now/backoff remained present.
+A disposable imported config's Validate action showed the catch-all fix; after externally fixing
+the file, successful validation replaced it with “The config is valid” and removed the old raw
+disclosure. Both fixture tunnels were stopped and the QA app exited. Normal app data was untouched.
+
+| Before P3 | Expanded known diagnostic (light) |
+| --- | --- |
+| ![Previous raw notice](screenshots/phase1-failure-explainers/before.jpg) | ![Cause, action and keyboard disclosure](screenshots/phase1-failure-explainers/expanded-light.jpg) |
+
+![Unknown redacted diagnostic and retry feedback in dark theme](screenshots/phase1-failure-explainers/unknown-dark.jpg)
+
+Real offline binary: `/opt/homebrew/Cellar/cloudflared/2026.9.1/bin/cloudflared`, **2026.9.1**,
+built **2026-09-10T20:52:23Z**. The applicable validation regressions ran with a cleared
+environment, isolated HOME/config/cwd, conflicting default config and five-second bounds.
+Exact argv from this P3 run (binary above precedes each array):
+
+```json
+["--version"]
+["tunnel","--config","/var/folders/k9/rcb7cjf15y19jxyzfgqvdpnr0000gn/T/.tmpOsSOBp/valid.yml","ingress","validate"]
+["tunnel","--config","/var/folders/k9/rcb7cjf15y19jxyzfgqvdpnr0000gn/T/.tmpOsSOBp/invalid.yml","ingress","validate"]
+```
+
+The valid/invalid calls exit 0/1 respectively and also pass through the production runner with
+the expected result. The same suite explicitly re-executed the P2 first/catch-all and JSON
+validation contracts. Synthetic config/credential fixtures were used; no login, account/DNS
+mutation, binary update, service control or external connector restart was performed.
+
+No required P3 gate remains UNVERIFIED. Non-Unix compilation and an actual VoiceOver reading
+session were not run; native AX names and keyboard behavior were verified. Origin errors remain
+observed-error notices until Stop/Restart because no origin recovery probe was added. The wider
+roadmap remains deferred.

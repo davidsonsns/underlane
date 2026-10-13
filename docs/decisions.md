@@ -748,4 +748,17 @@ matching rows, and shows a separate source-rule result when those rules differ f
 displayed live configuration. P1's mismatch warning stays visible. Selection, reload, input
 and focus changes cancel or invalidate pending results. Quick/token tunnels explain why the
 local tester is unsupported; configs without an ingress list receive an explanatory error.
-Runtime explainers remain P3.
+Phase 1 P3 adds ephemeral cause/action/raw explanations to tunnel state and validation results.
+The shared classifier examines diagnostic messages and structured error fields, excluding
+payload names/IDs, filenames, warning/info records and successful ingress output. Redaction
+precedes classification, event publication and log storage; raw diagnostics also redact URL
+credentials and sensitive queries across multiline/structured output. A bounded exit tail
+retains the most recent observed error even if later informational lines displace it.
+
+The detail notice shows the cause, next action and existing retry/backoff feedback. Raw
+diagnostic is an accessible disclosure with an explicit Copy diagnostic button; unknown
+messages stay available without an inferred account or DNS diagnosis. Preparation errors never
+invent a child exit. Stop/restart clear explanations, and successful edge readiness clears
+obsolete connection errors. An observed origin error remains until Stop/restart: edge readiness
+cannot establish origin recovery, and this slice adds no origin probes. Imported files and
+schema v1 remain unchanged; P1–P3 of the config-tools slice are complete.

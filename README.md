@@ -28,6 +28,9 @@ thinking about them: no terminal windows, no juggling `config.yml` files.
 - **Test hostname rules offline.** In Hostnames, choose “Test a URL…” to match the latest config
   on disk. See the matching rule and source service without sending a request to that URL.
   A running tunnel keeps its loaded rules until you explicitly restart it.
+- **Understand tunnel failures.** Known failures show a short cause and next action, with an
+  expandable, copyable redacted diagnostic. Retry/backoff feedback stays visible; unknown errors
+  keep their original safe message without guessing a diagnosis.
 
 Underlane drives the `cloudflared` binary; it does not reimplement the tunnel protocol. It isn't
 affiliated with Cloudflare.
