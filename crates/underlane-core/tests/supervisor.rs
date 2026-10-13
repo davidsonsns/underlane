@@ -1,7 +1,7 @@
 //! Supervisor tests against a fake `cloudflared` (a Python script that mimics its CLI, logs,
 //! metrics server and signal handling).
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::Duration;
 
@@ -9,69 +9,34 @@ use underlane_core::model::{Tunnel, TunnelKind};
 use underlane_core::proxy::capture::CaptureOptions;
 use underlane_core::supervisor::{reap_orphans, Event, RunSpec, Status, Supervisor, SupervisorConfig, TunnelState};
 
-const FAKE: &str = r#"#!/usr/bin/env python3
-import json, os, signal, sys, threading, time
-from http.server import BaseHTTPRequestHandler, HTTPServer
-here = os.path.dirname(os.path.abspath(__file__))
-mode = open(os.path.join(here, "mode")).read().strip()
-args = sys.argv[1:]
-with open(os.path.join(here, "argv.json"), "w") as f:
-    json.dump({"argv": args, "cwd": os.getcwd()}, f)
-def log(level, msg):
-    sys.stderr.write(json.dumps({"level": level, "message": msg, "time": "2026-10-10T06:00:00Z"}) + "\n")
-    sys.stderr.flush()
-if "ingress" in args:
-    print("OK"); sys.exit(0)
-if mode == "crash":
-    log("error", "failed to connect to the edge"); sys.exit(1)
-class H(BaseHTTPRequestHandler):
-    def log_message(self, *a): pass
-    def do_GET(self):
-        if self.path == "/ready":
-            body = {"status": 200, "readyConnections": 1}; code = 200
-        elif self.path == "/quicktunnel":
-            body = {"hostname": "fake-words-here.trycloudflare.com"}; code = 200
-        else:
-            body = {}; code = 404
-        data = json.dumps(body).encode()
-        self.send_response(code); self.send_header("Content-Length", str(len(data))); self.end_headers(); self.wfile.write(data)
-srv = HTTPServer(("127.0.0.1", 0), H)
-threading.Thread(target=srv.serve_forever, daemon=True).start()
-def term(*a):
-    log("info", "Initiating graceful shutdown due to signal terminated ...")
-    os._exit(0)
-signal.signal(signal.SIGTERM, term)
-log("info", "Starting tunnel")
-log("info", "Starting metrics server on 127.0.0.1:%d/metrics" % srv.server_address[1])
-while True:
-    time.sleep(0.2)
-"#;
-
-struct Fake {
-    _dir: tempfile::TempDir,
-    bin: PathBuf,
-    data: PathBuf,
-    root: PathBuf,
-}
-
-fn fake(mode: &str) -> Fake {
-    let dir = tempfile::tempdir().unwrap();
-    let root = dir.path().to_path_buf();
-    let bindir = root.join("bin");
-    std::fs::create_dir_all(&bindir).unwrap();
-    let bin = bindir.join("cloudflared");
-    std::fs::write(&bin, FAKE).unwrap();
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        std::fs::set_permissions(&bin, std::fs::Permissions::from_mode(0o755)).unwrap();
-    }
-    std::fs::write(bindir.join("mode"), mode).unwrap();
-    let data = root.join("data");
-    Fake { _dir: dir, bin, data, root }
-}
+#[path = "common/fake_cloudflared.rs"]
+mod fake_cloudflared;
+use fake_cloudflared::{argv, fake, Fake};
 
 type States = Arc<Mutex<Vec<TunnelState>>>;
+
+#[tokio::test]
+async fn token_echo_is_redacted_before_persisted_logs() {
+    use underlane_core::db::{Db, LogQuery};
+    use underlane_core::secret::Secret;
+    let f = fake("token-echo");
+    let states: States = Arc::new(Mutex::new(Vec::new()));
+    let db = Arc::new(Db::open_in_memory().unwrap());
+    let mut cfg = SupervisorConfig::new(f.data.clone(), Some(f.bin.clone()), Arc::new(RwLock::new(CaptureOptions::default())));
+    cfg.health_interval = Duration::from_millis(100);
+    let (state_sink, log_db) = (states.clone(), db.clone());
+    let sup = Supervisor::new(cfg, Arc::new(move |event| match event {
+        Event::State(s) => state_sink.lock().unwrap().push(s),
+        Event::Log(log) => { log_db.insert_logs(&[log]).unwrap(); }
+        Event::Request(_) => {}
+    }));
+    sup.start(RunSpec { tunnel: tunnel(TunnelKind::Token), token: Some(Secret::new("invented-supervisor-token".into())) });
+    wait_status(&states, Status::Connected).await;
+    sup.stop("tun-1").await;
+    let logs = db.query_logs(&LogQuery { limit: 100, ..Default::default() }).unwrap();
+    assert!(logs.iter().any(|log| log.message.contains("synthetic child echoed [redacted]")));
+    assert!(!format!("{logs:?} {states:?}").contains("invented-supervisor-token"));
+}
 
 fn supervisor(f: &Fake, tune: impl FnOnce(&mut SupervisorConfig)) -> (Arc<Supervisor>, States, Arc<Mutex<usize>>) {
     let mut cfg = SupervisorConfig::new(f.data.clone(), Some(f.bin.clone()), Arc::new(RwLock::new(CaptureOptions::default())));
@@ -117,14 +82,6 @@ async fn wait_status(states: &States, want: Status) -> TunnelState {
         tokio::time::sleep(Duration::from_millis(25)).await;
     }
     panic!("never reached {want:?}: {:#?}", states.lock().unwrap().iter().map(|s| (s.status, s.detail.clone())).collect::<Vec<_>>());
-}
-
-fn argv(f: &Fake) -> (Vec<String>, String) {
-    let v: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(f.root.join("bin/argv.json")).unwrap()).unwrap();
-    (
-        v["argv"].as_array().unwrap().iter().map(|a| a.as_str().unwrap().to_string()).collect(),
-        v["cwd"].as_str().unwrap().to_string(),
-    )
 }
 
 #[tokio::test]

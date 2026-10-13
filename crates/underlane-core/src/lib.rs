@@ -9,5 +9,7 @@ pub mod derived;
 pub mod import;
 pub mod model;
 pub mod proxy;
+pub mod platform;
+pub mod secret;
 pub mod shim;
 pub mod supervisor;

@@ -10,6 +10,8 @@ use std::io::Read;
 use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
+use crate::platform;
+
 pub const SHIM_FLAG: &str = "--cloudflared-shim";
 
 /// Run the shim. `args[0]` is the cloudflared binary. Returns the exit code to use.
@@ -19,21 +21,16 @@ pub fn run(args: &[String]) -> i32 {
         return 2;
     };
 
-    #[cfg(unix)]
-    unsafe {
-        // A no-op handler (not SIG_IGN, which would be inherited across exec) keeps the shim
-        // alive while cloudflared shuts down gracefully after a group-wide SIGTERM/SIGINT.
-        extern "C" fn noop(_: libc::c_int) {}
-        let handler = noop as extern "C" fn(libc::c_int) as libc::sighandler_t;
-        libc::signal(libc::SIGTERM, handler);
-        libc::signal(libc::SIGINT, handler);
-        libc::signal(libc::SIGHUP, handler);
+    if let Err(error) = platform::ignore_shim_signals() {
+        eprintln!("underlane shim: {error}");
+        return 2;
     }
 
     let mut child = match Command::new(bin).args(rest).stdin(Stdio::null()).spawn() {
         Ok(c) => c,
         Err(e) => {
-            eprintln!("{{\"level\":\"fatal\",\"message\":\"could not start {bin}: {e}\"}}");
+            let message = crate::secret::redact_text(&format!("could not start {bin}: {e}"));
+            eprintln!("{}", serde_json::json!({ "level": "fatal", "message": message }));
             return 127;
         }
     };
@@ -49,38 +46,20 @@ pub fn run(args: &[String]) -> i32 {
                 Ok(_) => continue,
             }
         }
-        #[cfg(unix)]
-        unsafe {
-            libc::kill(pid as i32, libc::SIGTERM);
-        }
+        let _ = platform::signal(pid, platform::SIGTERM);
         let deadline = Instant::now() + Duration::from_secs(5);
         while Instant::now() < deadline {
-            #[cfg(unix)]
-            unsafe {
-                if libc::kill(pid as i32, 0) != 0 {
-                    return;
-                }
+            if platform::signal(pid, 0).is_err() {
+                return;
             }
             std::thread::sleep(Duration::from_millis(100));
         }
-        #[cfg(unix)]
-        unsafe {
-            libc::kill(pid as i32, libc::SIGKILL);
-        }
+        let _ = platform::signal(pid, platform::SIGKILL);
     });
 
     loop {
         match child.wait() {
-            Ok(status) => {
-                #[cfg(unix)]
-                {
-                    use std::os::unix::process::ExitStatusExt;
-                    if let Some(sig) = status.signal() {
-                        return 128 + sig;
-                    }
-                }
-                return status.code().unwrap_or(1);
-            }
+            Ok(status) => return platform::exit_code(status),
             Err(e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
             Err(_) => return 1,
         }
