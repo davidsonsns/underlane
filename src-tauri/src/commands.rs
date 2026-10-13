@@ -63,6 +63,21 @@ pub async fn setup_project_tunnel(core: CoreState<'_>, id: String, request_id: S
 }
 
 #[tauri::command]
+pub async fn check_hostname_dns(core: CoreState<'_>, id: String, hostname: String) -> Res<underlane_core::dns::HostnameDns> {
+    crate::dns::check(core.inner().clone(), id, hostname).await
+}
+
+#[tauri::command]
+pub async fn create_hostname_dns(core: CoreState<'_>, id: String, hostname: String) -> Res<underlane_core::dns::HostnameDns> {
+    crate::dns::create(core.inner().clone(), id, hostname).await
+}
+
+#[tauri::command]
+pub async fn connect_hostname_dns(core: CoreState<'_>, id: String, hostname: String, token: String) -> Res<underlane_core::dns::HostnameDns> {
+    crate::dns::connect(core.inner().clone(), id, hostname, underlane_core::secret::Secret::new(token)).await
+}
+
+#[tauri::command]
 pub fn cancel_project_setup(id: String, request_id: String) {
     crate::setup::cancel(&id, &request_id);
 }

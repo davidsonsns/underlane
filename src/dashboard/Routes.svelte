@@ -12,6 +12,7 @@
   import Tip from "$lib/components/app/Tip.svelte";
   import { kbRing } from "$lib/components/ui/mac";
   import { Button } from "$lib/components/ui/button/index.js";
+  import DnsStatus from "./DnsStatus.svelte";
 
   let HostnameSheet = $state<typeof import("./HostnameSheet.svelte").default | null>(null);
   let manageTrigger = $state<HTMLButtonElement | null>(null);
@@ -104,18 +105,18 @@
   function reachOf(service: string): Reach {
     const r = reach[service];
     if (r == null) return "none";
-    // Green only while traffic can actually arrive; a stopped tunnel's listening services are just "ready".
+    // A stopped tunnel's listening services are "ready"; DNS is checked separately.
     if (r) return live ? "up" : "ready";
     // Nothing listening matters most while the tunnel is live: visitors are getting errors.
     return live ? "down" : "idle";
   }
 
-  // Underlane never starts or stops these services, so the tips say what the dot means for traffic.
+  // Local reachability cannot establish that the public hostname has DNS configured.
   function reachTip(service: string, r: Reach): string | undefined {
     const addr = shortService(service);
-    if (r === "up") return `Live. Traffic to this hostname reaches ${addr}.`;
+    if (r === "up") return `Local service reachable at ${addr}. Underlane doesn't manage this service.`;
     if (r === "ready") return `Something is listening on ${addr}, but the tunnel is stopped. Start it to route traffic here. Underlane doesn't manage this service.`;
-    if (r === "down") return `Nothing is listening on ${addr}. Visitors get a 502 error until it starts.`;
+    if (r === "down") return `Nothing is listening on ${addr}. Requests routed here get a 502 error until it starts.`;
     if (r === "idle") return `Nothing is listening on ${addr}. Start it before starting the tunnel.`;
     return undefined;
   }
@@ -123,7 +124,8 @@
   // Counted per route, not per distinct service, so the summary matches the rows below it.
   const probed = $derived(routes.filter((m) => typeof reach[m.service] === "boolean"));
   const upCount = $derived(probed.filter((m) => reach[m.service]).length);
-  const summary = $derived(probed.length ? reachSummary(upCount, probed.length, live) : null);
+  // Local probes cannot establish public DNS or end-to-end hostname reachability.
+  const summary = $derived(probed.length ? reachSummary(upCount, probed.length, false) : null);
 
   // Links open in the default browser; the webview itself never navigates away.
   function open(e: MouseEvent, url: string) {
@@ -200,6 +202,7 @@
               </span>
             {/if}
           </span>
+          {#snippet service()}
           <span class="flex items-center gap-1.75 justify-self-end text-callout whitespace-nowrap text-muted-foreground">
             <Tip text={tip ?? ""} disabled={!tip}>
               {#snippet children({ props })}
@@ -228,6 +231,12 @@
               {/snippet}
             </Tip>
           </span>
+          {/snippet}
+          {#if tunnel.kind === "config" && host}
+            <DnsStatus id={tunnel.id} hostname={host} {service} />
+          {:else}
+            {@render service()}
+          {/if}
           {#if m.note && tunnel.inspect}<span class="col-span-full mt-0.5 text-xs text-muted-foreground">{m.note}</span>{/if}
         </li>
       {/each}

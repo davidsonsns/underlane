@@ -196,3 +196,10 @@ export interface LoginItem {
   enabled: boolean;
   message: string | null;
 }
+
+export interface HostnameDns {
+  status: "connected" | "missing" | "conflict" | "unknown";
+  message: string;
+  can_create: boolean;
+  needs_dns_access: boolean;
+}

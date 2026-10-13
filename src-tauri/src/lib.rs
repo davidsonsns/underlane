@@ -4,6 +4,7 @@ mod commands;
 mod e2e;
 mod hostnames;
 mod setup;
+mod dns;
 mod platform;
 mod state;
 mod tokens;
@@ -75,6 +76,9 @@ pub fn run() {
             commands::check_config_change,
             commands::load_hostnames,
             commands::save_hostnames,
+            commands::check_hostname_dns,
+            commands::create_hostname_dns,
+            commands::connect_hostname_dns,
             commands::open_config_in_editor,
             commands::scan_default,
             commands::import_paths,

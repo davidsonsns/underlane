@@ -607,3 +607,56 @@ were not exercised; backend file/database tests used temporary directories.
 
 No real Cloudflare account/resource or user certificate was changed. Browser login, remote
 creation, and account responses used fixtures; a live OAuth/create round trip was not run.
+
+## Project hostname DNS (2026-10-13)
+
+- Workspace Rust suite: 179 passed, 2 existing ignored tests before the final snapshot tests.
+  Final targeted Tauri DNS tests: 6 passed, covering current hostname membership, deleted and
+  ambiguous tunnel lookup, custom certificate paths, certificate replacement and private
+  snapshot cleanup, credential/account mismatches, and per-account/zone keychain identities.
+- DNS core tests cover public NXDOMAIN/CNAME/proxied/truncated responses, scoped API envelopes,
+  account/zone boundary binding, exact-record conflicts, disabled proxying, and malformed or
+  incomplete results. Fake CLI tests verify neutral config, explicit no-overwrite, inherited
+  overwrite-environment removal, exact reported hostname, unsupported success output, secret
+  suppression, and preservation of ordinary hostname words in stderr.
+- `npm test`: 71 passed; `npm run check`: zero errors/warnings; `npm run build` passed.
+- Actual hostname row and Connect DNS dialog checked in the browser with mocked IPC: all four
+  statuses, action eligibility, connection failure/success, token clearing on close, create
+  progress/success/error, and stale project selection. The local-service heading and dot no
+  longer claim public DNS reachability. Screenshot: `e2e/out/dns/hostname-dns.png` (ignored),
+  using the production Routes component with a mocked missing-record result.
+- Independent review found and verified fixes for inherited overwrite flags, older CLI
+  wrong-zone routing, certificate replacement during preflight, and per-domain token storage.
+
+No real account, DNS record, login certificate, or system keychain entry was changed during
+validation. Live OAuth, scoped-token API access, Keychain integration, and DNS creation were
+not exercised; account and CLI behavior used synthetic fixtures.
+
+### Existing cloudflared login and neutral DNS status (2026-10-13)
+
+- Live read-only verification used the existing default cert.pem with the production Rust
+  certificate parser, zone/account validation, and DNS-record classifier. All four hostnames
+  in example.yml (app, api, sdk, checkout under example.com) returned Connected against the
+  configured tunnel ID. No additional API token, keychain write, DNS mutation, or tunnel
+  restart was performed. The temporary verification example was removed afterward.
+- Existing login is now tried automatically for checks and DNS-creation preflight; stored
+  scoped access is an optional fallback. Certificate tokens stay in zeroizing backend secrets.
+- Unknown status is labeled “DNS target unverified”; confirmed records say “DNS verified”.
+  Unknown results never offer record creation. Local service reachability stays separate.
+- Regression tests cover unverified public CNAME targets, non-CNAME API responses omitting
+  optional fields, required CNAME fields, and login token redaction. Targeted Rust DNS tests,
+  frontend tests, Svelte check, and frontend build passed.
+- Optional-keychain fallback and live DNS creation were not exercised in this follow-up.
+
+### Daily automatic DNS checks (2026-10-13)
+
+- Automatic DNS requests are gated by a 24-hour per-project/hostname attempt timestamp,
+  including navigation, focus, visibility changes, and failed requests. Manual Check DNS,
+  creation, and access connection bypass the gate and reserve a new timestamp.
+- Last status and timestamp persist in localStorage. A module-memory fallback preserves
+  the interval for the running app if storage is unavailable. Only validated DNS status
+  fields are stored; credentials are excluded.
+- Nine cache regression tests passed: exact daily boundary, persisted reload, manual reset,
+  failure reservation, stale completion rejection, invalid storage, unavailable storage,
+  clock rollback, and status-only persistence. Full frontend suite: 80 passed.
+- Svelte check: zero errors/warnings. Updated debug app bundle built successfully.

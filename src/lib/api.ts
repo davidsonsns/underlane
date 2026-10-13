@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import type {
-  Binary, Candidate, ConfigChange, HostnameConfig, HostnameRoute, HostnameSaveResult, ImportReport, LogLine, LoginItem, Overview, ProjectConfigPreview, RequestDetail, RequestSummary, Settings, TunnelSetupResult, Validation,
+  Binary, Candidate, ConfigChange, HostnameConfig, HostnameDns, HostnameRoute, HostnameSaveResult, ImportReport, LogLine, LoginItem, Overview, ProjectConfigPreview, RequestDetail, RequestSummary, Settings, TunnelSetupResult, Validation,
 } from "./types";
 
 export const api = {
@@ -30,6 +30,9 @@ export const api = {
   checkConfigChange: (id: string) => invoke<ConfigChange | null>("check_config_change", { id }),
   openConfigInEditor: (id: string) => invoke<void>("open_config_in_editor", { id }),
   loadHostnames: (id: string) => invoke<HostnameConfig>("load_hostnames", { id }),
+  checkHostnameDns: (id: string, hostname: string) => invoke<HostnameDns>("check_hostname_dns", { id, hostname }),
+  createHostnameDns: (id: string, hostname: string) => invoke<HostnameDns>("create_hostname_dns", { id, hostname }),
+  connectHostnameDns: (id: string, hostname: string, token: string) => invoke<HostnameDns>("connect_hostname_dns", { id, hostname, token }),
   saveHostnames: (id: string, revision: string, routes: HostnameRoute[], fallbackService: string) =>
     invoke<HostnameSaveResult>("save_hostnames", { id, revision, routes, fallbackService }),
   probeServices: (services: string[]) => invoke<(boolean | null)[]>("probe_services", { services }),

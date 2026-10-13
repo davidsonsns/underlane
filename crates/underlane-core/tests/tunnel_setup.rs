@@ -27,6 +27,19 @@ fn fixture(mode: &str, authenticated: bool) -> Fake {
     f
 }
 
+#[test]
+fn certificate_identity_keeps_the_existing_login_token_secret() {
+    let f = fixture("ok", true);
+    let cert = tunnel_setup::certificate_identity(&f.root.join(".cloudflared/cert.pem")).unwrap();
+    assert_eq!(cert.account.expose(), "synthetic-account");
+    assert_eq!(cert.zone_id, "synthetic-zone");
+    assert_eq!(cert.api_token.expose(), "synthetic-api-token");
+    assert_eq!(
+        format!("{:?} {}", cert.api_token, cert.api_token),
+        "Secret([REDACTED]) [REDACTED]"
+    );
+}
+
 fn credentials(f: &Fake) -> PathBuf {
     f.root
         .join(format!(".cloudflared/underlane/{PROJECT}.json"))

@@ -7,6 +7,7 @@ pub mod config;
 pub mod db;
 pub mod decode;
 pub mod derived;
+pub mod dns;
 pub mod import;
 pub mod hostnames;
 pub mod model;

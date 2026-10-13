@@ -194,7 +194,19 @@ fn read_secret(path: &Path) -> anyhow::Result<Secret<Vec<u8>>> {
     ))
 }
 
-fn certificate_account(path: &Path) -> anyhow::Result<Secret<String>> {
+/// Validate a login certificate without exposing its API token to callers or diagnostics.
+pub fn certificate_account(path: &Path) -> anyhow::Result<Secret<String>> {
+    Ok(certificate_identity(path)?.account)
+}
+
+pub struct CertificateIdentity {
+    pub account: Secret<String>,
+    pub zone_id: String,
+    pub api_token: Secret<String>,
+}
+
+/// Keep the login token secret while exposing its account and zone binding for DNS access.
+pub fn certificate_identity(path: &Path) -> anyhow::Result<CertificateIdentity> {
     let invalid = || {
         anyhow::anyhow!("The default Cloudflare certificate is invalid. Restore a valid cert.pem for the intended account before retrying; the existing certificate was preserved.")
     };
@@ -241,7 +253,11 @@ fn certificate_account(path: &Path) -> anyhow::Result<Secret<String>> {
         "{}",
         invalid()
     );
-    Ok(Secret::new(cert.account.to_owned()))
+    Ok(CertificateIdentity {
+        account: Secret::new(cert.account.to_owned()),
+        zone_id: cert.zone.to_owned(),
+        api_token: Secret::new(cert.token.to_owned()),
+    })
 }
 
 fn credential_identity(path: &Path, account: &Secret<String>) -> anyhow::Result<SetupIdentity> {

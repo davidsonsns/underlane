@@ -383,7 +383,7 @@ fn command(bin: &Path, inv: &Invocation) -> Result<Command, CfError> {
             }
         }
     }
-    for key in ["TUNNEL_TOKEN", "TUNNEL_TOKEN_FILE", "TUNNEL_CRED_CONTENTS", "TUNNEL_CREDENTIALS_CONTENTS"] {
+    for key in ["TUNNEL_TOKEN", "TUNNEL_TOKEN_FILE", "TUNNEL_CRED_CONTENTS", "TUNNEL_CREDENTIALS_CONTENTS", "TUNNEL_FORCE_PROVISIONING_DNS"] {
         cmd.env_remove(key);
     }
     for (key, value) in &inv.env {

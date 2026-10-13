@@ -27,6 +27,14 @@ thinking about them: no terminal windows, no juggling `config.yml` files.
   rules, then save to the original config with a backup. Saving may change YAML comments and
   formatting; advanced rule settings are retained. Running tunnels restart after validation.
   Importing, starting, and request inspection still leave the original file untouched.
+- **Check and create DNS records** from each project hostname using your existing cloudflared
+  login. Underlane verifies the account, domain, proxy setting, and existing records before
+  creating a route with cloudflared. Conflicting records are preserved. An API token with
+  **Zone Read** and **DNS Read** is an optional fallback, stored in the system keychain.
+  Without authenticated access, public checks show “DNS target unverified” for hidden targets;
+  local service availability is checked separately. Automatic DNS checks run at most once
+  every 24 hours per project hostname, with cached status retained across app restarts.
+  Use **Check DNS** in the hostname menu to refresh immediately.
 - **Know when a running config is stale.** Imported tunnels show “Config changed on disk · Restart
   to apply” after an external edit, checked when you revisit the detail or return to the dashboard.
   Restart is explicit; Open in Editor uses the file's registered app, and Show in Finder reveals it.
@@ -204,5 +212,5 @@ verification log with screenshots is in [`docs/verification.md`](docs/verificati
   for `unix:` sockets. Those rules route directly, and the UI says why.
 - Quick tunnels get a new hostname on every start and don't support server-sent events
   (Cloudflare's limits).
-- Creating or deleting tunnels and DNS routes, multi-user features, auto-update and
+- Deleting remote tunnels or DNS records, multi-user features, auto-update and
   Windows/Linux builds are out of scope for v1. The core is portable; see decisions.md §2.

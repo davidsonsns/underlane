@@ -822,3 +822,33 @@ Comments/formatting may change; the backup preserves original bytes. A failed li
 verified credentials for retry and never deletes the Cloudflare tunnel. Setup leaves the
 project stopped. Hostnames and DNS are configured afterward; this action does not change DNS.
 Drafts remain setup-accessible after a failed start, and Start all/popover switches skip them.
+
+## 22. DNS status and explicit creation from project hostnames
+
+Each config-project hostname shows DNS status separately from local service reachability.
+Cloudflare DNS reads first reuse the existing cloudflared login certificate's API token,
+held in a zeroizing backend-only secret and sent only to Cloudflare over HTTPS. The token is
+never returned through IPC or logged. A separate API token with Zone Read and DNS Read is an
+optional fallback, stored only in the system keychain. Connecting optional access verifies
+the certificate account and zone against the hostname, then verifies DNS-read access before
+saving the token. Existing tokens can be replaced by connecting again when their scope fails.
+This supersedes §18's DNS dashboard handoff for inspection and explicit record creation.
+
+Without scoped access, bounded public DNS-over-HTTPS checks can identify NXDOMAIN or visible
+tunnel CNAME targets. Public targets remain unverified because proxying cannot be confirmed;
+unknown status is neutral and never offers record creation. Only authenticated DNS reads
+enable creation. They distinguish missing records, a proxied CNAME pointing to this tunnel,
+and conflicting records. A CNAME with proxy disabled requires review in Cloudflare.
+
+Creation uses the bounded cloudflared CLI with a neutral config, explicit certificate and
+`--overwrite-dns=false`. Certificate account/zone, credential identity, remote tunnel existence,
+current hostname membership, and unchanged config are checked before mutation. Zone-name
+binding prevents older cloudflared releases from appending the wrong certificate domain.
+The CLI-reported resulting hostname must match before displaying success. No record is
+automatically overwritten or deleted. Default browser login runs if the certificate is missing;
+DNS connect/create shares the account-operation lock with tunnel setup. Creation does not
+start/restart a tunnel or edit its local hostname rules. Automatic status checks run at most
+once every 24 hours per project hostname while visible. Attempts and status results persist
+locally across navigation and app restarts; failed checks also consume that interval. Manual
+“Check DNS”, creation, and connecting access bypass the interval and reset it. Focus and
+visibility events only check when due. Stale UI requests cannot change a newly selected project.

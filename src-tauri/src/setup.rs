@@ -25,6 +25,8 @@ struct Active {
 
 // Login writes one default account certificate, so provisioning is account-wide, not per row.
 static ACTIVE: Mutex<Option<Active>> = Mutex::new(None);
+// DNS creation and project setup may both launch login and write the default certificate.
+pub(crate) static ACCOUNT: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
 struct Guard {
     id: String,
@@ -133,6 +135,7 @@ pub fn cancel(id: &str, request: &str) {
 }
 
 pub async fn run(core: Arc<Core>, id: String, request: String) -> Result<SetupResult, String> {
+    let _account = ACCOUNT.try_lock().map_err(|_| "Another Cloudflare setup or DNS operation is running. Finish it before starting this one.")?;
     if request.is_empty()
         || request.len() > 80
         || !request
