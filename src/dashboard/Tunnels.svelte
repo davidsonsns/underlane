@@ -77,7 +77,7 @@
 </script>
 
 <div class="flex h-full flex-col">
-  <Toolbar title="Tunnels" subtitle={store.tunnels.length ? `${store.activeCount} of ${store.tunnels.length} running` : ""}>
+  <Toolbar title="Tunnels">
     {#if store.tunnels.length}
       {#if anyOn}
         <Tip text="Restart every running tunnel">
@@ -121,6 +121,7 @@
                 data-tunnel-id={t.id}
                 tabindex={t.id === selected ? 0 : -1}
                 aria-current={t.id === selected ? "true" : undefined}
+                aria-label={`${t.name}, ${statusLabel[t.state.status]}`}
                 onclick={(e) => {
                   selected = t.id;
                   // WebKit doesn't focus a clicked button: focus it so arrow keys work after a click.
@@ -130,14 +131,11 @@
                 in:fly={{ x: -8, duration: motion(200) }}
                 out:fade={{ duration: motion(120) }}
               >
-                <!-- The status word follows in text, so the dot's hint is hover-only (no tab stop). -->
+                <!-- The row label includes status; the dot's hint is hover-only (no tab stop). -->
                 <Tip text={statusHint[t.state.status]}>
                   {#snippet children({ props })}<span {...{ ...props, tabindex: undefined }} class="flex"><StatusDot status={t.state.status} /></span>{/snippet}
                 </Tip>
-                <span class="flex min-w-0 flex-1 flex-col">
-                  <span class="truncate font-medium">{t.name}</span>
-                  <span class={cn("text-xs", t.state.status === "crashed" ? "text-bad-text" : "text-muted-foreground")}>{statusLabel[t.state.status]}</span>
-                </span>
+                <span class="min-w-0 flex-1 truncate font-medium">{t.name}</span>
                 {#if t.inspect}
                   <Tip text="Requests are inspected">
                     {#snippet children({ props })}
