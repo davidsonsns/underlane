@@ -11,9 +11,10 @@ use underlane_core::decode::{decode_body, is_probably_text};
 use underlane_core::import::{self, ImportReport};
 use underlane_core::model::{LogLine, Settings, TunnelKind};
 use underlane_core::proxy::capture::{BodyCapture, CapturedExchange};
-use underlane_core::supervisor::normalize_origin;
+use underlane_core::supervisor::{normalize_origin, ConfigChange};
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager, Runtime, State};
+use tauri_plugin_opener::OpenerExt;
 
 use crate::platform::{self, LoginItem};
 use crate::state::{Core, Overview};
@@ -36,6 +37,29 @@ async fn blocking<T: Send + 'static>(core: &Arc<Core>, f: impl FnOnce(&Core) -> 
 #[tauri::command]
 pub async fn overview(core: CoreState<'_>) -> Res<Overview> {
     blocking(&core, |c| c.overview().map_err(err)).await
+}
+
+#[tauri::command]
+pub async fn check_config_change(core: CoreState<'_>, id: String) -> Res<Option<ConfigChange>> {
+    blocking(&core, move |c| c.check_config_change(&id).map_err(err)).await
+}
+
+#[tauri::command]
+pub async fn open_config_in_editor(core: CoreState<'_>, app: AppHandle, id: String) -> Res<()> {
+    blocking(&core, move |c| {
+        let tunnel = c.db.tunnel(&id).map_err(err)?.ok_or("Tunnel not found")?;
+        if tunnel.kind != TunnelKind::Config { return Err("This tunnel has no imported config file.".into()); }
+        let path = tunnel.config_path.ok_or("This tunnel has no config file path.")?;
+        readable_config_file(&path)?;
+        app.opener().open_path(path, None::<&str>)
+            .map_err(|e| underlane_core::secret::redact_text(&format!("Could not open the config in its registered editor: {e}")))
+    }).await
+}
+
+fn readable_config_file(path: &str) -> Res<()> {
+    let file = std::fs::File::open(path).map_err(|e| underlane_core::secret::redact_text(&format!("Could not read the config file: {e}")))?;
+    if !file.metadata().map_err(err)?.is_file() { return Err("The config path is not a file.".into()); }
+    Ok(())
 }
 
 #[derive(Serialize)]
@@ -461,6 +485,19 @@ pub fn e2e_report(nonce: String, text: String) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn editor_source_path_requires_a_readable_regular_file() {
+        let root = std::env::temp_dir().join(format!("underlane-editor-{}", std::process::id()));
+        std::fs::create_dir_all(&root).unwrap();
+        let path = root.join("disposable config.yml");
+        std::fs::write(&path, "url: http://localhost:1\n").unwrap();
+        assert!(readable_config_file(path.to_str().unwrap()).is_ok());
+        assert!(readable_config_file(root.to_str().unwrap()).unwrap_err().contains("not a file"));
+        std::fs::remove_file(&path).unwrap();
+        assert!(readable_config_file(path.to_str().unwrap()).unwrap_err().contains("Could not read"));
+        std::fs::remove_dir(&root).unwrap();
+    }
 
     #[tokio::test]
     async fn probes_listening_and_closed_ports() {

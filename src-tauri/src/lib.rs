@@ -70,6 +70,8 @@ pub fn run() {
         )
         .invoke_handler(tauri::generate_handler![
             commands::overview,
+            commands::check_config_change,
+            commands::open_config_in_editor,
             commands::scan_default,
             commands::import_paths,
             commands::add_quick_tunnel,

@@ -4,6 +4,7 @@
 //! config can be emitted later without losing keys this module doesn't model.
 
 use std::path::{Path, PathBuf};
+use std::hash::{Hash, Hasher};
 
 use serde::Serialize;
 use serde_norway::{Mapping, Value};
@@ -37,6 +38,19 @@ pub struct TunnelConfig {
     pub ingress: Vec<IngressRule>,
     /// The full original document.
     pub raw: Value,
+    pub fingerprint: ConfigFingerprint,
+}
+
+/// Ephemeral source-byte identity; never retains YAML or reaches IPC.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ConfigFingerprint(u64);
+
+impl ConfigFingerprint {
+    pub fn of(bytes: &[u8]) -> Self {
+        let mut hash = std::collections::hash_map::DefaultHasher::new();
+        bytes.hash(&mut hash);
+        Self(hash.finish())
+    }
 }
 
 impl TunnelConfig {
@@ -103,6 +117,7 @@ impl TunnelConfig {
             credentials_file,
             ingress,
             raw,
+            fingerprint: ConfigFingerprint::of(text.as_bytes()),
         })
     }
 

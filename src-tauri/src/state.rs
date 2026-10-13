@@ -11,7 +11,7 @@ use underlane_core::db::{Db, RequestSummary};
 use underlane_core::model::{LogLine, Settings, Tunnel, TunnelKind};
 use underlane_core::proxy::capture::{CaptureOptions, CapturedExchange, SharedOptions};
 use underlane_core::proxy::now_ms;
-use underlane_core::supervisor::{Event, RunSpec, Status, Supervisor, SupervisorConfig, TunnelState};
+use underlane_core::supervisor::{ConfigChange, Event, RunSpec, Status, Supervisor, SupervisorConfig, TunnelState};
 use serde::Serialize;
 use tauri::{AppHandle, Emitter};
 use tokio::sync::mpsc;
@@ -84,6 +84,106 @@ pub fn capture_options(s: &Settings) -> CaptureOptions {
     }
 }
 
+#[cfg(test)]
+mod config_change_tests {
+    use super::*;
+    use std::cell::Cell;
+    use underlane_core::config::ConfigFingerprint;
+    use underlane_core::supervisor::{ConfigChangeStatus, LoadedConfig};
+
+    fn fixture() -> (Db, Tunnel, TunnelState, PathBuf) {
+        static NEXT: AtomicU64 = AtomicU64::new(0);
+        let nonce = format!("{}-{}", std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos(), NEXT.fetch_add(1, Ordering::Relaxed));
+        let path = std::env::temp_dir().join(format!("underlane-config-check-{}-{nonce}.yml", std::process::id()));
+        let text = "url: http://localhost:1\n";
+        std::fs::write(&path, text).unwrap();
+        let db = Db::open_in_memory().unwrap();
+        let project = db.ensure_project("Synthetic config check").unwrap();
+        let tunnel = Tunnel {
+            id: "config-check".into(), project_id: project.id, name: "Synthetic".into(),
+            kind: TunnelKind::Config, config_path: Some(path.to_string_lossy().into_owned()),
+            origin_url: None, inspect: false, autostart: false, loglevel: "info".into(), created_at: 0, sort: 0,
+        };
+        db.upsert_tunnel(&tunnel).unwrap();
+        let mut state = TunnelState::stopped(&tunnel.id);
+        state.supervised = true;
+        state.run = 7;
+        state.config_revision = 2;
+        state.loaded_config = Some(LoadedConfig {
+            source_path: tunnel.config_path.clone().unwrap(), fingerprint: ConfigFingerprint::of(text.as_bytes()),
+        });
+        (db, tunnel, state, path)
+    }
+
+    #[test]
+    fn comparison_discards_a_replaced_run_revision_baseline_or_stop() {
+        let (db, tunnel, state, path) = fixture();
+        for change in 0..4 {
+            let mut newer = state.clone();
+            match change {
+                0 => newer.run += 1,
+                1 => newer.config_revision += 1,
+                2 => newer.loaded_config.as_mut().unwrap().fingerprint = ConfigFingerprint::of(b"different loaded bytes"),
+                _ => { newer.supervised = false; newer.loaded_config = None; }
+            }
+            let calls = Cell::new(0);
+            let result = check_config_change_inner(&db, &tunnel.id, || {
+                calls.set(calls.get() + 1);
+                if calls.get() == 1 { state.clone() } else { newer.clone() }
+            }).unwrap();
+            assert!(result.is_none(), "superseded comparison {change} discarded");
+        }
+        std::fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn comparison_discards_a_changed_saved_source_path() {
+        let (db, mut tunnel, state, path) = fixture();
+        let id = tunnel.id.clone();
+        tunnel.config_path = Some("/synthetic/replacement.yml".into());
+        let result = check_config_change_inner(&db, &id, || {
+            db.upsert_tunnel(&tunnel).unwrap();
+            state.clone()
+        }).unwrap();
+        assert!(result.is_none());
+        std::fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn comparison_is_offline_and_stopped_or_unsupported_tunnels_have_no_mismatch() {
+        let (db, mut tunnel, state, path) = fixture();
+        assert_eq!(check_config_change_inner(&db, &tunnel.id, || state.clone()).unwrap().unwrap().status, ConfigChangeStatus::Unchanged);
+        std::fs::write(&path, "url: http://localhost:2\n").unwrap();
+        assert_eq!(check_config_change_inner(&db, &tunnel.id, || state.clone()).unwrap().unwrap().status, ConfigChangeStatus::Changed);
+        let mut stopped = state.clone();
+        stopped.supervised = false;
+        stopped.loaded_config = None;
+        assert_eq!(check_config_change_inner(&db, &tunnel.id, || stopped.clone()).unwrap().unwrap().status, ConfigChangeStatus::NotRunning);
+        for kind in [TunnelKind::Quick, TunnelKind::Token] {
+            tunnel.kind = kind;
+            db.upsert_tunnel(&tunnel).unwrap();
+            assert!(check_config_change_inner(&db, &tunnel.id, || panic!("unsupported checks must not inspect state or disk")).unwrap().is_none());
+        }
+        std::fs::remove_file(path).unwrap();
+    }
+}
+
+fn check_config_change_inner(db: &Db, id: &str, config_state: impl Fn() -> TunnelState) -> anyhow::Result<Option<ConfigChange>> {
+    let tunnel = db.tunnel(id)?.ok_or_else(|| anyhow::anyhow!("Tunnel not found"))?;
+    if tunnel.kind != TunnelKind::Config { return Ok(None); }
+    let Some(path) = tunnel.config_path else { return Ok(None) };
+    let snapshot = config_state();
+    let result = snapshot.check_config_change(&path);
+    let current_tunnel = db.tunnel(id)?;
+    let current = config_state();
+    if current.run != snapshot.run || current.config_revision != snapshot.config_revision
+        || current.loaded_config != snapshot.loaded_config || current.supervised != snapshot.supervised
+        || current_tunnel.map(|t| t.kind != TunnelKind::Config || t.config_path.as_deref() != Some(path.as_str())).unwrap_or(true) {
+        return Ok(None);
+    }
+    Ok(Some(result))
+}
+
 impl Core {
     pub async fn init(handle: AppHandle, data_dir: PathBuf, shim: Option<PathBuf>) -> anyhow::Result<Arc<Core>> {
         std::fs::create_dir_all(&data_dir)?;
@@ -153,6 +253,16 @@ impl Core {
         self.states.lock().unwrap().get(id).cloned().unwrap_or_else(|| TunnelState::stopped(id))
     }
 
+    /// Called on the blocking pool; reject results superseded by a reload, stop or definition edit.
+    pub fn check_config_change(&self, id: &str) -> anyhow::Result<Option<ConfigChange>> {
+        check_config_change_inner(&self.db, id, || self.sup.config_state(id).unwrap_or_else(|| {
+            let mut state = self.state_of(id);
+            state.supervised = false;
+            state.loaded_config = None;
+            state
+        }))
+    }
+
     /// State plus the routes parsed from the config file when the tunnel isn't running, so a
     /// stopped tunnel still shows where it would send traffic.
     fn state_with_routes(&self, t: &Tunnel) -> TunnelState {
@@ -161,7 +271,7 @@ impl Core {
             let loaded = t.config_path.as_deref().map(|p| underlane_core::config::TunnelConfig::load(std::path::Path::new(p)));
             if let Some(Err(e)) = &loaded {
                 if s.status == Status::Stopped && s.detail.is_none() {
-                    s.detail = Some(format!("The config file can't be read: {e}"));
+                    s.detail = Some(underlane_core::secret::redact_text(&format!("The config file can't be read: {e}")));
                 }
             }
             if let Some(Ok(c)) = loaded {

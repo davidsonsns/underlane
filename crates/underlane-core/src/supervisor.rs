@@ -19,7 +19,7 @@ use tokio::sync::{mpsc, watch};
 use tokio::task::JoinHandle;
 
 use crate::cloudflared::{self, Validation};
-use crate::config::TunnelConfig;
+use crate::config::{ConfigFingerprint, TunnelConfig};
 use crate::derived::{self, Upstream};
 use crate::model::{LogLine, Tunnel, TunnelKind};
 use crate::platform::{self, kill_tree as terminate, sweep_group};
@@ -78,6 +78,63 @@ pub struct TunnelState {
     pub supervised: bool,
     /// Which run produced this state; later runs supersede earlier ones.
     pub run: u64,
+    /// Successful child loads within this supervisor task, including internal respawns.
+    pub config_revision: u64,
+    #[serde(skip)]
+    pub loaded_config: Option<LoadedConfig>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct LoadedConfig {
+    pub source_path: String,
+    pub fingerprint: ConfigFingerprint,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ConfigChangeStatus {
+    Unchanged,
+    Changed,
+    Unreadable,
+    NotRunning,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct ConfigChange {
+    pub run: u64,
+    pub config_revision: u64,
+    pub source_path: String,
+    pub status: ConfigChangeStatus,
+    pub message: Option<String>,
+}
+
+impl TunnelState {
+    /// Offline source-byte check against the last successfully spawned child's config.
+    pub fn check_config_change(&self, source_path: &str) -> ConfigChange {
+        let mut result = ConfigChange {
+            run: self.run,
+            config_revision: self.config_revision,
+            source_path: source_path.to_string(),
+            status: ConfigChangeStatus::NotRunning,
+            message: None,
+        };
+        if let Some(loaded) = self.loaded_config.as_ref().filter(|c| self.supervised && c.source_path == source_path) {
+            match std::fs::read(source_path) {
+                Ok(bytes) => {
+                    result.status = if ConfigFingerprint::of(&bytes) == loaded.fingerprint {
+                        ConfigChangeStatus::Unchanged
+                    } else {
+                        ConfigChangeStatus::Changed
+                    };
+                }
+                Err(error) => {
+                    result.status = ConfigChangeStatus::Unreadable;
+                    result.message = Some(crate::secret::redact_text(&format!("Could not read the config on disk: {error}")));
+                }
+            }
+        }
+        result
+    }
 }
 
 impl TunnelState {
@@ -97,6 +154,8 @@ impl TunnelState {
             inspecting: false,
             supervised: false,
             run: 0,
+            config_revision: 0,
+            loaded_config: None,
         }
     }
 }
@@ -181,6 +240,7 @@ struct RunHandle {
     /// start can't overlap with it.
     stopping: bool,
     run: u64,
+    config_state: Arc<Mutex<TunnelState>>,
 }
 
 impl RunHandle {
@@ -226,17 +286,29 @@ impl Supervisor {
         self.runs.lock().unwrap().iter().filter(|(_, r)| r.live()).map(|(id, _)| id.clone()).collect()
     }
 
+    /// Authoritative state for comparisons, before the application's queued state events.
+    pub fn config_state(&self, id: &str) -> Option<TunnelState> {
+        let runs = self.runs.lock().unwrap();
+        let handle = runs.get(id).filter(|h| h.live() && !h.stopping)?;
+        let state = handle.config_state.lock().unwrap().clone();
+        Some(state)
+    }
+
     fn spawn_run(&self, runs: &mut HashMap<String, RunHandle>, spec: RunSpec) {
         let run_no = self.runs_started.fetch_add(1, Ordering::SeqCst) + 1;
         let (tx, rx) = mpsc::unbounded_channel();
         let (done_tx, done_rx) = watch::channel(false);
         let id = spec.tunnel.id.clone();
-        let fut = run(spec, self.cfg.clone(), self.sink.clone(), rx, run_no);
+        let mut initial = TunnelState::stopped(&id);
+        initial.run = run_no;
+        initial.supervised = true;
+        let config_state = Arc::new(Mutex::new(initial));
+        let fut = run(spec, self.cfg.clone(), self.sink.clone(), rx, run_no, config_state.clone());
         let task = self.rt.spawn(async move {
             fut.await;
             let _ = done_tx.send(true);
         });
-        runs.insert(id, RunHandle { tx, task, done: done_rx, stopping: false, run: run_no });
+        runs.insert(id, RunHandle { tx, task, done: done_rx, stopping: false, run: run_no, config_state });
     }
 
     /// Start once the current run (if it is stopping) has fully exited.
@@ -338,6 +410,7 @@ struct Prepared {
     mappings: Vec<RouteMapping>,
     inspecting: bool,
     warning: Option<String>,
+    loaded_config: Option<LoadedConfig>,
 }
 
 /// Won't get better by retrying (bad config, missing binary, already running elsewhere...).
@@ -410,7 +483,7 @@ async fn prepare(
     match t.kind {
         TunnelKind::Config => {
             let path = PathBuf::from(t.config_path.as_deref().ok_or_else(|| fatal("No config file is set for this tunnel."))?);
-            let config = TunnelConfig::load(&path).map_err(|e| fatal(e.to_string()))?;
+            let config = TunnelConfig::load(&path).map_err(|e| fatal(crate::secret::redact_text(&e.to_string())))?;
 
             let home_cf = crate::config::home_dir().join(".cloudflared");
             let identity = cloudflared::TunnelIdentity {
@@ -500,6 +573,7 @@ async fn prepare(
                 mappings,
                 inspecting,
                 warning,
+                loaded_config: Some(LoadedConfig { source_path: path.to_string_lossy().into_owned(), fingerprint: config.fingerprint }),
             })
         }
         TunnelKind::Quick => {
@@ -530,7 +604,7 @@ async fn prepare(
             args.push("--url".into());
             args.push(url);
             let mappings = vec![RouteMapping { hostname: None, path: None, service: origin, inspected: inspecting, note: None }];
-            Ok(Prepared { args, env: vec![], cwd: None, mappings, inspecting, warning })
+            Ok(Prepared { args, env: vec![], cwd: None, mappings, inspecting, warning, loaded_config: None })
         }
         TunnelKind::Token => {
             let token = spec
@@ -551,6 +625,7 @@ async fn prepare(
                 mappings: vec![],
                 inspecting: false,
                 warning,
+                loaded_config: None,
             })
         }
     }
@@ -700,12 +775,15 @@ fn remove_own_pidfile(cfg: &SupervisorConfig, id: &str, pid: Option<u32>) {
     }
 }
 
-async fn run(mut spec: RunSpec, cfg: SupervisorConfig, sink: EventSink, mut rx: mpsc::UnboundedReceiver<Cmd>, run_no: u64) {
+async fn run(mut spec: RunSpec, cfg: SupervisorConfig, sink: EventSink, mut rx: mpsc::UnboundedReceiver<Cmd>, run_no: u64, config_state: Arc<Mutex<TunnelState>>) {
     let id = spec.tunnel.id.clone();
     let mut state = TunnelState::stopped(&id);
     state.run = run_no;
     state.supervised = true;
-    let emit_state = |s: &TunnelState| sink(Event::State(s.clone()));
+    let emit_state = |s: &TunnelState| {
+        *config_state.lock().unwrap() = s.clone();
+        sink(Event::State(s.clone()));
+    };
     let mut proxies: HashMap<usize, ProxyHandle> = HashMap::new();
     let req_sink = sink.clone();
     let ctx = ProxyContext {
@@ -773,9 +851,6 @@ async fn run(mut spec: RunSpec, cfg: SupervisorConfig, sink: EventSink, mut rx: 
                 }
             }
         };
-        state.mappings = prepared.mappings.clone();
-        state.inspecting = prepared.inspecting;
-
         let mut child = match spawn_child(&bin, &prepared, cfg.shim.as_deref()) {
             Ok(c) => c,
             Err(e) => {
@@ -791,6 +866,10 @@ async fn run(mut spec: RunSpec, cfg: SupervisorConfig, sink: EventSink, mut rx: 
                 }
             }
         };
+        state.mappings = prepared.mappings.clone();
+        state.inspecting = prepared.inspecting;
+        state.config_revision += 1;
+        state.loaded_config = prepared.loaded_config.clone();
         // Holding the shim's stdin open is what keeps it from killing cloudflared.
         let _shim_stdin: Option<ChildStdin> = child.stdin.take();
         let child_pid = child.id();
@@ -1036,9 +1115,10 @@ async fn run(mut spec: RunSpec, cfg: SupervisorConfig, sink: EventSink, mut rx: 
     drop(proxies);
     let mut final_state = TunnelState::stopped(&id);
     final_state.run = run_no;
+    final_state.config_revision = state.config_revision;
     final_state.restarts = state.restarts;
     final_state.mappings = state.mappings;
-    sink(Event::State(final_state));
+    emit_state(&final_state);
 }
 
 /// 1s, 2s, 4s, ... capped.

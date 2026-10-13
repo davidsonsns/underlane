@@ -7,7 +7,7 @@ use std::time::Duration;
 
 use underlane_core::model::{Tunnel, TunnelKind};
 use underlane_core::proxy::capture::CaptureOptions;
-use underlane_core::supervisor::{reap_orphans, Event, RunSpec, Status, Supervisor, SupervisorConfig, TunnelState};
+use underlane_core::supervisor::{reap_orphans, ConfigChangeStatus, Event, RunSpec, Status, Supervisor, SupervisorConfig, TunnelState};
 
 #[path = "common/fake_cloudflared.rs"]
 mod fake_cloudflared;
@@ -82,6 +82,162 @@ async fn wait_status(states: &States, want: Status) -> TunnelState {
         tokio::time::sleep(Duration::from_millis(25)).await;
     }
     panic!("never reached {want:?}: {:#?}", states.lock().unwrap().iter().map(|s| (s.status, s.detail.clone())).collect::<Vec<_>>());
+}
+
+async fn wait_state(states: &States, predicate: impl Fn(&TunnelState) -> bool) -> TunnelState {
+    for _ in 0..200 {
+        if let Some(state) = states.lock().unwrap().last().filter(|s| predicate(s)).cloned() { return state; }
+        tokio::time::sleep(Duration::from_millis(25)).await;
+    }
+    panic!("state condition not reached: {:?}", states.lock().unwrap().last());
+}
+
+fn config_spec(f: &Fake, text: &str) -> RunSpec {
+    let path = f.root.join("source.yml");
+    std::fs::write(&path, text).unwrap();
+    let mut t = tunnel(TunnelKind::Config);
+    t.config_path = Some(path.to_string_lossy().into_owned());
+    RunSpec { tunnel: t, token: None }
+}
+
+#[tokio::test]
+async fn loaded_source_bytes_survive_edits_and_update_only_after_restart() {
+    let f = fake("ok");
+    let original = "url: http://localhost:4000\noriginRequest:\n  accessToken: invented-config-secret\n";
+    let spec = config_spec(&f, original);
+    let path = spec.tunnel.config_path.as_deref().unwrap();
+    let (sup, states, _) = supervisor(&f, |_| {});
+    sup.start(spec.clone());
+    let loaded = wait_status(&states, Status::Connected).await;
+    assert_eq!(loaded.config_revision, 1);
+    assert_eq!(loaded.check_config_change(path).status, ConfigChangeStatus::Unchanged);
+    let serialized = serde_json::to_string(&loaded).unwrap();
+    assert!(!serialized.contains("loaded_config"));
+    assert!(!serialized.contains("fingerprint"));
+    assert!(!serialized.contains("invented-config-secret"));
+    assert!(!format!("{loaded:?}").contains("invented-config-secret"));
+    let derived = f.data.join("derived/tun-1.yml");
+    let child_config = std::fs::read(&derived).unwrap();
+    let original_argv = std::fs::read(f.root.join("bin/argv.json")).unwrap();
+
+    std::fs::write(path, format!("{original}# comment-only change\n")).unwrap();
+    assert_eq!(loaded.check_config_change(path).status, ConfigChangeStatus::Changed);
+    std::fs::write(path, original).unwrap();
+    assert_eq!(loaded.check_config_change(path).status, ConfigChangeStatus::Unchanged);
+    let replacement = f.root.join("replacement.yml");
+    let updated = original.replace("4000", "5000");
+    std::fs::write(&replacement, &updated).unwrap();
+    std::fs::rename(&replacement, path).unwrap();
+    assert_eq!(loaded.check_config_change(path).status, ConfigChangeStatus::Changed);
+    assert_eq!(std::fs::read(&derived).unwrap(), child_config, "running child still has A");
+    assert_eq!(std::fs::read(f.root.join("bin/argv.json")).unwrap(), original_argv, "checks never invoke cloudflared");
+
+    sup.restart(spec.clone());
+    let restarted = wait_state(&states, |s| s.status == Status::Connected && s.config_revision == 2).await;
+    assert_eq!(restarted.run, loaded.run, "restart stays in one supervisor task");
+    assert_eq!(restarted.mappings[0].service, "http://localhost:5000");
+    assert_eq!(restarted.check_config_change(path).status, ConfigChangeStatus::Unchanged);
+    assert_eq!(std::fs::read_to_string(path).unwrap(), updated, "source stays read-only");
+    sup.stop("tun-1").await;
+    let stopped = states.lock().unwrap().last().unwrap().clone();
+    assert!(stopped.loaded_config.is_none());
+    assert_eq!(stopped.check_config_change(path).status, ConfigChangeStatus::NotRunning);
+    assert!(sup.config_state("tun-1").is_none());
+}
+
+#[tokio::test]
+async fn loaded_source_deletion_and_read_failure_are_unreadable() {
+    let f = fake("ok");
+    let original = "url: http://localhost:4000\n";
+    let spec = config_spec(&f, original);
+    let path = spec.tunnel.config_path.as_deref().unwrap();
+    let (sup, states, _) = supervisor(&f, |_| {});
+    sup.start(spec.clone());
+    let loaded = wait_status(&states, Status::Connected).await;
+    std::fs::remove_file(path).unwrap();
+    let missing = loaded.check_config_change(path);
+    assert_eq!(missing.status, ConfigChangeStatus::Unreadable);
+    assert!(missing.message.is_some());
+    std::fs::create_dir(path).unwrap();
+    assert_eq!(loaded.check_config_change(path).status, ConfigChangeStatus::Unreadable);
+    std::fs::remove_dir(path).unwrap();
+    std::fs::write(path, original).unwrap();
+    assert_eq!(loaded.check_config_change(path).status, ConfigChangeStatus::Unchanged);
+    assert_eq!(sup.config_state("tun-1").unwrap().config_revision, 1);
+    sup.stop("tun-1").await;
+}
+
+#[tokio::test]
+async fn failed_validation_and_spawn_keep_the_previous_loaded_baseline() {
+    let f = fake("ok");
+    let original = "ingress:\n  - service: http://localhost:4000\n";
+    let spec = config_spec(&f, original);
+    let path = spec.tunnel.config_path.as_deref().unwrap();
+    let (sup, states, _) = supervisor(&f, |_| {});
+    sup.start(spec.clone());
+    let loaded = wait_status(&states, Status::Connected).await;
+    std::fs::write(path, original.replace("4000", "5000")).unwrap();
+    std::fs::write(f.root.join("bin/mode"), "invalid-config").unwrap();
+    sup.restart(spec.clone());
+    let failed = wait_state(&states, |s| s.status == Status::Crashed && s.detail.as_deref().unwrap_or("").contains("Config is invalid")).await;
+    assert_eq!(failed.loaded_config, loaded.loaded_config);
+    assert_eq!(failed.config_revision, loaded.config_revision);
+    assert_eq!(failed.check_config_change(path).status, ConfigChangeStatus::Changed);
+    assert_eq!(failed.mappings, loaded.mappings);
+
+    // Single-origin preparation does not invoke validation, so a missing executable tests spawn.
+    std::fs::write(path, "url: http://localhost:6000\n").unwrap();
+    *sup.config().cloudflared.write().unwrap() = Some(f.root.join("missing-binary"));
+    sup.restart(spec.clone());
+    let failed = wait_state(&states, |s| s.status == Status::Crashed && s.detail.as_deref().unwrap_or("").contains("Could not start cloudflared")).await;
+    assert_eq!(failed.loaded_config, loaded.loaded_config);
+    assert_eq!(failed.config_revision, loaded.config_revision);
+    assert_eq!(failed.check_config_change(path).status, ConfigChangeStatus::Changed);
+    assert_eq!(failed.mappings, loaded.mappings);
+    sup.stop("tun-1").await;
+}
+
+#[tokio::test]
+async fn edit_during_preparation_keeps_the_bytes_used_for_derived_config() {
+    let f = fake("ok");
+    let script = std::fs::read_to_string(&f.bin).unwrap().replace(
+        "if \"ingress\" in args:\n    print(\"OK\"); sys.exit(0)",
+        "if \"ingress\" in args:\n    open(os.path.join(here, 'validating'), 'w').close()\n    while not os.path.exists(os.path.join(here, 'release-validation')): time.sleep(0.01)\n    print(\"OK\"); sys.exit(0)",
+    );
+    std::fs::write(&f.bin, script).unwrap();
+    let original = "ingress:\n  - service: http://localhost:4000\n";
+    let spec = config_spec(&f, original);
+    let path = spec.tunnel.config_path.as_deref().unwrap();
+    let (sup, states, _) = supervisor(&f, |_| {});
+    sup.start(spec.clone());
+    let marker = f.root.join("bin/validating");
+    for _ in 0..200 {
+        if marker.exists() { break; }
+        tokio::time::sleep(Duration::from_millis(25)).await;
+    }
+    assert!(marker.exists(), "validation delay reached after parsing A");
+    std::fs::write(path, original.replace("4000", "5000")).unwrap();
+    std::fs::write(f.root.join("bin/release-validation"), "").unwrap();
+    let loaded = wait_status(&states, Status::Connected).await;
+    assert_eq!(loaded.mappings[0].service, "http://localhost:4000");
+    assert_eq!(loaded.check_config_change(path).status, ConfigChangeStatus::Changed);
+    assert!(std::fs::read_to_string(f.data.join("derived/tun-1.yml")).unwrap().contains("4000"));
+    assert_eq!(sup.config_state("tun-1").unwrap().loaded_config, loaded.loaded_config);
+    sup.stop("tun-1").await;
+}
+
+#[tokio::test]
+async fn internal_respawn_advances_load_revision_within_same_run() {
+    let f = fake("crash");
+    let spec = config_spec(&f, "url: http://localhost:4000\n");
+    let (sup, states, _) = supervisor(&f, |c| c.max_failures = 3);
+    sup.start(spec.clone());
+    let state = wait_state(&states, |s| s.status == Status::Crashed && s.config_revision == 3).await;
+    let loaded: Vec<_> = states.lock().unwrap().iter().filter(|s| s.pid.is_some()).cloned().collect();
+    assert_eq!(loaded.iter().map(|s| s.config_revision).collect::<Vec<_>>(), vec![1, 2, 3]);
+    assert!(loaded.iter().all(|s| s.run == state.run));
+    assert_eq!(sup.config_state("tun-1").unwrap().config_revision, 3);
+    sup.stop("tun-1").await;
 }
 
 #[tokio::test]

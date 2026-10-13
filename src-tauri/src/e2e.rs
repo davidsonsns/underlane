@@ -131,6 +131,16 @@ mod server {
                 core.stop(&id).await;
                 reply(200, json!({"ok": true}))
             }
+            ("POST", "/restart") => match core.restart(&id) {
+                Ok(()) => reply(200, json!({"ok": true})),
+                Err(e) => reply(400, json!({"error": e.to_string()})),
+            },
+            ("GET", "/config-change") => {
+                match tokio::task::spawn_blocking(move || core.check_config_change(&id)).await {
+                    Ok(Ok(result)) => reply(200, json!(result)),
+                    _ => reply(500, json!({"error": "Config check failed"})),
+                }
+            }
             ("GET", "/state") => {
                 let s = core.state_of(&id);
                 let title = tray::status_item_title(&app);
@@ -140,6 +150,9 @@ mod server {
                         "status": s.status,
                         "public_url": s.public_url,
                         "detail": s.detail,
+                        "pid": s.pid,
+                        "run": s.run,
+                        "config_revision": s.config_revision,
                         "inspecting": s.inspecting,
                         "active_count": core.active_count(),
                         "menu_bar_title": title,
