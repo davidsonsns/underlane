@@ -1,7 +1,7 @@
 use std::path::Path;
 
 use underlane_core::db::Db;
-use underlane_core::projects::{create, default_directory, needs_setup, preview};
+use underlane_core::projects::{available_configs, create, default_directory, needs_setup, preview};
 
 const SOURCE: &str = "tunnel: example-id\ncredentials-file: ./credentials.json\ningress:\n  - hostname: app.example.com\n    service: http://localhost:3000\n  - service: http_status:404\n";
 
@@ -9,6 +9,63 @@ fn source(directory: &Path) -> std::path::PathBuf {
     let path = directory.join("source.yaml");
     std::fs::write(&path, SOURCE).unwrap();
     path
+}
+
+#[test]
+fn discovers_only_valid_unused_configs_including_nested_files() {
+    let directory = tempfile::tempdir().unwrap();
+    let db = Db::open_in_memory().unwrap();
+    let used = source(directory.path());
+    let mut registered = create(&db, "Used", "", Some(&used), None, "info").unwrap();
+    registered.config_path = Some(directory.path().join("./source.yaml").to_string_lossy().into_owned());
+    db.upsert_tunnel(&registered).unwrap();
+    let nested = directory.path().join("underlane");
+    std::fs::create_dir(&nested).unwrap();
+    let unused = source(&nested);
+    let single_origin = directory.path().join("local.YML");
+    std::fs::write(&single_origin, "url: http://localhost:3000").unwrap();
+    for (filename, contents) in [
+        ("broken.yml", "ingress: ["),
+        ("unrelated.yml", "services: {}"),
+        ("invalid.yml", "ingress: [{service: false}]"),
+        ("credentials.yml", "credentials-file: private.json"),
+        ("wrong.txt", SOURCE),
+    ] {
+        std::fs::write(directory.path().join(filename), contents).unwrap();
+    }
+    #[cfg(unix)] {
+        use std::os::unix::fs::symlink;
+        symlink(&used, directory.path().join("used-alias.yml")).unwrap();
+        symlink(directory.path(), nested.join("cycle")).unwrap();
+    }
+    let paths: Vec<_> = available_configs(&db, directory.path()).unwrap().into_iter().map(|c| c.source).collect();
+    assert_eq!(paths, vec![single_origin, unused.clone()]);
+    create(&db, "New", "", Some(&unused), None, "info").unwrap();
+    assert_eq!(available_configs(&db, directory.path()).unwrap().len(), 1);
+    assert!(available_configs(&db, &directory.path().join("missing")).unwrap().is_empty());
+    assert_eq!(std::fs::read_to_string(used).unwrap(), SOURCE);
+}
+
+#[cfg(unix)]
+#[test]
+fn discovery_expands_registered_tildes_and_skips_unreadable_subdirectories() {
+    use std::os::unix::fs::PermissionsExt;
+    let home = underlane_core::config::home_dir();
+    let directory = tempfile::tempdir_in(&home).unwrap();
+    let db = Db::open_in_memory().unwrap();
+    let used = source(directory.path());
+    let mut registered = create(&db, "Used", "", Some(&used), None, "info").unwrap();
+    registered.config_path = Some(format!("~/{}", used.strip_prefix(&home).unwrap().display()));
+    db.upsert_tunnel(&registered).unwrap();
+    let available = directory.path().join("available.yml");
+    std::fs::write(&available, SOURCE).unwrap();
+    let inaccessible = directory.path().join("private");
+    std::fs::create_dir(&inaccessible).unwrap();
+    std::fs::set_permissions(&inaccessible, std::fs::Permissions::from_mode(0o000)).unwrap();
+    let result = available_configs(&db, directory.path());
+    std::fs::set_permissions(&inaccessible, std::fs::Permissions::from_mode(0o700)).unwrap();
+    let paths: Vec<_> = result.unwrap().into_iter().map(|c| c.source).collect();
+    assert_eq!(paths, vec![available]);
 }
 
 #[test]

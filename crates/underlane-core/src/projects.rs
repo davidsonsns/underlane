@@ -90,6 +90,40 @@ pub fn preview(path: &Path) -> anyhow::Result<ProjectConfigPreview> {
     })
 }
 
+/// Discover valid, unregistered configs, without following directory symlinks.
+pub fn available_configs(db: &Db, directory: &Path) -> anyhow::Result<Vec<TunnelConfig>> {
+    let used: Vec<PathBuf> = db.tunnels()?.into_iter().filter_map(|t| t.config_path)
+        .map(|path| expand_tilde(&path))
+        .map(|path| fs::canonicalize(&path).unwrap_or(path)).collect();
+    let directories_root = directory.to_path_buf();
+    let mut directories = vec![directories_root.clone()];
+    let mut configs = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+    while let Some(directory) = directories.pop() {
+        let entries = match fs::read_dir(&directory) {
+            Ok(entries) => entries,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(_) if directory != directories_root => continue,
+            Err(e) => return Err(e.into()),
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if entry.file_type().is_ok_and(|kind| kind.is_dir()) {
+                directories.push(path);
+                continue;
+            }
+            if let Ok(config) = load(&path) {
+                let Ok(canonical) = fs::canonicalize(&path) else { continue };
+                if !used.contains(&canonical) && seen.insert(canonical) {
+                    configs.push(config);
+                }
+            }
+        }
+    }
+    configs.sort_by(|a, b| a.source.cmp(&b.source));
+    Ok(configs)
+}
+
 fn filename(name: &str) -> String {
     let mut safe = String::new();
     for character in name.chars().flat_map(char::to_lowercase) {

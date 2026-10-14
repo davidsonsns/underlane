@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use base64::Engine;
 use underlane_core::cloudflared::{self, Binary, Validation};
-use underlane_core::config::{home_dir, scan_dir, TunnelConfig};
+use underlane_core::config::{home_dir, TunnelConfig};
 use underlane_core::db::{LogQuery, RequestSummary};
 use underlane_core::decode::{decode_body, is_probably_text};
 use underlane_core::import::{self, ImportReport};
@@ -128,14 +128,14 @@ pub async fn scan_default(core: CoreState<'_>) -> Res<Vec<Candidate>> {
 fn scan_default_inner(core: &Core) -> Res<Vec<Candidate>> {
     let dir = home_dir().join(".cloudflared");
     let mut out = Vec::new();
-    for p in scan_dir(&dir) {
+    for c in underlane_core::projects::available_configs(&core.db, &dir).map_err(err)? {
+        let p = c.source.clone();
         let key = p.to_string_lossy().into_owned();
-        let Ok(c) = TunnelConfig::load(&p) else { continue };
         out.push(Candidate {
-            imported: core.db.tunnel_by_config_path(&key).ok().flatten().is_some(),
+            imported: false,
             name: c.display_name(),
             group: import::group_name_for(&p),
-            hostnames: c.ingress.iter().filter_map(|r| r.hostname.clone()).collect(),
+            hostnames: c.ingress.iter().filter_map(|r| r.hostname.as_deref().map(underlane_core::secret::redact_text)).collect(),
             path: key,
         });
     }

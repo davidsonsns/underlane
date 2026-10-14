@@ -4,8 +4,6 @@
 
 <script lang="ts">
   import CircleAlert from "@lucide/svelte/icons/circle-alert";
-  import FileText from "@lucide/svelte/icons/file-text";
-  import Folder from "@lucide/svelte/icons/folder";
   import FolderPlus from "@lucide/svelte/icons/folder-plus";
   import Zap from "@lucide/svelte/icons/zap";
   import { open as openPicker } from "@tauri-apps/plugin-dialog";
@@ -25,6 +23,12 @@
   import { Input } from "$lib/components/ui/input/index.js";
   import { Label } from "$lib/components/ui/label/index.js";
   import {
+    Content as SelectContent,
+    Item as SelectItem,
+    Root as SelectRoot,
+    Trigger as SelectTrigger,
+  } from "$lib/components/ui/select/index.js";
+  import {
     Content as TabsContent,
     List as TabsList,
     Root as TabsRoot,
@@ -34,7 +38,7 @@
   import { serviceLabel } from "../lib/format";
   import { projectFilename } from "../lib/project-filename";
   import { store } from "../lib/store.svelte";
-  import type { ProjectConfigPreview } from "../lib/types";
+  import type { Candidate, ProjectConfigPreview } from "../lib/types";
 
   let {
     initialTab = "project",
@@ -60,14 +64,14 @@
   let configError = $state<string | null>(null);
   let failureMessage = $state<string | null>(null);
   let picking = $state(false);
+  let candidates = $state<Candidate[]>([]);
+  let configSource = $state("new");
+  let scanError = $state<string | null>(null);
   // A successful write is never repeated if refreshing the dashboard fails afterward.
   let createdId = $state<string | null>(null);
   let alive = true;
   const locked = $derived(busy || picking || createdId !== null);
   const saveDirectory = $derived(directory ?? defaultDirectory);
-  const destination = $derived(
-    saveDirectory ? `${saveDirectory}/${projectFilename(project.name)}` : null
-  );
   const plainText = {
     autocapitalize: "off",
     autocorrect: "off",
@@ -78,6 +82,18 @@
   const id = (name: string) => `${uid}-${name}`;
 
   onMount(() => {
+    api
+      .scanDefault()
+      .then((files) => {
+        if (alive) {
+          candidates = files.filter((file) => !file.imported);
+        }
+      })
+      .catch((e) => {
+        if (alive) {
+          scanError = errorText(e);
+        }
+      });
     api
       .projectDirectory()
       .then((path) => {
@@ -95,18 +111,22 @@
     };
   });
 
-  async function loadConfig() {
+  async function loadConfig(selectedPath?: string) {
     if (locked) {
       return;
     }
     picking = true;
     failureMessage = null;
     try {
-      const path = await openPicker({
-        directory: false,
-        filters: [{ extensions: ["yml", "yaml"], name: "cloudflared config" }],
-        multiple: false,
-      });
+      const path =
+        selectedPath ??
+        (await openPicker({
+          directory: false,
+          filters: [
+            { extensions: ["yml", "yaml"], name: "cloudflared config" },
+          ],
+          multiple: false,
+        }));
       if (!(alive && path) || Array.isArray(path)) {
         return;
       }
@@ -118,6 +138,10 @@
         if (alive) {
           preview = result;
           chosenPath = result.path;
+          if (!project.name.trim()) {
+            project.name =
+              candidates.find((file) => file.path === path)?.name ?? "";
+          }
         }
       } catch (e) {
         if (alive) {
@@ -162,10 +186,36 @@
   }
 
   function removeConfig() {
+    configSource = "new";
     chosenPath = null;
     preview = null;
     configError = null;
     failureMessage = null;
+  }
+
+  async function selectConfig(source: string) {
+    if (locked) {
+      return;
+    }
+    if (source === "new") {
+      removeConfig();
+      return;
+    }
+    configSource = source;
+    await loadConfig(source === "browse" ? undefined : source);
+    if (alive) {
+      configSource = chosenPath ?? "new";
+    }
+  }
+
+  function shortPath(path: string) {
+    const suffix = "/.cloudflared/underlane";
+    const home = defaultDirectory?.endsWith(suffix)
+      ? defaultDirectory.slice(0, -suffix.length)
+      : null;
+    return home && path.startsWith(`${home}/`)
+      ? `~${path.slice(home.length)}`
+      : path;
   }
 
   async function create() {
@@ -257,20 +307,41 @@
 
 {#snippet projectConfig()}
   <div class="flex min-w-0 flex-col gap-2">
-    <p class="font-medium">
-      Config
-      <span class="font-normal text-muted-foreground">· optional</span>
-    </p>
+    <Label for={id("config")}>Configuration</Label>
+    <SelectRoot
+      disabled={locked}
+      onValueChange={selectConfig}
+      type="single"
+      value={configSource}
+    >
+      <SelectTrigger class="w-full" id={id("config")}>
+        {chosenPath ? chosenPath.split("/").at(-1) : "Create a new config"}
+      </SelectTrigger>
+      <SelectContent>
+        <SelectItem label="Create a new config" value="new" />
+        {#each candidates as file (file.path)}
+          <SelectItem
+            label={file.path.split("/.cloudflared/").at(-1) ?? file.path}
+            value={file.path}
+          />
+        {/each}
+        {#if chosenPath && !candidates.some((file) => file.path === chosenPath)}
+          <SelectItem
+            label={chosenPath.split("/").at(-1) ?? chosenPath}
+            value={chosenPath}
+          />
+        {/if}
+        <SelectItem label="Browse files…" value="browse" />
+      </SelectContent>
+    </SelectRoot>
+    {@render failure(scanError)}
     {#if chosenPath}
-      <div class="flex min-w-0 items-start gap-2">
-        <span
-          class="min-w-0 flex-1 break-all font-mono text-code text-muted-foreground select-text"
-          >{chosenPath}</span
-        >
-        <Button disabled={locked} onclick={removeConfig} variant="ghost"
-          >Remove</Button
-        >
-      </div>
+      <p
+        class="break-all font-mono text-code text-muted-foreground select-text"
+        title={chosenPath}
+      >
+        {shortPath(chosenPath)}
+      </p>
       {#if picking}
         <p class="text-callout text-muted-foreground" role="status">
           Reading config…
@@ -284,28 +355,21 @@
         {@render configPreview(preview)}
       {/if}
     {:else}
-      <Button
-        class="self-start"
-        disabled={locked}
-        onclick={loadConfig}
-        variant="outline"
-        ><FileText class="size-3.5" />
-        Load config…</Button
-      >
-      <div class="mt-2 border-t-[0.5px] border-border pt-3">
-        <p class="text-callout text-muted-foreground">
-          A new config will be created at
-        </p>
-        <div class="mt-1.5 flex min-w-0 items-start gap-2">
-          <span
-            class="min-w-0 flex-1 break-all font-mono text-code text-muted-foreground select-text"
-            >{destination ?? "Finding your config folder…"}</span
+      <div class="mt-1.5 flex min-w-0 items-center gap-3">
+        <div class="min-w-0 flex-1">
+          <p class="font-medium">{projectFilename(project.name)}</p>
+          <p
+            class="break-all font-mono text-code text-muted-foreground select-text"
+            title={saveDirectory ?? undefined}
           >
-          <Button disabled={locked} onclick={chooseDirectory} variant="outline"
-            ><Folder class="size-3.5" />
-            Change…</Button
-          >
+            {saveDirectory
+              ? `${shortPath(saveDirectory)}/`
+              : "Finding your config folder…"}
+          </p>
         </div>
+        <Button disabled={locked} onclick={chooseDirectory} variant="ghost"
+          >Change…</Button
+        >
       </div>
       {#if !saveDirectory}
         {@render failure(directoryError)}
