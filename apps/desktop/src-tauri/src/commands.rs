@@ -581,6 +581,14 @@ pub async fn detect_cloudflared(core: CoreState<'_>) -> Res<Option<Binary>> {
     Ok(core.rediscover().await)
 }
 
+#[tauri::command]
+pub async fn install_cloudflared(core: CoreState<'_>) -> Res<Binary> {
+    let installed = crate::installer::install(&core.data_dir).await?;
+    // Installation is an explicit choice: select the managed copy even if a stale custom path exists.
+    crate::onboarding::select_cloudflared(core, Some(installed.path)).await?
+        .ok_or_else(|| "cloudflared was installed but could not be selected. Check again or choose its executable.".into())
+}
+
 // async = off the main thread: SMAppService calls are blocking XPC round-trips, and a
 // blocked main thread freezes the webview's animations (the Switch thumb jumps).
 #[tauri::command]

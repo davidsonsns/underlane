@@ -10,6 +10,7 @@ import type {
   ImportReport,
   LoginItem,
   LogLine,
+  OnboardingStatus,
   Overview,
   ProjectConfigPreview,
   RequestDetail,
@@ -26,6 +27,8 @@ export const api = {
     invoke<string>("add_quick_tunnel", { group, inspect, name, origin }),
   addToken: (name: string, token: string, group: string) =>
     invoke<string>("add_token_tunnel", { group, name, token }),
+  cancelOnboardingLogin: (requestId: string) =>
+    invoke<void>("cancel_onboarding_login", { requestId }),
   cancelProjectSetup: (id: string, requestId: string) =>
     invoke<void>("cancel_project_setup", { id, requestId }),
   checkConfigChange: (id: string) =>
@@ -36,6 +39,9 @@ export const api = {
     invoke<void>("clear_logs", { tunnelId }),
   clearRequests: (tunnelId: string | null) =>
     invoke<void>("clear_requests", { tunnelId }),
+  completeOnboarding: () => invoke<void>("complete_onboarding"),
+  connectCloudflare: (requestId: string) =>
+    invoke<void>("connect_cloudflare", { requestId }),
   connectHostnameDns: (id: string, hostname: string, token: string) =>
     invoke<HostnameDns>("connect_hostname_dns", { hostname, id, token }),
   createHostnameDns: (id: string, hostname: string) =>
@@ -62,6 +68,7 @@ export const api = {
   hidePopover: () => invoke<void>("hide_popover"),
   importPaths: (paths: string[]) =>
     invoke<ImportReport>("import_paths", { paths }),
+  installCloudflared: () => invoke<Binary>("install_cloudflared"),
   listRequests: (
     tunnelId: string | null,
     search?: string,
@@ -79,6 +86,7 @@ export const api = {
   loadHostnames: (id: string) =>
     invoke<HostnameConfig>("load_hostnames", { id }),
   loginItem: () => invoke<LoginItem>("login_item_status"),
+  onboardingStatus: () => invoke<OnboardingStatus>("onboarding_status"),
   openConfigInEditor: (id: string) =>
     invoke<void>("open_config_in_editor", { id }),
   openDashboard: (view?: string) =>
@@ -121,6 +129,8 @@ export const api = {
   saveSettings: (settings: Settings) =>
     invoke<void>("save_settings", { settings }),
   scanDefault: () => invoke<Candidate[]>("scan_default"),
+  selectCloudflared: (path: string | null) =>
+    invoke<Binary | null>("select_cloudflared", { path }),
   setLaunchAtLogin: (enabled: boolean) =>
     invoke<LoginItem>("set_launch_at_login", { enabled }),
   setRequestCapturePaused: (tunnelId: string, paused: boolean) =>

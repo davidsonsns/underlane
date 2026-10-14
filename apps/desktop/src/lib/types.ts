@@ -105,6 +105,11 @@ export interface Binary {
   version: string | null;
 }
 
+export interface OnboardingStatus {
+  account_connected: boolean;
+  complete: boolean;
+}
+
 export interface Settings {
   cloudflared_path: string | null;
   default_loglevel: string;

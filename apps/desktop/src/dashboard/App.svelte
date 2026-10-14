@@ -9,17 +9,19 @@
   import { fade } from "svelte/transition";
   import LaneGlyph from "$lib/components/app/LaneGlyph.svelte";
   import { Badge } from "$lib/components/ui/badge/index.js";
+  import { Button } from "$lib/components/ui/button/index.js";
   import { kbRing } from "$lib/components/ui/mac";
   import { Toaster } from "$lib/components/ui/sonner/index.js";
   import { Provider as TooltipProvider } from "$lib/components/ui/tooltip/index.js";
   import { cn } from "$lib/utils";
-  import { api } from "../lib/api";
+  import { api, errorText } from "../lib/api";
   import { snapshot } from "../lib/snapshot.svelte";
   import { store } from "../lib/store.svelte";
   import { motion } from "../lib/theme";
   import AddSheet from "./AddSheet.svelte";
   import type { AddTab } from "./AddSheetBody.svelte";
   import Logs from "./Logs.svelte";
+  import Onboarding from "./Onboarding.svelte";
   import Requests from "./Requests.svelte";
   import { track } from "./reactivity";
   import Settings from "./Settings.svelte";
@@ -27,6 +29,10 @@
 
   type View = "tunnels" | "requests" | "logs" | "settings";
   let view = $state<View>("tunnels");
+  let onboarding = $state<boolean | null>(null);
+  let onboardingError = $state<string | null>(null);
+  let existingAuthorization = $state(false);
+  let alive = true;
   let focusId = $state<string | null>(null);
   let adding = $state(false);
   let addTab = $state<AddTab>("project");
@@ -49,6 +55,9 @@
   } | null>(null);
 
   function navigate(target: string) {
+    if (onboarding !== false) {
+      return;
+    }
     const [v, id] = (target.startsWith("#") ? target.slice(1) : target).split(
       ":"
     );
@@ -119,9 +128,7 @@
   onMount(() => {
     inactive(!document.hasFocus());
     store.init();
-    if (location.hash) {
-      navigate(location.hash);
-    }
+    loadOnboarding();
     const subs = [
       listen<string>("navigate", (e) => navigate(e.payload)),
       listen<SnapshotRequest>("e2e-snapshot", (e) => {
@@ -131,11 +138,48 @@
       }),
     ];
     return () => {
+      alive = false;
       for (const subscription of subs) {
         subscription.then((unsubscribe) => unsubscribe());
       }
     };
   });
+
+  async function loadOnboarding() {
+    onboardingError = null;
+    try {
+      const status = await api.onboardingStatus();
+      if (!alive) {
+        return;
+      }
+      existingAuthorization = status.account_connected;
+      onboarding = !status.complete;
+      if (status.complete && location.hash) {
+        navigate(location.hash);
+      }
+    } catch (e) {
+      if (alive) {
+        onboardingError = errorText(e);
+      }
+    }
+  }
+
+  async function finishOnboarding(mode: "project" | null, id?: string) {
+    await api.completeOnboarding();
+    await store.refresh();
+    if (store.error) {
+      throw new Error(store.error);
+    }
+    onboarding = false;
+    focusId = id ?? null;
+    view = "tunnels";
+    await tick();
+    if (mode === "project") {
+      navigate("add:project");
+    } else {
+      document.querySelector<HTMLElement>("[data-add-tunnel]")?.focus();
+    }
+  }
 
   function openAdd(e: MouseEvent) {
     addTrigger = e.currentTarget as HTMLElement;
@@ -249,62 +293,81 @@
 
 <!-- One tooltip provider and one toaster per window (02 §1.4, §2). -->
 <TooltipProvider delayDuration={250} ignoreNonKeyboardFocus>
-  <!-- Neutral sidebar and content surfaces share the same light/dark palette. -->
-  <div class="grid h-screen grid-cols-[208px_1fr]">
-    <aside
-      class="flex flex-col border-e-[0.5px] border-border bg-sidebar px-2.5 pb-2.5"
-      data-tauri-drag-region
-    >
-      <!-- Room for the traffic lights: the dashboard has an overlay title bar
-         (TitleBarStyle::Overlay in src-tauri/src/tray.rs), so the webview starts at y=0. -->
-      <div class="h-[46px] flex-none" data-tauri-drag-region></div>
-      <div
-        class="flex items-center gap-2 px-2 pb-4 text-lg font-semibold"
+  {#if onboarding === null}
+    <main class="flex h-screen items-center justify-center bg-background">
+      <div class="max-w-md p-8 text-center">
+        {#if onboardingError}
+          <p class="mb-4 text-callout text-destructive" role="alert">
+            {onboardingError}
+          </p>
+          <Button onclick={loadOnboarding}>Try again</Button>
+        {:else}
+          <p class="text-callout text-muted-foreground" role="status">
+            Opening Underlane…
+          </p>
+        {/if}
+      </div>
+    </main>
+  {:else if onboarding}
+    <Onboarding {existingAuthorization} oncomplete={finishOnboarding} />
+  {:else}
+    <!-- Neutral sidebar and content surfaces share the same light/dark palette. -->
+    <div class="grid h-screen grid-cols-[208px_1fr]">
+      <aside
+        class="flex flex-col border-e-[0.5px] border-border bg-sidebar px-2.5 pb-2.5"
         data-tauri-drag-region
       >
-        <LaneGlyph class="pointer-events-none text-foreground" size={20} />
-        <span>Underlane</span>
-      </div>
-      {@render sidebarNavigation()}
-      {@render cloudflaredStatus()}
-    </aside>
+        <!-- Room for the traffic lights: the dashboard has an overlay title bar
+         (TitleBarStyle::Overlay in src-tauri/src/tray.rs), so the webview starts at y=0. -->
+        <div class="h-[46px] flex-none" data-tauri-drag-region></div>
+        <div
+          class="flex items-center gap-2 px-2 pb-4 text-lg font-semibold"
+          data-tauri-drag-region
+        >
+          <LaneGlyph class="pointer-events-none text-foreground" size={20} />
+          <span>Underlane</span>
+        </div>
+        {@render sidebarNavigation()}
+        {@render cloudflaredStatus()}
+      </aside>
 
-    <main
-      class="min-w-0 overflow-hidden bg-background [view-transition-name:page]"
-    >
-      {#if view === "tunnels"}
-        <Tunnels {focusId} onadd={openAdd} />
-      {:else if view === "requests"}
-        <Requests {focusId} bind:this={requestsRef} />
-      {:else if view === "logs"}
-        <Logs {focusId} />
-      {:else}
-        <Settings />
-      {/if}
-    </main>
-  </div>
+      <main
+        class="min-w-0 overflow-hidden bg-background [view-transition-name:page]"
+      >
+        {#if view === "tunnels"}
+          <Tunnels {focusId} onadd={openAdd} />
+        {:else if view === "requests"}
+          <Requests {focusId} bind:this={requestsRef} />
+        {:else if view === "logs"}
+          <Logs {focusId} />
+        {:else}
+          <Settings />
+        {/if}
+      </main>
+    </div>
 
-  <!-- After adding one tunnel, focus goes to its row in the Tunnels list (it's selected through
+    <!-- After adding one tunnel, focus goes to its row in the Tunnels list (it's selected through
      focusId). Otherwise, without a live trigger (opened from the popover, or the empty state went
      away after creation), focus goes to the Tunnels toolbar's New button. -->
-  <AddSheet
-    onadded={afterCreation(sheetSession)}
-    returnFocus={() => {
-      const row = addedId
-        ? document.querySelector<HTMLElement>(`[data-tunnel-id="${addedId}"]`)
-        : null;
-      // Focus is restored with preventScroll, so bring a new row that's below the fold into view.
-      row?.scrollIntoView({ block: "nearest" });
-      return (
-        row ||
-        (addTrigger?.isConnected
-          ? addTrigger
-          : document.querySelector<HTMLElement>("[data-add-tunnel]"))
-      );
-    }}
-    tab={addTab}
-    bind:open={adding}
-  />
+    <AddSheet
+      onadded={afterCreation(sheetSession)}
+      returnFocus={() => {
+        const row = addedId
+          ? document.querySelector<HTMLElement>(`[data-tunnel-id="${addedId}"]`)
+          : null;
+        // Focus is restored with preventScroll, so bring a new row that's below the fold into view.
+        row?.scrollIntoView({ block: "nearest" });
+        return (
+          row ||
+          (addTrigger?.isConnected
+            ? addTrigger
+            : document.querySelector<HTMLElement>("[data-add-tunnel]"))
+        );
+      }}
+      tab={addTab}
+      bind:open={adding}
+    />
+  {/if}
 
   <Toaster
     position="bottom-right"

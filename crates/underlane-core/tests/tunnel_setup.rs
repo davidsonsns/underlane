@@ -103,6 +103,14 @@ async fn recovery_accepts_supported_longer_tunnel_secrets() {
 }
 
 #[tokio::test]
+async fn first_project_accepts_cloudflared_null_for_an_empty_account() {
+    let f = fixture("null-list", true);
+    assert_eq!(setup(&f).await.unwrap().tunnel_id, TUNNEL);
+    assert_eq!(command_count(&f, "create"), 1);
+    assert_eq!(command_count(&f, "list"), 2);
+}
+
+#[tokio::test]
 async fn existing_auth_creates_verified_identity_and_reports_stages() {
     let f = fixture("ok", true);
     let stages = Mutex::new(Vec::new());

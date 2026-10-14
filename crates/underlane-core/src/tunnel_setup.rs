@@ -332,7 +332,8 @@ async fn list(
     ];
     let output = cli::exec(binary, invocation(args, data, cancel, Duration::from_secs(30))).await
         .context("Could not verify tunnels with the default Cloudflare certificate. Check its account access and your connection, then retry.")?;
-    Ok(output.stdout.deserialize()?)
+    // cloudflared encodes an empty account's nil tunnel slice as JSON null.
+    Ok(output.stdout.deserialize::<Option<Vec<RemoteTunnel>>>()?.unwrap_or_default())
 }
 
 fn verify_remote(identity: &SetupIdentity, tunnels: &[RemoteTunnel]) -> anyhow::Result<()> {

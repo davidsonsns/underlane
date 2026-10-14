@@ -136,6 +136,7 @@ export function installHostnameMock({ delay, mockName }) {
         message: null,
         status: "unsupported",
       }),
+      onboarding_status: () => ({ account_connected: false, complete: true }),
       overview: () => structuredClone(m.overview),
 
       probe_services: () =>

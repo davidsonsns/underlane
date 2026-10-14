@@ -1,6 +1,8 @@
 //! Underlane: a menu bar app that runs and supervises cloudflared tunnels.
 
 mod commands;
+mod installer;
+mod onboarding;
 mod e2e;
 mod hostnames;
 mod setup;
@@ -112,6 +114,12 @@ pub fn run() {
             commands::clear_requests,
             commands::save_settings,
             commands::detect_cloudflared,
+            commands::install_cloudflared,
+            onboarding::onboarding_status,
+            onboarding::complete_onboarding,
+            onboarding::select_cloudflared,
+            onboarding::connect_cloudflare,
+            onboarding::cancel_onboarding_login,
             commands::login_item_status,
             commands::set_launch_at_login,
             commands::open_dashboard,
@@ -142,9 +150,9 @@ pub fn run() {
                 e2e::start(handle.clone(), port);
             }
 
-            // First run (nothing imported yet): open the dashboard so there's something to see.
+            // First run: open Guided welcome. An existing installation retains its dashboard.
             // Never pop a window when macOS opened Underlane at login.
-            if !at_login && core.db.tunnels().map(|t| t.is_empty()).unwrap_or(false) && std::env::var_os("UNDERLANE_E2E_PORT").is_none() {
+            if !at_login && core.db.kv_get("onboarding_complete").ok().flatten().as_deref() != Some("1") && core.db.tunnels().map(|t| t.is_empty()).unwrap_or(false) && std::env::var_os("UNDERLANE_E2E_PORT").is_none() {
                 tray::open_dashboard(&handle, None);
             }
             Ok(())

@@ -62,7 +62,11 @@ including another Mac app, so it was renamed before the first release.
 
 ## Setup
 
-Requirements: macOS 13.3 or later (built and tested on macOS 27, Apple Silicon), plus:
+Requirements: macOS 13.3 or later (built and tested on macOS 27, Apple Silicon).
+Guided welcome automatically checks for a working `cloudflared`. If it is missing, choose
+**Install for Underlane** to download a verified official release for Apple Silicon or Intel
+into the app's data folder. This requires no administrator password or system service.
+You can also choose an existing executable, use the linked installation guide, or install it manually:
 
 ```sh
 brew install cloudflared   # Underlane finds it on PATH or in Homebrew's folders
@@ -84,8 +88,21 @@ make build      # pnpm install --frozen-lockfile + tauri build -> target/release
 make install    # same, then copies it to ~/Applications (needed for launch at login)
 ```
 
-Open `Underlane.app`. On first run it opens the dashboard. Choose **New** for a project or quick
-tunnel. New project configs are drafts: choose **Set up tunnel**, complete Cloudflare login in
+Open `Underlane.app`. First run opens **Guided welcome → Connector → First tunnel**.
+**Use temporary link** starts a quick tunnel without a Cloudflare account and shows its public URL
+when connected. Anyone with the link can access the local service; the URL changes each time the
+tunnel starts and stops working when the tunnel stops or Underlane quits. Quick tunnels are for
+testing and development.
+
+**Connect Cloudflare** is optional, for users who want their own hostname. It authorizes
+cloudflared in the browser (or verifies existing authorization), then offers project creation.
+Authorization grants tunnel-management access and saves the default account certificate; it does
+not configure a hostname or visitor access rules. Installation errors and cancelled authorization
+can be retried without restarting onboarding. Completed onboarding is remembered; existing users
+with saved tunnels continue directly to the dashboard.
+
+From the dashboard, choose **New** for a project or quick tunnel. New project configs are drafts:
+choose **Set up tunnel**, complete Cloudflare login in
 your browser if prompted, then configure hostnames and start from the project. Loading a config shows its
 hostnames and endpoints before creation and uses that original file without copying it.
 
@@ -123,6 +140,10 @@ pnpm run fix    # Apply Biome's safe fixes and formatting
 pnpm run analyze # Fallow: unused code, duplication, and complexity; fails on findings
 pnpm run test:scripts # Local harness/browser-mock tests; no native app or tunnel needed
 ```
+
+With Vite running, `node e2e/onboarding-browser.mjs` checks the guided flow using synthetic IPC.
+The optional live installer check downloads only into disposable test data:
+`cargo test -p underlane --lib installer::tests::live_installs_verified_official_release -- --ignored --nocapture`.
 
 `pnpm run check` still runs Svelte/TypeScript diagnostics. Biome's Svelte support is
 experimental, so keep this check alongside linting. Biome skips generated shadcn

@@ -135,6 +135,7 @@ await installPageMock(page, () => {
         message: null,
         status: "unsupported",
       }),
+      onboarding_status: () => ({ account_connected: false, complete: true }),
       overview: () => structuredClone(overview),
       preview_separate_tunnel: () => ({
         config_path: selected.config_path,

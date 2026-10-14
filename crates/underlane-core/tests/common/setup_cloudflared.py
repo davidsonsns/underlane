@@ -41,7 +41,7 @@ if command == "list":
         sys.exit(0)
     if mode == "existing-name" and not remote:
         remote = [{"id": ident, "name": "Test project", "deleted_at": "0001-01-01T00:00:00Z"}]
-    print(json.dumps(remote))
+    print('null' if mode == "null-list" and not remote else json.dumps(remote))
     sys.exit(0)
 
 assert command == "create"

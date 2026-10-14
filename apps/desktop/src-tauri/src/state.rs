@@ -322,6 +322,16 @@ fn check_config_change_inner(db: &Db, id: &str, config_state: impl Fn() -> Tunne
     Ok(Some(result))
 }
 
+async fn discover_binary(data_dir: &std::path::Path, configured: Option<&str>) -> Option<Binary> {
+    if let Some(found) = cloudflared::discover(configured).await {
+        return Some(found);
+    }
+    if configured.is_some_and(|path| !path.trim().is_empty()) {
+        return None;
+    }
+    crate::installer::validate(&crate::installer::managed_path(data_dir)).await.ok()
+}
+
 impl Core {
     pub async fn init(handle: AppHandle, data_dir: PathBuf, shim: Option<PathBuf>) -> anyhow::Result<Arc<Core>> {
         std::fs::create_dir_all(&data_dir)?;
@@ -332,7 +342,10 @@ impl Core {
         let db = Arc::new(Db::open(&data_dir.join("underlane.db"))?);
         let settings = db.settings()?;
         let capture: SharedOptions = Arc::new(RwLock::new(capture_options(&settings)));
-        let binary = cloudflared::discover(settings.cloudflared_path.as_deref()).await;
+        if !db.tunnels()?.is_empty() {
+            db.kv_set("onboarding_complete", "1")?;
+        }
+        let binary = discover_binary(&data_dir, settings.cloudflared_path.as_deref()).await;
 
         let (write_tx, write_rx) = mpsc::channel::<Write>(WRITE_QUEUE);
         let (state_tx, state_rx) = mpsc::unbounded_channel::<TunnelState>();
@@ -551,9 +564,10 @@ impl Core {
 
     pub async fn rediscover(&self) -> Option<Binary> {
         let path = self.settings.read().unwrap().cloudflared_path.clone();
-        let b = cloudflared::discover(path.as_deref()).await;
+        let b = discover_binary(&self.data_dir, path.as_deref()).await;
         *self.sup.config().cloudflared.write().unwrap() = b.as_ref().map(|b| PathBuf::from(&b.path));
         *self.binary.write().unwrap() = b.clone();
+        self.notify_changed();
         b
     }
 

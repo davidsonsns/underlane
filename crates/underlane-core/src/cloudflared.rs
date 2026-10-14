@@ -63,8 +63,8 @@ pub async fn login_shell_path() -> Option<String> {
     (!s.is_empty()).then_some(s)
 }
 
-fn search_path(path_var: &str) -> Option<PathBuf> {
-    std::env::split_paths(path_var).map(|d| d.join("cloudflared")).find(|p| is_executable(p))
+fn search_path(path_var: &str) -> Vec<PathBuf> {
+    std::env::split_paths(path_var).map(|d| d.join("cloudflared")).filter(|p| is_executable(p)).collect()
 }
 
 /// Locate cloudflared: explicit setting, then PATH (process and login shell), then common locations.
@@ -73,22 +73,29 @@ pub async fn discover(configured: Option<&str>) -> Option<Binary> {
     if let Some(c) = configured.filter(|c| !c.trim().is_empty()) {
         candidates.push((expand_tilde(c.trim()), "settings"));
     }
-    if let Some(p) = std::env::var("PATH").ok().and_then(|p| search_path(&p)) {
-        candidates.push((p, "path"));
+    if let Ok(path) = std::env::var("PATH") {
+        candidates.extend(search_path(&path).into_iter().map(|p| (p, "path")));
     }
-    if let Some(p) = login_shell_path().await.and_then(|p| search_path(&p)) {
-        candidates.push((p, "path"));
+    if let Some(path) = login_shell_path().await {
+        candidates.extend(search_path(&path).into_iter().map(|p| (p, "path")));
     }
     for p in common_locations() {
         candidates.push((p, "common location"));
     }
+    discover_candidates(candidates).await
+}
+
+async fn discover_candidates(candidates: Vec<(PathBuf, &str)>) -> Option<Binary> {
+    let mut checked = HashSet::new();
     for (p, source) in candidates {
+        if !checked.insert(p.clone()) { continue; }
         if is_executable(&p) {
-            let version = version(&p).await;
-            return Some(Binary { path: p.to_string_lossy().into_owned(), version, source: source.into() });
+            if let Some(version) = version(&p).await {
+                return Some(Binary { path: p.to_string_lossy().into_owned(), version: Some(version), source: source.into() });
+            }
         }
         if source == "settings" {
-            // A configured path that doesn't exist shouldn't silently fall back.
+            // An explicit path that cannot run cloudflared must not silently fall back.
             return None;
         }
     }
@@ -103,8 +110,41 @@ pub async fn version(bin: &Path) -> Option<String> {
 }
 
 pub fn parse_version(text: &str) -> Option<String> {
-    let rest = text.split("version").nth(1)?;
-    rest.split_whitespace().next().map(String::from)
+    text.lines().find_map(|line| {
+        let version = line.trim().strip_prefix("cloudflared version ")?.split_whitespace().next()?;
+        let parts: Vec<_> = version.split('.').collect();
+        (parts.len() == 3 && parts.iter().all(|part| !part.is_empty() && part.bytes().all(|byte| byte.is_ascii_digit())))
+            .then(|| version.to_string())
+    })
+}
+
+#[cfg(all(test, unix))]
+mod discovery_tests {
+    use super::*;
+    use std::os::unix::fs::PermissionsExt;
+
+    #[tokio::test]
+    async fn automatic_search_skips_broken_binaries_but_explicit_selection_does_not() {
+        let directory = tempfile::tempdir().unwrap();
+        let broken = directory.path().join("broken");
+        let valid = directory.path().join("valid");
+        std::fs::write(&broken, "#!/bin/sh\necho 'another tool version 2026.9.1'\n").unwrap();
+        std::fs::write(&valid, "#!/bin/sh\necho 'cloudflared version 2026.9.1'\n").unwrap();
+        for path in [&broken, &valid] {
+            std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o700)).unwrap();
+        }
+        let found = discover_candidates(vec![(broken.clone(), "path"), (valid.clone(), "common location")]).await.unwrap();
+        assert_eq!(found.path, valid.to_string_lossy());
+        assert!(discover_candidates(vec![(broken, "settings"), (valid, "path")]).await.is_none());
+    }
+
+    #[test]
+    fn version_requires_cloudflared_identity_and_numeric_release() {
+        assert_eq!(parse_version("cloudflared version 2026.9.1 (built test)"), Some("2026.9.1".into()));
+        for output in ["other version 2026.9.1", "cloudflared version arbitrary", "cloudflared version 2026.9"] {
+            assert_eq!(parse_version(output), None);
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq)]

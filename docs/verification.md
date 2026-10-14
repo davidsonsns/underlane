@@ -660,3 +660,31 @@ not exercised; account and CLI behavior used synthetic fixtures.
   failure reservation, stale completion rejection, invalid storage, unavailable storage,
   clock rollback, and status-only persistence. Full frontend suite: 80 passed.
 - Svelte check: zero errors/warnings. Updated debug app bundle built successfully.
+
+## Guided welcome onboarding (2026-10-14)
+
+- First run uses Welcome → Connector → First tunnel. Detection validates executable identity
+  and continues past broken automatic candidates; explicit invalid paths do not fall back.
+  Existing users with saved tunnels retain the dashboard and completion persists in SQLite.
+- Browser checks on the production dashboard passed installation failure/retry, automatic
+  recheck after returning to the window, quick-tunnel start/retry without duplicate creation,
+  optional authorization failure/cancellation/retry, existing authorization, completion,
+  legacy users, and light/dark/small-window layouts. Screenshots: `e2e/out/onboarding/`.
+- Packaged native checks passed fresh welcome, remembered completion, and legacy migration.
+  Existing config-chooser and separate-tunnel browser checks also passed after the startup change.
+- Eight installer unit tests cover digest/size/metadata, safe archive extraction, bounds,
+  readiness, atomic promotion and cleanup. The ignored live installer test passed against an
+  official release in disposable app data, including final executable verification and cleanup.
+- Authorization fixtures cover missing/invalid/existing certificates, authenticated list
+  verification, fresh accounts returning JSON null, malformed responses and cancellation.
+  First-project setup also accepts the empty-account null response without repeating creation.
+- Frontend suite: 130 passed; harness helpers: 6 passed. Svelte check and repository lint passed.
+  Final serial Rust workspace suite: 235 passed, 3 ignored, including doctests.
+  Independent review findings about invalid automatic candidates and empty-account responses
+  were fixed and reviewed again. The browser check caught and verifies the late-login-success
+  cancellation race.
+
+No real Cloudflare authorization, DNS change, system binary installation, or personal app-data
+mutation was performed. Live browser authorization and notarized Gatekeeper delivery were not
+exercised. An intermediate concurrent Cargo build/test run passed its 234 tests but lost Tauri
+dependencies during rustdoc; the separate serial doctest run passed.
