@@ -95,7 +95,19 @@ section. Drag Underlane's circular Lane Cut icon into the visible part.
 make dev        # Vite + cargo with hot reload (frontend) and rebuild-on-change (Rust)
 make test       # cargo test --workspace, vitest, svelte-check
 make e2e        # end-to-end check against a real quick tunnel (no Cloudflare account needed)
+npm run lint   # Biome lint + formatting checks with Ultracite's core and Svelte presets
+npm run fix    # Apply Biome's safe fixes and formatting
+npm run analyze # Fallow: unused code, duplication, and complexity; fails on findings
 ```
+
+`npm run check` still runs Svelte/TypeScript diagnostics. Biome's Svelte support is
+experimental, so keep this check alongside linting. Biome skips generated shadcn
+components in `src/lib/components/ui`; Fallow still follows their imports. Fallow
+includes both window entry points, the Svelte config, and standalone verification
+scripts, and excludes Rust build output. PascalCase and kebab-case Svelte component
+filenames are supported.
+Existing lint and analysis findings are reported without a baseline or automatic
+source cleanup. These commands run locally; no CI or Git hooks are installed.
 
 Useful environment variables:
 

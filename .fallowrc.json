@@ -1,0 +1,11 @@
+{
+  "$schema": "./node_modules/fallow/schema.json",
+  "entry": [
+    "src/dashboard/main.ts",
+    "src/popover/main.ts",
+    "svelte.config.js",
+    "e2e/*.mjs",
+    "scripts/*.mjs"
+  ],
+  "ignorePatterns": ["target/**", "src-tauri/gen/**", "output/**"]
+}
