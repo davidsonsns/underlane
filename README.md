@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="src-tauri/icons/app-icon.png" alt="Underlane's Lane Cut logo" width="128" height="128">
+  <img src="apps/desktop/src-tauri/icons/app-icon.png" alt="Underlane's Lane Cut logo" width="128" height="128">
 </p>
 
 # Underlane
@@ -97,6 +97,21 @@ name across project renames. Setup supports the default `~/.cloudflared/cert.pem
 If you use a menu bar manager (Hidden Bar, Ice, Bartender), new items may land in its hidden
 section. Drag Underlane's circular Lane Cut icon into the visible part.
 
+## Repository layout
+
+```text
+apps/desktop/          Svelte frontend, app configuration, and src-tauri shell
+crates/underlane-core/ Shared Rust core
+scripts/               Native build and verification helpers
+e2e/                   Desktop end-to-end checks
+```
+
+Run the documented commands from the repository root. The pnpm workspace owns
+`apps/*`; root scripts forward desktop commands to the `underlane` package.
+The Cargo workspace shares its lockfile and root `target/` directory across
+`crates/underlane-core` and `apps/desktop/src-tauri`. Frontend output lives in
+`apps/desktop/dist`; app bundles still land in `target/`.
+
 ## Dev loop
 
 ```sh
@@ -111,7 +126,7 @@ pnpm run test:scripts # Local harness/browser-mock tests; no native app or tunne
 
 `pnpm run check` still runs Svelte/TypeScript diagnostics. Biome's Svelte support is
 experimental, so keep this check alongside linting. Biome skips generated shadcn
-components in `src/lib/components/ui`; Fallow still follows their imports. Fallow
+components in `apps/desktop/src/lib/components/ui`; Fallow still follows their imports. Fallow
 includes both window entry points, the Svelte config, and standalone verification
 scripts, and excludes Rust build output. PascalCase and kebab-case Svelte component
 filenames are supported.
@@ -154,7 +169,7 @@ a script.
     from the config directory, the watchdog shim, and orphan reaping
   - one-shot command classification, config selection, timeout/cancellation/drop cleanup, and
     secret redaction; SQLite migration tests also cover preservation, rollback and newer schemas
-- `src/lib/*.test.ts` (Vitest) cover the UI's pure helpers: `format` (copy as curl, hex dump, JSON
+- `apps/desktop/src/lib/*.test.ts` (Vitest) cover the UI's pure helpers: `format` (copy as curl, hex dump, JSON
   detection), `listnav` (list keyboard navigation), `latest` (debounced latest-only async jobs),
   `combobox` (the group picker's rows), `focus` (returning focus when a dialog closes) and `utils`
   (class merging with the custom text sizes).
@@ -180,7 +195,7 @@ a script.
 ┌──────────────────────────── Underlane.app (one process) ─────────────────────────────┐
 │  WKWebView: popover.html + index.html (Svelte 5)        tray icon (NSStatusItem)   │
 │        │  invoke / events                                    ▲ count              │
-│  src-tauri  (commands, tray & windows, SMAppService, App Nap, e2e control server)  │
+│  Tauri shell (commands, tray & windows, SMAppService, App Nap, e2e control server) │
 │        │                                                                          │
 │  underlane-core (plain Rust, no Tauri)                                               │
 │   ├─ supervisor ── spawns ──▶ Underlane --cloudflared-shim ──▶ cloudflared tunnel …  │
@@ -206,14 +221,14 @@ a script.
   - `db.rs` is the SQLite layer, with transactional versioned migrations (current schema v1).
   - `shim.rs` is the watchdog that kills cloudflared if the app dies.
   - `decode.rs` handles display-time gzip/br/deflate decoding.
-- **`src-tauri`** is the app shell:
+- **`apps/desktop/src-tauri`** is the app shell:
   - `state.rs` wires the supervisor to SQLite (a bounded, batched writer) and to the UI (events).
   - `tray.rs` builds the menu bar item, the popover (vibrancy, positioned under the icon) and the
     dashboard window.
   - `platform.rs` covers `SMAppService`, App Nap and state restoration.
   - `commands.rs` holds the UI commands.
   - `e2e.rs` is the test-only control server.
-- **`src/`** is the Svelte 5 UI, styled with Tailwind v4 and shadcn-svelte (Luma style, tuned to
+- **`apps/desktop/src/`** is the Svelte 5 UI, styled with Tailwind v4 and shadcn-svelte (Luma style, tuned to
   macOS). `popover/` is the menu bar panel. `dashboard/` has the Tunnels, Requests, Logs and
   Settings views. `lib/` holds the API, store and formatting helpers, and `lib/components/` the
   components: `ui/` are the shadcn-svelte copies (with Underlane's macOS edits), `app/` are Underlane's

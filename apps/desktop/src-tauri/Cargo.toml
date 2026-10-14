@@ -22,7 +22,7 @@ default = []
 e2e = ["dep:bytes", "dep:http-body-util", "dep:hyper", "dep:hyper-util", "dep:uuid"]
 
 [dependencies]
-underlane-core = { path = "../crates/underlane-core" }
+underlane-core = { path = "../../../crates/underlane-core" }
 anyhow = "1"
 base64 = "0.22"
 bytes = { version = "1", optional = true }

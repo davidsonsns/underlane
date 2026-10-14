@@ -2,7 +2,7 @@
 // Usage: swift scripts/make-icons.swift <out-dir>
 import AppKit
 
-let out = CommandLine.arguments.count > 1 ? CommandLine.arguments[1] : "src-tauri/icons"
+let out = CommandLine.arguments.count > 1 ? CommandLine.arguments[1] : "apps/desktop/src-tauri/icons"
 
 func png(_ size: Int, _ path: String, _ draw: (CGContext, CGFloat) -> Void) {
     let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: size, pixelsHigh: size, bitsPerSample: 8,

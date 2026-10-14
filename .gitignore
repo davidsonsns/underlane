@@ -7,6 +7,6 @@ target/
 /e2e/out/
 .scratch/
 .claude/worktrees/
-/src-tauri/gen/schemas/
+/apps/desktop/src-tauri/gen/schemas/
 /docs/screenshots/session-notes.txt
 /output/logo-proposals/*/app-icons/

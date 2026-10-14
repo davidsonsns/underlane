@@ -1,9 +1,9 @@
 {
   "$schema": "./node_modules/fallow/schema.json",
   "entry": [
-    "src/dashboard/main.ts",
-    "src/popover/main.ts",
-    "svelte.config.js",
+    "apps/desktop/src/dashboard/main.ts",
+    "apps/desktop/src/popover/main.ts",
+    "apps/desktop/svelte.config.js",
     "e2e/config-badge.mjs",
     "e2e/failure-explainers.mjs",
     "e2e/hostname-modal-motion.mjs",
@@ -18,265 +18,265 @@
     "scripts/lib/harness.test.mjs",
     "e2e/lib/browser.test.mjs"
   ],
-  "ignorePatterns": ["target/**", "src-tauri/gen/**", "output/**"],
+  "ignorePatterns": ["target/**", "apps/desktop/src-tauri/gen/**", "output/**"],
   "ignoreExports": [
     {
-      "file": "src/dashboard/LogList.svelte",
+      "file": "apps/desktop/src/dashboard/LogList.svelte",
       "exports": ["focus"]
     },
     {
-      "file": "src/dashboard/RequestList.svelte",
+      "file": "apps/desktop/src/dashboard/RequestList.svelte",
       "exports": ["focus"]
     },
     {
-      "file": "src/lib/components/app/SearchAction.svelte",
+      "file": "apps/desktop/src/lib/components/app/SearchAction.svelte",
       "exports": ["focus"]
     },
     {
-      "file": "src/lib/components/ui/alert-dialog/index.ts",
+      "file": "apps/desktop/src/lib/components/ui/alert-dialog/index.ts",
       "exports": ["Content", "Description", "Root", "Title", "Trigger"]
     },
     {
-      "file": "src/lib/components/ui/alert/index.ts",
+      "file": "apps/desktop/src/lib/components/ui/alert/index.ts",
       "exports": ["Description", "Root", "Title"]
     },
     {
-      "file": "src/lib/components/ui/button/index.ts",
+      "file": "apps/desktop/src/lib/components/ui/button/index.ts",
       "exports": ["Button"]
     },
     {
-      "file": "src/lib/components/ui/collapsible/index.ts",
+      "file": "apps/desktop/src/lib/components/ui/collapsible/index.ts",
       "exports": ["Content", "Root", "Trigger"]
     },
     {
-      "file": "src/lib/components/ui/command/index.ts",
+      "file": "apps/desktop/src/lib/components/ui/command/index.ts",
       "exports": ["Root"]
     },
     {
-      "file": "src/lib/components/ui/dialog/index.ts",
+      "file": "apps/desktop/src/lib/components/ui/dialog/index.ts",
       "exports": ["Content", "Description", "Root", "Title"]
     },
     {
-      "file": "src/lib/components/ui/input-group/index.ts",
+      "file": "apps/desktop/src/lib/components/ui/input-group/index.ts",
       "exports": ["Button", "Input", "Root"]
     },
     {
-      "file": "src/lib/components/ui/input/index.ts",
+      "file": "apps/desktop/src/lib/components/ui/input/index.ts",
       "exports": ["Input"]
     },
     {
-      "file": "src/lib/components/ui/popover/index.ts",
+      "file": "apps/desktop/src/lib/components/ui/popover/index.ts",
       "exports": ["Content", "Root", "Trigger"]
     },
     {
-      "file": "src/lib/components/ui/select/index.ts",
+      "file": "apps/desktop/src/lib/components/ui/select/index.ts",
       "exports": ["Content", "Root", "Trigger"]
     },
     {
-      "file": "src/lib/components/ui/tabs/index.ts",
+      "file": "apps/desktop/src/lib/components/ui/tabs/index.ts",
       "exports": ["Content", "Root", "Trigger"]
     },
     {
-      "file": "src/lib/components/ui/toggle-group/index.ts",
+      "file": "apps/desktop/src/lib/components/ui/toggle-group/index.ts",
       "exports": ["Root"]
     }
   ],
   "health": {
     "thresholdOverrides": [
       {
-        "files": ["src/dashboard/LogList.svelte"],
+        "files": ["apps/desktop/src/dashboard/LogList.svelte"],
         "functions": ["setOpen"],
         "maxCrap": 91,
         "reason": "Keep the guarded expand/measure/scroll transaction together; the mounted UI has estimated zero coverage, while row scheduling cancellation is tested in descendant.test.ts."
       },
       {
-        "files": ["src/dashboard/LogList.svelte"],
+        "files": ["apps/desktop/src/dashboard/LogList.svelte"],
         "functions": ["onscroll"],
         "maxCrap": 57,
         "reason": "Bounded virtual scroll policy; cap/ceiling, held rows, trim jumps and accumulated upward movement are tested in list-state.test.ts. This is an estimated coverage risk score, not excessive branch complexity."
       },
       {
-        "files": ["src/dashboard/LogList.svelte"],
+        "files": ["apps/desktop/src/dashboard/LogList.svelte"],
         "functions": ["move"],
         "maxCrap": 43,
         "reason": "Keep selection changes and the live-edge catch-up ordering atomic; keyed identities must survive trimming before scroll alignment."
       },
       {
-        "files": ["src/dashboard/LogList.svelte"],
+        "files": ["apps/desktop/src/dashboard/LogList.svelte"],
         "functions": ["prune"],
         "maxCrap": 31,
         "reason": "Bounded pruning of expanded IDs below the retained minimum; no I/O or async work. CRAP is inflated by unmeasured mounted-component coverage."
       },
       {
-        "files": ["src/dashboard/LogList.svelte"],
+        "files": ["apps/desktop/src/dashboard/LogList.svelte"],
         "functions": ["edge"],
         "maxCrap": 31,
         "reason": "Keep measured variable-height viewport edge lookup in the component; tested key planning delegates here only for first-selection navigation."
       },
       {
-        "files": ["src/dashboard/RequestList.svelte"],
+        "files": ["apps/desktop/src/dashboard/RequestList.svelte"],
         "functions": ["onclick"],
         "maxCrap": 31,
         "reason": "Keep selection toggling and focus restoration together in the composite listbox; modified/clear/navigation policy is separately tested."
       },
       {
-        "files": ["src/dashboard/RequestList.svelte"],
+        "files": ["apps/desktop/src/dashboard/RequestList.svelte"],
         "functions": ["onscroll"],
         "maxCrap": 31,
         "reason": "Bounded virtual scroll policy; cap/ceiling, held rows, trim jumps and accumulated upward movement are tested in list-state.test.ts. This is an estimated coverage risk score, not excessive branch complexity."
       },
       {
-        "files": ["src/dashboard/DnsStatus.svelte"],
+        "files": ["apps/desktop/src/dashboard/DnsStatus.svelte"],
         "functions": ["run"],
         "maxCrap": 241,
         "reason": "Accept the static estimated CRAP score for the serialized DNS transaction: visibility/pending guards, cache timestamp writes, token cleanup, and alive checks must stay together. Standard cognitive/cyclomatic limits remain enforced."
       },
       {
-        "files": ["src/dashboard/TunnelDetail.svelte"],
+        "files": ["apps/desktop/src/dashboard/TunnelDetail.svelte"],
         "functions": ["setup"],
         "maxCrap": 211,
         "reason": "Mounted project setup keeps subscription readiness, request identity, secure backend setup, refresh and cleanup in one transaction; its guards prevent stale work selecting a different tunnel."
       },
       {
-        "files": ["src/dashboard/AddSheetBody.svelte"],
+        "files": ["apps/desktop/src/dashboard/AddSheetBody.svelte"],
         "functions": ["loadConfig"],
         "maxCrap": 133,
         "reason": "The native file picker and config preview form one mounted draft transaction, with cancellation/array validation, separate preview errors and teardown-safe busy cleanup."
       },
       {
-        "files": ["src/dashboard/AddSheetBody.svelte"],
+        "files": ["apps/desktop/src/dashboard/AddSheetBody.svelte"],
         "functions": ["create"],
         "maxCrap": 133,
         "reason": "A created backend ID is retained so a failed dashboard refresh never repeats a successful write; mounted ownership and busy cleanup remain in the same creation transaction."
       },
       {
-        "files": ["src/dashboard/Requests.svelte"],
+        "files": ["apps/desktop/src/dashboard/Requests.svelte"],
         "functions": ["toggleCapture"],
         "maxCrap": 133,
         "reason": "Capture pause toggling freezes tunnel and generation identity across backend writes/reads, discards pending rows and reloads only the current scope; these ordering guards remain visible together."
       },
       {
-        "files": ["src/dashboard/Requests.svelte"],
+        "files": ["apps/desktop/src/dashboard/Requests.svelte"],
         "functions": ["receiveRequest"],
         "maxCrap": 133,
         "reason": "Live request completions coordinate inflight snapshot events, current filters, held rows and already-displayed row replacement; this bounded event transaction must preserve ordering."
       },
       {
-        "files": ["src/dashboard/TunnelDetail.svelte"],
+        "files": ["apps/desktop/src/dashboard/TunnelDetail.svelte"],
         "functions": ["createSeparate"],
         "maxCrap": 91,
         "reason": "Separate-tunnel creation freezes tunnel/revision/request identity and coordinates progress subscription, backend commit and refresh; retaining this ordered transaction preserves race protections."
       },
       {
-        "files": ["src/dashboard/AddSheetBody.svelte"],
+        "files": ["apps/desktop/src/dashboard/AddSheetBody.svelte"],
         "functions": ["chooseDirectory"],
         "maxCrap": 73,
         "reason": "The native directory picker preserves draft liveness and locked/busy state through cancellation and failures; keeping this bounded transaction intact avoids scattering cleanup."
       },
       {
-        "files": ["src/dashboard/App.svelte"],
+        "files": ["apps/desktop/src/dashboard/App.svelte"],
         "functions": ["finishCreatedProject"],
         "maxCrap": 73,
         "reason": "The creation completion checks its opening session before and after refresh and tick so a reopened sheet cannot be selected or closed by an older create request."
       },
       {
-        "files": ["src/dashboard/Logs.svelte"],
+        "files": ["apps/desktop/src/dashboard/Logs.svelte"],
         "functions": ["receiveLogs"],
         "maxCrap": 73,
         "reason": "Live log events merge with an inflight snapshot and bounded event buffer, then append only newer matching rows; transaction ordering prevents duplicates and stale view updates."
       },
       {
-        "files": ["src/dashboard/Tunnels.svelte"],
+        "files": ["apps/desktop/src/dashboard/Tunnels.svelte"],
         "functions": ["reconcileSelection"],
         "maxCrap": 73,
         "reason": "The mounted selection effect resolves missing or removed tunnel IDs against the latest overview while preserving a valid selection; the two fallback guards share one ownership decision."
       },
       {
-        "files": ["src/dashboard/Tunnels.svelte"],
+        "files": ["apps/desktop/src/dashboard/Tunnels.svelte"],
         "functions": ["onListKey"],
         "maxCrap": 73,
         "reason": "The composite tunnel navigation keeps modifier-key exclusion, inert-row filtering, clamping, selection and keyboard focus in one accessible roving-focus handler."
       },
       {
-        "files": ["src/dashboard/Settings.svelte"],
+        "files": ["apps/desktop/src/dashboard/Settings.svelte"],
         "functions": ["reconcileDraft"],
         "maxCrap": 57,
         "reason": "External settings refresh deliberately preserves the focused input draft while syncing unfocused redact fields; this mounted reconciliation prevents clobbering active typing."
       },
       {
-        "files": ["src/dashboard/HostnameSheet.svelte"],
+        "files": ["apps/desktop/src/dashboard/HostnameSheet.svelte"],
         "functions": ["load"],
         "maxCrap": 43,
         "reason": "The hostname loader freezes target/request identity and rejects stale responses before updating draft routes and fallback state; its generation guard and busy cleanup stay together."
       },
       {
-        "files": ["src/dashboard/HostnameSheet.svelte"],
+        "files": ["apps/desktop/src/dashboard/HostnameSheet.svelte"],
         "functions": ["save"],
         "maxCrap": 43,
         "reason": "Hostname save binds backend writes to the frozen editor target/revision, preserves errors and coordinates post-save notification; this ordered mounted transaction stays intact."
       },
       {
-        "files": ["src/dashboard/Requests.svelte"],
+        "files": ["apps/desktop/src/dashboard/Requests.svelte"],
         "functions": ["load"],
         "maxCrap": 43,
         "reason": "The per-view query entrypoint freezes filters and selection scope, coalesces identical inflight queries and merges live completions; tested shared query tracking owns stale error/loading cleanup."
       },
       {
-        "files": ["src/dashboard/Requests.svelte"],
+        "files": ["apps/desktop/src/dashboard/Requests.svelte"],
         "functions": ["setShare"],
         "maxCrap": 43,
         "reason": "The splitter clamps dimensions against both panes and persists only valid view state; these coupled layout guards are intentionally evaluated together."
       },
       {
-        "files": ["src/dashboard/Tunnels.svelte"],
+        "files": ["apps/desktop/src/dashboard/Tunnels.svelte"],
         "functions": ["remove"],
         "maxCrap": 43,
         "reason": "Removal chooses the next visible tunnel before deletion and restores keyboard focus after refresh/tick, including the last-tunnel empty state; ordered cleanup preserves accessibility."
       },
       {
-        "files": ["src/dashboard/App.svelte"],
+        "files": ["apps/desktop/src/dashboard/App.svelte"],
         "functions": ["navigate"],
         "maxCrap": 31,
         "reason": "The bounded hash-command router preserves existing add/project/view handling; command parsing remains colocated with the view transitions exercised by browser flows."
       },
       {
-        "files": ["src/dashboard/DnsStatus.svelte"],
+        "files": ["apps/desktop/src/dashboard/DnsStatus.svelte"],
         "functions": ["canRun"],
         "maxCrap": 31,
         "reason": "The bounded DNS eligibility guard deliberately combines mounted/pending state, document visibility and credential requirements; keep these gate conditions visible at the transaction boundary."
       },
       {
-        "files": ["src/dashboard/Logs.svelte"],
+        "files": ["apps/desktop/src/dashboard/Logs.svelte"],
         "functions": ["load"],
         "maxCrap": 31,
         "reason": "The log query freezes filters, coalesces inflight requests and reconciles live events; tested shared query tracking owns stale error/loading cleanup."
       },
       {
-        "files": ["src/dashboard/Logs.svelte"],
+        "files": ["apps/desktop/src/dashboard/Logs.svelte"],
         "functions": ["clear"],
         "maxCrap": 31,
         "reason": "Destructive log clearing freezes the selected target, invalidates query ownership and reloads the current scope; preserving ordered cleanup avoids stale snapshots."
       },
       {
-        "files": ["src/dashboard/Requests.svelte"],
+        "files": ["apps/desktop/src/dashboard/Requests.svelte"],
         "functions": ["ondividerkey"],
         "maxCrap": 31,
         "reason": "This bounded ARIA window-splitter keyboard handler supports Home/arrows/Shift steps and suppresses only handled keys; keeping the key mapping visible preserves accessibility."
       },
       {
-        "files": ["src/dashboard/Requests.svelte"],
+        "files": ["apps/desktop/src/dashboard/Requests.svelte"],
         "functions": ["clear"],
         "maxCrap": 31,
         "reason": "Destructive clearing freezes the target, invalidates pending generations and re-queries the current view; ordered error and busy cleanup belong to the same transaction."
       },
       {
-        "files": ["src/dashboard/Routes.svelte"],
+        "files": ["apps/desktop/src/dashboard/Routes.svelte"],
         "functions": ["manage"],
         "maxCrap": 31,
         "reason": "Lazy hostname-editor loading freezes the selected target before awaiting import, then applies loading/error cleanup; retaining this boundary avoids retargeting a draft."
       },
       {
-        "files": ["src/dashboard/TunnelDetail.svelte"],
+        "files": ["apps/desktop/src/dashboard/TunnelDetail.svelte"],
         "functions": ["cancelSetup"],
         "maxCrap": 31,
         "reason": "Cancellation coordinates the active request identity with backend cancellation and mounted cleanup; branching is bounded and must retain request ownership checks."

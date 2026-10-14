@@ -10,13 +10,13 @@ APP_E2E := target/debug/bundle/macos/Underlane.app
 ## Build the release app bundle from a clean checkout -> target/release/bundle/macos/Underlane.app
 build:
 	pnpm install --frozen-lockfile
-	pnpm exec tauri build --bundles app
+	pnpm tauri build --bundles app
 	@echo "\nBuilt $(APP_RELEASE)"
 
 ## Hot-reloading dev loop (Vite + cargo)
 dev:
 	pnpm install
-	pnpm exec tauri dev
+	pnpm tauri dev
 
 ## Unit and integration tests (Rust core + frontend helpers + type check)
 test:
@@ -27,7 +27,7 @@ test:
 ## End-to-end check: real app (debug build with the e2e control server) + a real quick tunnel
 e2e:
 	pnpm install
-	pnpm exec tauri build --debug --bundles app --features e2e
+	pnpm tauri build --debug --bundles app --features e2e
 	node e2e/run.mjs $(APP_E2E)
 
 ## Install the release build to ~/Applications (required for launch at login)
@@ -39,9 +39,9 @@ install: build
 
 ## Redraw the tray glyph and app icon
 icons:
-	swift scripts/make-icons.swift src-tauri/icons
-	pnpm exec tauri icon src-tauri/icons/app-icon.png -o src-tauri/icons
-	rm -rf src-tauri/icons/android src-tauri/icons/ios src-tauri/icons/Square*.png src-tauri/icons/StoreLogo.png
+	swift scripts/make-icons.swift apps/desktop/src-tauri/icons
+	pnpm tauri icon src-tauri/icons/app-icon.png -o src-tauri/icons
+	rm -rf apps/desktop/src-tauri/icons/android apps/desktop/src-tauri/icons/ios apps/desktop/src-tauri/icons/Square*.png apps/desktop/src-tauri/icons/StoreLogo.png
 
 clean:
-	rm -rf dist target node_modules
+	rm -rf apps/desktop/dist target node_modules apps/desktop/node_modules

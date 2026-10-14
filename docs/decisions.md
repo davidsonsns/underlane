@@ -213,7 +213,7 @@ comes from `cloudflared --version`. If none is found, the UI shows
 ## 12. Build and test
 
 - `make build` is the one command. It runs `pnpm install --frozen-lockfile` and
-  `pnpm exec tauri build --bundles app`, and the output lands in `target/release/bundle/macos/Underlane.app`.
+  `pnpm tauri build --bundles app`, and the output lands in `target/release/bundle/macos/Underlane.app`.
 - `make dev` runs the dev loop, `make test` runs the Rust and frontend tests, and `make e2e` runs
   the end-to-end check.
 - Releases are ad-hoc signed (`signingIdentity: "-"`). Notarization needs a Developer ID that isn't
@@ -329,16 +329,16 @@ tuned to AppKit metrics: system font at 13px, 22px controls and menu rows, sheet
 under the toolbar, keyboard-only focus rings. The port runs one screen per phase, and the app
 ships after each phase. The full plan lives outside the repo; this entry records what was decided.
 
-**Layers during the migration.** `src/styles/app.css` is the only global stylesheet and declares
+**Layers during the migration.** `apps/desktop/src/styles/app.css` is the only global stylesheet and declares
 `@layer theme, base, legacy, components, utilities`. The old `base.css` is imported into
 `legacy`: it beats Tailwind's preflight, so unported screens keep their look, and loses to
 utilities, so new code wins. Svelte `<style>` blocks are unlayered and beat everything, so a
-component moves to utilities in one go. Tailwind only scans the shipped code in `src/`
+component moves to utilities in one go. Tailwind only scans the shipped code in `apps/desktop/src/`
 (`source(none)` + `@source` lines for `dashboard/`, `popover/` and `lib/`), so the HTML files
 carry no utility classes. Two preflight compat rules (placeholder colour, checkbox margin) sat at
 the bottom of base.css and went with it. (Phase 3 removed the `legacy` layer and base.css.)
 
-**Phase 3: base.css is gone.** The `legacy` layer and `src/styles/base.css` were deleted, so
+**Phase 3: base.css is gone.** The `legacy` layer and `apps/desktop/src/styles/base.css` were deleted, so
 app.css now declares `@layer theme, base, components, utilities`. What was still live in base.css
 either already had an app.css equivalent (html/body, `user-select`, the reduce-motion block;
 preflight covers `box-sizing` and the form-control `font: inherit`) or went with it: the global
@@ -350,8 +350,8 @@ element (no users left), and both preflight compat rules (every field now sets i
 colour, and the import list uses the shadcn Checkbox). Body line-height is app.css's 18px instead
 of 1.38 (17.94px). The only rule moved is the text cursor on `pre`/`code`. The `leading-legacy`
 token was dropped too, so StatePanel, RouteLine and Toolbar use their text style's own line
-height (the popover's compact route rows are 1px shorter). Also deleted: `src/lib/tooltip.ts`,
-`Icon.svelte`, `Toggle.svelte` and the dev-only ui-lab (`ui-lab.html`, `src/lab/`); the R-49
+height (the popover's compact route rows are 1px shorter). Also deleted: `apps/desktop/src/lib/tooltip.ts`,
+`Icon.svelte`, `Toggle.svelte` and the dev-only ui-lab (`ui-lab.html`, `apps/desktop/src/lab/`); the R-49
 virtua harnesses that drove the lab were one-off measurements and aren't kept.
 
 **Why the tokens moved first (Phase 0).** Any token left in base.css's `:root` would override
@@ -426,7 +426,7 @@ variable-height lines: 8 rows in the DOM, `scrollToIndex(last, { align: "end" })
   under `aria-activedescendant` by pointer scrolling.
 
 **Requests list (Phase 2e).** No fallback was needed: Requests runs on virtua as planned
-(`src/dashboard/RequestList.svelte`). A `role=listbox` wrapper holds focus and points
+(`apps/desktop/src/dashboard/RequestList.svelte`). A `role=listbox` wrapper holds focus and points
 `aria-activedescendant` at the active row once it exists; rows are never focused; the active
 index is passed to `keepMounted`. Selection is by request id, falling back to the row now at the
 same index when its request is filtered out, cleared or trimmed. An empty list (a filter with no
@@ -458,7 +458,7 @@ bursts of 1 to 30 requests scrolled to the middle, bursts of 1, 5 and 12 scrolle
 and batches into and past the 1,000 ceiling; the e2e debug build repeats the burst checks.
 
 **Logs list (Phase 2f).** No fallback was needed: Logs runs on virtua as planned
-(`src/dashboard/LogList.svelte`), with measured heights (wrapped messages; expanded fields render
+(`apps/desktop/src/dashboard/LogList.svelte`), with measured heights (wrapped messages; expanded fields render
 inside the row). A `role=treegrid` wrapper holds focus and points `aria-activedescendant` at the
 active line (tracked by id) once it exists; rows carry `aria-level`, `aria-rowindex` and, when they
 have fields, `aria-expanded`. Up/Down/Home/End/PageUp/PageDown move, Right/Enter expand, Left
@@ -507,7 +507,7 @@ layers, `color-mix`), which macOS 13.3 ships. `minimumSystemVersion` is 13.3 and
 in the font-size group: unconfigured, it read them as colours and dropped them next to one
 (`cn("text-callout text-muted-foreground")` → `text-muted-foreground`). `tv` is
 tailwind-variants' lite build, which never merges; `cn(variants(…), className)` merges once.
-`src/lib/utils.test.ts` pins this.
+`apps/desktop/src/lib/utils.test.ts` pins this.
 
 **Placeholder contrast (Phase 1).** Placeholders use `--text-placeholder` (light `#6e6e73`, dark
 `#aeaeb2`, ≥ 4.5:1 on every field background), not `--text-3`, which stays for disabled text and
@@ -533,7 +533,7 @@ tooltip content to stay within 70 kB.
 **Popover budget: lazy toast and tooltip surfaces (Phase 2i, O10).** With Tips in the
 popover, Tooltip.Content (Bits' popper layer, its dismiss/escape/focus-scope layers and
 floating-ui) joined the popover's JS: 86.9 kB gzip with svelte-sonner already lazy, over the
-70 kB budget. Two changes bring it back. `src/lib/lazy.ts` re-exports svelte-sonner's `toast`,
+70 kB budget. Two changes bring it back. `apps/desktop/src/lib/lazy.ts` re-exports svelte-sonner's `toast`,
 the Toaster and `Tooltip.Content`, and is only ever loaded with `import()`: `notify.*` loads it
 on the first toast (the popover mounts its Toaster then; the toast list is global, so that
 first toast still shows), and `Tip` loads it on the first hover or keyboard focus of any trigger,
@@ -547,7 +547,7 @@ Measured (gzip -9, `vite build`): popover on open 67.7 kB (5.1 entry + 62.6 shar
 tooltip content and floating-ui), fetched from disk on the first toast or tooltip. Dashboard
 148.3 kB (57.5 + 62.6 + 28.3, plus a 0.1 kB stub). CSS: popover 14.0 kB on open (sonner's
 stylesheet moved to the lazy chunk), dashboard 17.0 kB. StatusDot lost its `use:tooltip` hint:
-every caller now wraps it in a Tip, so `src/lib/tooltip.ts`, `Icon.svelte` and `Toggle.svelte`
+every caller now wraps it in a Tip, so `apps/desktop/src/lib/tooltip.ts`, `Icon.svelte` and `Toggle.svelte`
 have no importers left (Phase 3 deletes them).
 
 **Popover keyboard (Phase 2i, F12).** The first tunnel row (or "Add a tunnel" when there are
@@ -581,7 +581,7 @@ the trimmed search, not Bits' fuzzy scorer, which hid "Work" when the search was
 let Enter pick "website" for "web". An exact match is listed and highlighted first, so Enter picks
 it; any other non-empty search lists `Create "<name>"` first and highlighted, with the matches
 after it. It opens with the current group highlighted, so Return alone changes nothing. The
-filtering and order are done in `comboRows` (`src/lib/combobox.ts`, unit-tested), and Bits runs
+filtering and order are done in `comboRows` (`apps/desktop/src/lib/combobox.ts`, unit-tested), and Bits runs
 with `shouldFilter={false}` rather than a custom `filter`: with a filter Bits reorders the rows by
 moving their DOM nodes, which is fragile under Svelte's keyed blocks and would leave the order
 to its score sort.

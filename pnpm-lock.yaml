@@ -7,6 +7,21 @@ settings:
 importers:
 
   .:
+    devDependencies:
+      '@biomejs/biome':
+        specifier: ^2.5.15
+        version: 2.5.15
+      fallow:
+        specifier: ^3.33.1
+        version: 3.33.1
+      playwright:
+        specifier: ^1.64.1
+        version: 1.64.1
+      ultracite:
+        specifier: ^8.0.1
+        version: 8.0.1(@biomejs/biome@2.5.15)
+
+  apps/desktop:
     dependencies:
       '@lucide/svelte':
         specifier: 1.55.0
@@ -45,9 +60,6 @@ importers:
         specifier: 0.53.3
         version: 0.53.3(svelte@5.57.2)
     devDependencies:
-      '@biomejs/biome':
-        specifier: ^2.5.15
-        version: 2.5.15
       '@internationalized/date':
         specifier: 3.12.4
         version: 3.12.4
@@ -63,12 +75,6 @@ importers:
       '@tsconfig/svelte':
         specifier: ^5.0.8
         version: 5.0.8
-      fallow:
-        specifier: ^3.33.1
-        version: 3.33.1
-      playwright:
-        specifier: ^1.64.1
-        version: 1.64.1
       svelte-check:
         specifier: ^4.7.6
         version: 4.7.6(picomatch@4.0.7)(svelte@5.57.2)(typescript@5.9.3)
@@ -81,9 +87,6 @@ importers:
       typescript:
         specifier: ~5.9.3
         version: 5.9.3
-      ultracite:
-        specifier: ^8.0.1
-        version: 8.0.1(@biomejs/biome@2.5.15)
       vite:
         specifier: ^8.3.4
         version: 8.3.4(jiti@2.7.0)(yaml@2.9.1)

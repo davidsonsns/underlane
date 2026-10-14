@@ -8,11 +8,12 @@
   },
   "files": {
     "includes": [
-      "src/**",
+      "apps/desktop/src/**",
       "e2e/**",
       "scripts/**",
       "*.{ts,js,json,jsonc,html}",
-      "!!src/lib/components/ui"
+      "apps/*/*.{ts,js,json,jsonc,html}",
+      "!!apps/desktop/src/lib/components/ui"
     ]
   },
   "css": {
