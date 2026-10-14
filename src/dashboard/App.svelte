@@ -10,7 +10,7 @@
   import ScrollText from "@lucide/svelte/icons/scroll-text";
   import SettingsIcon from "@lucide/svelte/icons/settings";
   import TriangleAlert from "@lucide/svelte/icons/triangle-alert";
-  import LaneGlyph from "$lib/components/app/LaneGlyph.svelte";
+  import Waypoints from "@lucide/svelte/icons/waypoints";
   import { Badge } from "$lib/components/ui/badge/index.js";
   import { kbRing } from "$lib/components/ui/mac";
   import { cn } from "$lib/utils";
@@ -132,9 +132,8 @@
     };
   }
 
-  // Tunnels uses the brand mark; the rest are lucide (02 §1.3).
-  const nav: { id: View; label: string; icon?: Component<{ class?: string }> }[] = [
-    { id: "tunnels", label: "Tunnels" },
+  const nav: { id: View; label: string; icon: Component<{ class?: string }> }[] = [
+    { id: "tunnels", label: "Projects", icon: Waypoints },
     { id: "requests", label: "Requests", icon: List },
     { id: "logs", label: "Logs", icon: ScrollText },
     { id: "settings", label: "Settings", icon: SettingsIcon },
@@ -169,11 +168,7 @@
           aria-current={view === n.id ? "page" : undefined}
           onclick={() => show(n.id, () => { view = n.id; focusId = null; })}
         >
-          {#if n.icon}
-            <n.icon class="size-[15px]" />
-          {:else}
-            <LaneGlyph size={15} class="text-muted-foreground" />
-          {/if}
+          <n.icon class="size-[15px]" />
           <span class="flex-1">{n.label}</span>
           {#if n.id === "tunnels" && store.activeCount > 0}
             <span class="flex" transition:fade={{ duration: motion(150) }}><Badge variant="ok">{store.activeCount}</Badge></span>
