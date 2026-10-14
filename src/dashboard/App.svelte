@@ -22,7 +22,7 @@
   import type { AddTab } from "./AddSheetBody.svelte";
   import * as Tooltip from "$lib/components/ui/tooltip/index.js";
   import { Toaster } from "$lib/components/ui/sonner/index.js";
-  import logo from "../../src-tauri/icons/64x64.png";
+  import LaneGlyph from "$lib/components/app/LaneGlyph.svelte";
 
   type View = "tunnels" | "requests" | "logs" | "settings";
   let view = $state<View>("tunnels");
@@ -151,7 +151,7 @@
          (TitleBarStyle::Overlay in src-tauri/src/tray.rs), so the webview starts at y=0. -->
     <div class="h-[46px] flex-none" data-tauri-drag-region></div>
     <div class="flex items-center gap-2 px-2 pb-4 text-lg font-semibold" data-tauri-drag-region>
-      <img src={logo} alt="" width="22" height="22" draggable="false" class="pointer-events-none" />
+      <LaneGlyph size={20} class="pointer-events-none text-foreground" />
       <span>Underlane</span>
     </div>
     <nav class="relative isolate flex flex-col gap-1" aria-label="Sections">
