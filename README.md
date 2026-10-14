@@ -68,11 +68,19 @@ Requirements: macOS 13.3 or later (built and tested on macOS 27, Apple Silicon),
 brew install cloudflared   # Underlane finds it on PATH or in Homebrew's folders
 ```
 
-To build from source you also need Xcode command-line tools, Node 20+ and Rust (via
+To build from source you also need Xcode command-line tools, Node 20+, pnpm 10.27.0 and Rust (via
 [rustup](https://rustup.rs)).
 
+Enable the pinned pnpm version with Corepack (install Corepack first if your Node
+distribution omits it):
+
 ```sh
-make build      # npm ci + tauri build -> target/release/bundle/macos/Underlane.app
+corepack enable
+corepack install
+```
+
+```sh
+make build      # pnpm install --frozen-lockfile + tauri build -> target/release/bundle/macos/Underlane.app
 make install    # same, then copies it to ~/Applications (needed for launch at login)
 ```
 
@@ -95,13 +103,13 @@ section. Drag Underlane's circular Lane Cut icon into the visible part.
 make dev        # Vite + cargo with hot reload (frontend) and rebuild-on-change (Rust)
 make test       # Rust tests, Vitest, script-helper tests, and svelte-check
 make e2e        # end-to-end check against a real quick tunnel (no Cloudflare account needed)
-npm run lint   # Biome lint + formatting checks with Ultracite's core and Svelte presets
-npm run fix    # Apply Biome's safe fixes and formatting
-npm run analyze # Fallow: unused code, duplication, and complexity; fails on findings
-npm run test:scripts # Local harness/browser-mock tests; no native app or tunnel needed
+pnpm run lint   # Biome lint + formatting checks with Ultracite's core and Svelte presets
+pnpm run fix    # Apply Biome's safe fixes and formatting
+pnpm run analyze # Fallow: unused code, duplication, and complexity; fails on findings
+pnpm run test:scripts # Local harness/browser-mock tests; no native app or tunnel needed
 ```
 
-`npm run check` still runs Svelte/TypeScript diagnostics. Biome's Svelte support is
+`pnpm run check` still runs Svelte/TypeScript diagnostics. Biome's Svelte support is
 experimental, so keep this check alongside linting. Biome skips generated shadcn
 components in `src/lib/components/ui`; Fallow still follows their imports. Fallow
 includes both window entry points, the Svelte config, and standalone verification

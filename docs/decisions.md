@@ -212,8 +212,8 @@ comes from `cloudflared --version`. If none is found, the UI shows
 
 ## 12. Build and test
 
-- `make build` is the one command. It runs `npm ci` and `npx tauri build --bundles app`, and the
-  output lands in `target/release/bundle/macos/Underlane.app`.
+- `make build` is the one command. It runs `pnpm install --frozen-lockfile` and
+  `pnpm exec tauri build --bundles app`, and the output lands in `target/release/bundle/macos/Underlane.app`.
 - `make dev` runs the dev loop, `make test` runs the Rust and frontend tests, and `make e2e` runs
   the end-to-end check.
 - Releases are ad-hoc signed (`signingIdentity: "-"`). Notarization needs a Developer ID that isn't

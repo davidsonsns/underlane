@@ -11,7 +11,7 @@
     "fix": "ultracite fix",
     "lint": "ultracite check",
     "tauri": "tauri",
-    "test": "vitest run && npm run test:scripts",
+    "test": "vitest run && pnpm run test:scripts",
     "test:scripts": "node --test scripts/lib/*.test.mjs e2e/lib/*.test.mjs"
   },
   "dependencies": {
@@ -44,5 +44,6 @@
     "ultracite": "^8.0.1",
     "vite": "^8.3.4",
     "vitest": "^5.0.3"
-  }
+  },
+  "packageManager": "pnpm@10.27.0"
 }
