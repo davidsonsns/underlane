@@ -87,7 +87,6 @@
   --animate-status-ping: status-ping 1.3s var(--ease-out) infinite; /* StatusDot "starting" */
   --animate-rise: rise 260ms var(--ease-out); /* StatePanel entrance */
   --animate-travel: travel 650ms var(--ease-out) forwards; /* RouteLine request pulse */
-  --animate-route-ping: route-ping 650ms var(--ease-out) forwards; /* Routes reach dot: inspected traffic */
   --animate-arrive: arrive 1.2s ease-out; /* Requests: a new row's accent bar fades out */
 }
 
@@ -404,17 +403,6 @@
   }
   to {
     left: calc(100% - 5px);
-    opacity: 0;
-  }
-}
-
-@keyframes route-ping {
-  from {
-    transform: scale(1);
-    opacity: 0.9;
-  }
-  to {
-    transform: scale(3);
     opacity: 0;
   }
 }

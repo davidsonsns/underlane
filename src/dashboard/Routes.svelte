@@ -212,12 +212,7 @@
                   role={tip ? "img" : undefined}
                   aria-label={tip}
                   class="relative size-2 flex-none rounded-full transition-[background-color,box-shadow] duration-240 before:absolute before:-inset-1 {dot[r]}"
-                >
-                  <!-- Requests through an inspected route flash the dot, like a network activity light. -->
-                  {#key store.pulses[tunnel.id]}
-                    {#if m.inspected && store.pulses[tunnel.id]}<span class="absolute inset-0 animate-route-ping rounded-full bg-tint motion-reduce:hidden"></span>{/if}
-                  {/key}
-                </span>
+                ></span>
               {/snippet}
             </Tip>
             <!-- The service carries the same explanation, so hovering it, or Tab to its link, shows it too (as before). -->
