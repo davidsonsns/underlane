@@ -10,6 +10,10 @@ interface Entry {
 const PREFIX = "underlane.dns.";
 const memory = new Map<string, Entry>();
 
+export function clearDnsCache(): void {
+  memory.clear();
+}
+
 function validDnsStatus(value: unknown): value is HostnameDns["status"] {
   return (
     typeof value === "string" &&

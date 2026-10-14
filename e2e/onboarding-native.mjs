@@ -66,8 +66,44 @@ try {
     { encoding: "utf8" }
   );
   assert.equal(persisted.trim(), "1");
+  await launch();
+  const beforeReset = await ctl("GET", "/overview");
+  const tunnelId = beforeReset.tunnels[0].id;
+  await ctl("POST", `/start?id=${tunnelId}`);
+  await waitFor(
+    "synthetic tunnel process",
+    async () => {
+      const overview = await ctl("GET", "/overview");
+      return typeof overview.tunnels[0]?.state.pid === "number";
+    },
+    10_000,
+    100
+  );
+  const running = await ctl("GET", "/overview");
+  const tunnelPid = running.tunnels[0].state.pid;
+  const processId = child.pid;
+  const resetResponse = await ctl("POST", "/reset");
+  assert.equal(resetResponse.ok, true);
+  const reset = await ctl("GET", "/ui?view=tunnels");
+  assert.match(reset.text, /Your localhost,[\s\S]*one link away/);
+  assert.doesNotMatch(reset.text, /Legacy/);
+  assert.equal(child.pid, processId);
+  assert.equal(
+    child.exitCode,
+    null,
+    "reset must keep the original app process alive"
+  );
+  assert.equal((await ctl("GET", "/overview")).active_count, 0);
+  assert.throws(() => process.kill(tunnelPid, 0), { code: "ESRCH" });
+  const remaining = execFileSync(
+    "sqlite3",
+    [join(fixture.data, "underlane.db"), "SELECT count(*) FROM tunnels;"],
+    { encoding: "utf8" }
+  );
+  assert.equal(remaining.trim(), "0");
+  await stopApp(child, ctl);
   console.log(
-    "ONBOARDING NATIVE PASSED: packaged welcome, remembered completion, legacy migration. No real tunnel or Cloudflare login."
+    "ONBOARDING NATIVE PASSED: packaged welcome, remembered completion, legacy migration, populated in-process reset to onboarding with unchanged PID. No real tunnel or Cloudflare login."
   );
 } finally {
   if (child?.exitCode === null) {

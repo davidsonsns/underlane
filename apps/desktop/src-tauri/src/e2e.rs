@@ -106,6 +106,12 @@ mod server {
 
     async fn handle(app: AppHandle, req: Request<hyper::body::Incoming>) -> Response<Full<Bytes>> {
         let core = app.state::<Arc<Core>>().inner().clone();
+        if req.method() == hyper::Method::POST && req.uri().path() == "/reset" {
+            return match crate::reset::reset(core).await {
+                Ok(()) => reply(200, json!({ "ok": true })),
+                Err(error) => reply(400, json!({ "error": error })),
+            };
+        }
         let q = query(&req);
         let id = q.get("id").cloned().unwrap_or_default();
         match (req.method().as_str(), req.uri().path()) {

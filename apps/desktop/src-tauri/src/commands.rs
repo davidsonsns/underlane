@@ -30,6 +30,7 @@ fn err(e: impl std::fmt::Display) -> String {
 /// Run database work off the main thread (sync Tauri commands run on it) and off the async
 /// workers.
 async fn blocking<T: Send + 'static>(core: &Arc<Core>, f: impl FnOnce(&Core) -> Res<T> + Send + 'static) -> Res<T> {
+    let _operation = core.operations.try_read().map_err(|_| "App reset is in progress. Try again when setup opens.")?;
     let core = core.clone();
     tokio::task::spawn_blocking(move || f(&core)).await.map_err(err)?
 }
@@ -179,6 +180,7 @@ pub async fn create_project(core: CoreState<'_>, name: String, group: String, co
 
 #[tauri::command]
 pub fn add_quick_tunnel(core: CoreState<'_>, name: String, origin: String, group: String, inspect: bool) -> Res<String> {
+    let _operation = core.operations.try_read().map_err(|_| "App reset is in progress.")?;
     let origin = normalize_origin(&origin);
     if underlane_core::derived::split_service(&origin).is_none() {
         return Err(format!("`{origin}` isn't a local http:// or https:// address."));
@@ -196,6 +198,7 @@ pub fn add_quick_tunnel(core: CoreState<'_>, name: String, origin: String, group
 
 #[tauri::command]
 pub fn add_token_tunnel(core: CoreState<'_>, name: String, token: String, group: String) -> Res<String> {
+    let _operation = core.operations.try_read().map_err(|_| "App reset is in progress.")?;
     let token = token.trim().trim_start_matches("cloudflared tunnel run --token ").trim().to_string();
     if token.len() < 20 {
         return Err("That doesn't look like a tunnel token. Copy it from the tunnel's install command in the Cloudflare dashboard.".into());
@@ -292,6 +295,7 @@ fn update_tunnel_inner(core: &Core, id: String, patch: TunnelPatch) -> Res<()> {
 
 #[tauri::command]
 pub async fn delete_tunnel(core: CoreState<'_>, id: String, delete_config: Option<bool>) -> Res<()> {
+    let _operation = core.operations.try_read().map_err(|_| "App reset is in progress. Try again when setup opens.")?;
     if crate::separate_tunnel::is_running(&id) {
         return Err("Finish creating the separate tunnel before removing this project.".into());
     }
@@ -578,6 +582,7 @@ fn save_settings_inner(core: &Core, settings: Settings) -> Res<()> {
 
 #[tauri::command]
 pub async fn detect_cloudflared(core: CoreState<'_>) -> Res<Option<Binary>> {
+    let _operation = core.operations.try_read().map_err(|_| "App reset is in progress.")?;
     Ok(core.rediscover().await)
 }
 
@@ -597,8 +602,9 @@ pub async fn login_item_status() -> LoginItem {
 }
 
 #[tauri::command]
-pub async fn set_launch_at_login(enabled: bool) -> LoginItem {
-    platform::set_login_item(enabled)
+pub async fn set_launch_at_login(core: CoreState<'_>, enabled: bool) -> Res<LoginItem> {
+    let _operation = core.operations.try_read().map_err(|_| "App reset is in progress.")?;
+    Ok(platform::set_login_item(enabled))
 }
 
 #[tauri::command]

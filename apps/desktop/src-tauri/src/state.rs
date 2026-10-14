@@ -1,6 +1,6 @@
 //! Application state shared by commands, the tray and background tasks.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
@@ -70,13 +70,13 @@ impl RequestCapture {
         notify()
     }
 
-    fn enqueue(&self, x: CapturedExchange, tx: &mpsc::Sender<Write>, queued: &AtomicUsize, dropped: &AtomicU64) {
+    fn enqueue(&self, x: CapturedExchange, epoch: u64, tx: &mpsc::Sender<(u64, Write)>, queued: &AtomicUsize, dropped: &AtomicU64) {
         let Some(generation) = self.generation(&x.tunnel_id) else { return };
         let n = record_bytes(&x);
         if queued.fetch_add(n, Ordering::AcqRel) + n > QUEUE_BYTES {
             queued.fetch_sub(n, Ordering::AcqRel);
             dropped.fetch_add(1, Ordering::Relaxed);
-        } else if tx.try_send(Write::Request(x, generation)).is_err() {
+        } else if tx.try_send((epoch, Write::Request(x, generation))).is_err() {
             queued.fetch_sub(n, Ordering::AcqRel);
             dropped.fetch_add(1, Ordering::Relaxed);
         }
@@ -105,18 +105,52 @@ mod request_capture_tests {
     }
 
     #[test]
+    fn reset_rejects_queued_history_and_allows_new_writes_on_the_same_connection() {
+        let db = Db::open_in_memory().unwrap();
+        let capture = RequestCapture::default();
+        let epoch = RwLock::new(0);
+        let add_tunnel = || db.upsert_tunnel(&Tunnel {
+            id: "a".into(), group_id: None, name: "Local".into(), kind: TunnelKind::Quick,
+            config_path: None, origin_url: Some("http://localhost:3000".into()),
+            inspect: false, autostart: false, loglevel: "info".into(), created_at: 0, sort: 0,
+        }).unwrap();
+        add_tunnel();
+        let log = || LogLine { id: 0, tunnel_id: "a".into(), ts: 1, level: "info".into(), message: "history".into(), fields: "{}".into() };
+        store_batch(&db, &capture, &epoch, vec![(0, log())], vec![(0, exchange("before", "a"), 0)]);
+        assert_eq!(db.query_logs(&Default::default()).unwrap().len(), 1);
+        {
+            let mut current = epoch.write().unwrap();
+            db.reset().unwrap();
+            *current += 1;
+        }
+        let (logs, requests, bytes) = store_batch(&db, &capture, &epoch, vec![(0, log())], vec![(0, exchange("stale", "a"), 0)]);
+        assert!(logs.is_empty() && requests.is_empty());
+        assert!(bytes > 0, "discarded captures still release queue bytes");
+        assert!(db.query_logs(&Default::default()).unwrap().is_empty());
+        assert!(db.get_request("stale").unwrap().is_none());
+        // An old in-flight response can arrive after the reset and receive the new epoch.
+        store_batch(&db, &capture, &epoch, vec![(1, log())], vec![(1, exchange("late", "a"), 0)]);
+        assert!(db.query_logs(&Default::default()).unwrap().is_empty());
+        assert!(db.get_request("late").unwrap().is_none());
+        add_tunnel();
+        store_batch(&db, &capture, &epoch, vec![(1, log())], vec![(1, exchange("fresh", "a"), 0)]);
+        assert_eq!(db.query_logs(&Default::default()).unwrap().len(), 1);
+        assert!(db.get_request("fresh").unwrap().is_some());
+    }
+
+    #[test]
     fn pause_skips_capture_without_counting_drops_or_affecting_other_tunnels() {
         let capture = RequestCapture::default();
         let (tx, mut rx) = mpsc::channel(1);
         let queued = AtomicUsize::new(0);
         let dropped = AtomicU64::new(0);
         capture.set_paused("a", true, || {});
-        capture.enqueue(exchange("paused", "a"), &tx, &queued, &dropped);
+        capture.enqueue(exchange("paused", "a"), 0, &tx, &queued, &dropped);
         assert!(rx.try_recv().is_err());
         assert_eq!(queued.load(Ordering::Relaxed), 0);
         assert_eq!(dropped.load(Ordering::Relaxed), 0);
-        capture.enqueue(exchange("other", "b"), &tx, &queued, &dropped);
-        assert!(matches!(rx.try_recv().unwrap(), Write::Request(x, 0) if x.id == "other"));
+        capture.enqueue(exchange("other", "b"), 0, &tx, &queued, &dropped);
+        assert!(matches!(rx.try_recv().unwrap(), (0, Write::Request(x, 0)) if x.id == "other"));
         assert_eq!(dropped.load(Ordering::Relaxed), 0);
     }
 
@@ -127,15 +161,15 @@ mod request_capture_tests {
         let (tx, mut rx) = mpsc::channel(3);
         let queued = AtomicUsize::new(0);
         let dropped = AtomicU64::new(0);
-        capture.enqueue(exchange("queued", "a"), &tx, &queued, &dropped);
+        capture.enqueue(exchange("queued", "a"), 0, &tx, &queued, &dropped);
         capture.set_paused("a", true, || {});
-        let Write::Request(x, generation) = rx.try_recv().unwrap() else { panic!("request expected") };
+        let (0, Write::Request(x, generation)) = rx.try_recv().unwrap() else { panic!("request expected") };
         assert!(capture.store(&db, &x, generation).is_none());
         capture.set_paused("a", false, || {});
         assert!(capture.store(&db, &x, generation).is_none());
         assert!(db.get_request("queued").unwrap().is_none());
-        capture.enqueue(exchange("resumed", "a"), &tx, &queued, &dropped);
-        let Write::Request(x, generation) = rx.try_recv().unwrap() else { panic!("request expected") };
+        capture.enqueue(exchange("resumed", "a"), 0, &tx, &queued, &dropped);
+        let (0, Write::Request(x, generation)) = rx.try_recv().unwrap() else { panic!("request expected") };
         capture.set_paused("a", false, || {}); // An unchanged toggle must preserve fresh captures.
         assert!(capture.store(&db, &x, generation).is_some());
         assert!(db.get_request("resumed").unwrap().is_some());
@@ -157,8 +191,8 @@ mod request_capture_tests {
         assert!(paused_rx.recv_timeout(Duration::from_millis(20)).is_err());
         assert_eq!(capture.generation("a"), Some(0), "pause cannot acknowledge before writes finish");
         let (tx, mut rx) = mpsc::channel(1);
-        capture.enqueue(exchange("queued", "a"), &tx, &AtomicUsize::new(0), &AtomicU64::new(0));
-        let Write::Request(x, generation) = rx.try_recv().unwrap() else { panic!("request expected") };
+        capture.enqueue(exchange("queued", "a"), 0, &tx, &AtomicUsize::new(0), &AtomicU64::new(0));
+        let (0, Write::Request(x, generation)) = rx.try_recv().unwrap() else { panic!("request expected") };
         drop(storage);
         paused_rx.recv_timeout(Duration::from_secs(1)).unwrap();
         pause.join().unwrap();
@@ -178,6 +212,8 @@ pub struct Core {
     pub settings: RwLock<Settings>,
     pub data_dir: PathBuf,
     pub dropped: Arc<AtomicU64>,
+    pub operations: tokio::sync::RwLock<()>,
+    pub data_epoch: Arc<RwLock<u64>>,
     request_capture: Arc<RequestCapture>,
     queued_bytes: Arc<AtomicUsize>,
     written_since_sweep: AtomicUsize,
@@ -347,25 +383,30 @@ impl Core {
         }
         let binary = discover_binary(&data_dir, settings.cloudflared_path.as_deref()).await;
 
-        let (write_tx, write_rx) = mpsc::channel::<Write>(WRITE_QUEUE);
-        let (state_tx, state_rx) = mpsc::unbounded_channel::<TunnelState>();
+        let (write_tx, write_rx) = mpsc::channel::<(u64, Write)>(WRITE_QUEUE);
+        let (state_tx, state_rx) = mpsc::unbounded_channel::<(u64, TunnelState)>();
+        let data_epoch = Arc::new(RwLock::new(0));
+        let sink_epoch = data_epoch.clone();
         let dropped = Arc::new(AtomicU64::new(0));
         let dropped_sink = dropped.clone();
         let queued_bytes = Arc::new(AtomicUsize::new(0));
         let queued_sink = queued_bytes.clone();
         let request_capture = Arc::new(RequestCapture::default());
         let capture_sink = request_capture.clone();
-        let sink = Arc::new(move |e: Event| match e {
+        let sink = Arc::new(move |e: Event| {
+            let epoch = *sink_epoch.read().unwrap();
+            match e {
             Event::State(s) => {
-                let _ = state_tx.send(s);
+                let _ = state_tx.send((epoch, s));
             }
             Event::Log(l) => {
-                if write_tx.try_send(Write::Log(l)).is_err() {
+                if write_tx.try_send((epoch, Write::Log(l))).is_err() {
                     dropped_sink.fetch_add(1, Ordering::Relaxed);
                 }
             }
             Event::Request(x) => {
-                capture_sink.enqueue(x, &write_tx, &queued_sink, &dropped_sink);
+                capture_sink.enqueue(x, epoch, &write_tx, &queued_sink, &dropped_sink);
+            }
             }
         });
 
@@ -383,6 +424,8 @@ impl Core {
             settings: RwLock::new(settings),
             data_dir,
             dropped,
+            operations: tokio::sync::RwLock::new(()),
+            data_epoch,
             request_capture,
             queued_bytes,
             written_since_sweep: AtomicUsize::new(0),
@@ -512,6 +555,7 @@ impl Core {
 
     /// Start (or retry, if it is sitting in a crashed state).
     pub fn start(&self, id: &str) -> anyhow::Result<()> {
+        let _operation = self.operations.try_read().map_err(|_| anyhow::anyhow!("App reset is in progress."))?;
         anyhow::ensure!(!crate::separate_tunnel::is_running(id), "Finish creating the separate tunnel before starting this project.");
         anyhow::ensure!(!crate::separate_tunnel::start_blocked(self, id).map_err(anyhow::Error::msg)?, "Separate tunnel setup is unfinished. Retry Create separate tunnel to finish updating DNS before starting this project.");
         let spec = self.spec(id)?;
@@ -525,6 +569,7 @@ impl Core {
     }
 
     pub fn restart(&self, id: &str) -> anyhow::Result<()> {
+        let _operation = self.operations.try_read().map_err(|_| anyhow::anyhow!("App reset is in progress."))?;
         anyhow::ensure!(!crate::separate_tunnel::is_running(id), "Finish creating the separate tunnel before restarting this project.");
         anyhow::ensure!(!crate::separate_tunnel::start_blocked(self, id).map_err(anyhow::Error::msg)?, "Separate tunnel setup is unfinished. Retry Create separate tunnel to finish updating DNS before restarting this project.");
         self.sup.restart(self.spec(id)?);
@@ -533,6 +578,7 @@ impl Core {
 
     /// Apply a changed tunnel definition to a running process.
     pub fn restart_if_running(&self, id: &str) -> anyhow::Result<()> {
+        let _operation = self.operations.try_read().map_err(|_| anyhow::anyhow!("App reset is in progress."))?;
         anyhow::ensure!(!crate::separate_tunnel::is_running(id), "Finish creating the separate tunnel before restarting this project.");
         anyhow::ensure!(!crate::separate_tunnel::start_blocked(self, id).map_err(anyhow::Error::msg)?, "Separate tunnel setup is unfinished. Retry Create separate tunnel to finish updating DNS before restarting this project.");
         self.sup.restart_if_running(self.spec(id)?);
@@ -559,6 +605,19 @@ impl Core {
         *self.settings.write().unwrap() = s.clone();
         crate::tray::apply_window_theme(&self.handle, &s.theme);
         let _ = self.handle.emit("settings-changed", &s);
+        Ok(())
+    }
+
+    /// Called under the data epoch write lock after all supervised runs have stopped.
+    pub fn reset_runtime(&self) -> anyhow::Result<()> {
+        self.states.lock().unwrap().clear();
+        self.latest_run.lock().unwrap().clear();
+        self.request_capture.tunnels.write().unwrap().clear();
+        self.dropped.store(0, Ordering::Relaxed);
+        self.written_since_sweep.store(0, Ordering::Relaxed);
+        *self.activity.lock().unwrap() = None;
+        self.apply_settings(Settings::default())?;
+        tray::set_count(&self.handle, 0);
         Ok(())
     }
 
@@ -614,18 +673,51 @@ pub fn summary_of(x: &CapturedExchange) -> RequestSummary {
     }
 }
 
+fn store_batch(
+    db: &Db,
+    request_capture: &RequestCapture,
+    data_epoch: &RwLock<u64>,
+    batch_logs: Vec<(u64, LogLine)>,
+    batch_reqs: Vec<(u64, CapturedExchange, u64)>,
+) -> (Vec<LogLine>, Vec<(RequestSummary, u64)>, usize) {
+    // Reset takes the write lock before clearing storage. Old queued batches
+    // cannot write into the fresh database, even if they run after reset.
+    let epoch = data_epoch.read().unwrap();
+    let tunnels: HashSet<_> = db.tunnels().unwrap_or_default().into_iter().map(|tunnel| tunnel.id).collect();
+    let batch_logs: Vec<_> = batch_logs.into_iter().filter(|(queued, log)| *queued == *epoch && tunnels.contains(&log.tunnel_id)).map(|(_, log)| log).collect();
+    let mut out_logs = Vec::new();
+    if !batch_logs.is_empty() {
+        if let Ok(ids) = db.insert_logs(&batch_logs) {
+            out_logs = batch_logs.into_iter().zip(ids).map(|(mut l, id)| {
+                l.id = id;
+                l
+            }).collect();
+        }
+    }
+    let mut out_reqs = Vec::new();
+    let mut bytes = 0usize;
+    for (queued_epoch, x, generation) in batch_reqs {
+        bytes += record_bytes(&x);
+        if queued_epoch != *epoch || !tunnels.contains(&x.tunnel_id) { continue; }
+        if let Some(summary) = request_capture.store(&db, &x, generation) {
+            out_reqs.push((summary, generation));
+        }
+    }
+    (out_logs, out_reqs, bytes)
+}
+
 /// Batch writes into SQLite and forward what was stored to the UI.
-async fn writer_task(core: Arc<Core>, mut rx: mpsc::Receiver<Write>) {
-    let mut logs: Vec<LogLine> = Vec::new();
-    let mut reqs: Vec<(CapturedExchange, u64)> = Vec::new();
+async fn writer_task(core: Arc<Core>, mut rx: mpsc::Receiver<(u64, Write)>) {
+    let mut logs: Vec<(u64, LogLine)> = Vec::new();
+    let mut reqs: Vec<(u64, CapturedExchange, u64)> = Vec::new();
     loop {
         let Some(first) = rx.recv().await else { break };
         let deadline = tokio::time::Instant::now() + Duration::from_millis(150);
         let mut next = Some(first);
-        while let Some(w) = next.take() {
+        while let Some((epoch, w)) = next.take() {
             match w {
-                Write::Log(l) => logs.push(l),
-                Write::Request(x, generation) => reqs.push((x, generation)),
+                Write::Log(l) => logs.push((epoch, l)),
+                Write::Request(x, generation) => reqs.push((epoch, x, generation)),
             }
             if logs.len() + reqs.len() >= 2000 {
                 break;
@@ -636,27 +728,11 @@ async fn writer_task(core: Arc<Core>, mut rx: mpsc::Receiver<Write>) {
         }
         let db = core.db.clone();
         let request_capture = core.request_capture.clone();
+        let data_epoch = core.data_epoch.clone();
         let batch_logs = std::mem::take(&mut logs);
         let batch_reqs = std::mem::take(&mut reqs);
         let stored = tokio::task::spawn_blocking(move || {
-            let mut out_logs = Vec::new();
-            if !batch_logs.is_empty() {
-                if let Ok(ids) = db.insert_logs(&batch_logs) {
-                    out_logs = batch_logs.into_iter().zip(ids).map(|(mut l, id)| {
-                        l.id = id;
-                        l
-                    }).collect();
-                }
-            }
-            let mut out_reqs = Vec::new();
-            let mut bytes = 0usize;
-            for (x, generation) in batch_reqs {
-                bytes += record_bytes(&x);
-                if let Some(summary) = request_capture.store(&db, &x, generation) {
-                    out_reqs.push((summary, generation));
-                }
-            }
-            (out_logs, out_reqs, bytes)
+            store_batch(&db, &request_capture, &data_epoch, batch_logs, batch_reqs)
         })
         .await;
         if let Ok((l, r, bytes)) = stored {
@@ -679,9 +755,12 @@ async fn writer_task(core: Arc<Core>, mut rx: mpsc::Receiver<Write>) {
     }
 }
 
-async fn state_task(core: Arc<Core>, mut rx: mpsc::UnboundedReceiver<TunnelState>) {
-    while let Some(s) = rx.recv().await {
-        core.on_state(s);
+async fn state_task(core: Arc<Core>, mut rx: mpsc::UnboundedReceiver<(u64, TunnelState)>) {
+    while let Some((queued_epoch, s)) = rx.recv().await {
+        let epoch = core.data_epoch.read().unwrap();
+        if queued_epoch == *epoch && core.db.tunnel(&s.id).ok().flatten().is_some() {
+            core.on_state(s);
+        }
     }
 }
 

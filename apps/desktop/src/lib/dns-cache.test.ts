@@ -26,6 +26,18 @@ afterEach(() => {
 });
 
 describe("DNS cache", () => {
+  it("forgets in-memory results and ignores pending completions after app reset", async () => {
+    const cache = await import("./dns-cache");
+    cache.markDnsCheck(KEY, NOW);
+    cache.saveDnsResult(KEY, RESULT, NOW);
+    values.clear();
+    cache.clearDnsCache();
+    cache.saveDnsResult(KEY, RESULT, NOW);
+    expect(cache.readDnsCache(KEY)).toBeNull();
+    expect(cache.dnsCheckDue(KEY, NOW)).toBe(true);
+    expect(values.size).toBe(0);
+  });
+
   it("checks at most once per 24 hours, including the exact boundary", async () => {
     const cache = await import("./dns-cache");
     expect(cache.dnsCheckDue(KEY, NOW)).toBe(true);

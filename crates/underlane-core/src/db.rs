@@ -168,6 +168,15 @@ impl Db {
 
     // ---- settings ----
 
+    /// Clear app records atomically while keeping the live SQLite connection valid.
+    pub fn reset(&self) -> anyhow::Result<()> {
+        let mut conn = self.conn.lock().unwrap();
+        let tx = conn.transaction()?;
+        tx.execute_batch("DELETE FROM requests; DELETE FROM logs; DELETE FROM tunnels; DELETE FROM groups; DELETE FROM settings; DELETE FROM sqlite_sequence;")?;
+        tx.commit()?;
+        Ok(())
+    }
+
     pub fn settings(&self) -> anyhow::Result<Settings> {
         let raw: Option<String> = self.with(|c| {
             c.query_row("SELECT value FROM settings WHERE key = 'settings'", [], |r| r.get(0)).optional()

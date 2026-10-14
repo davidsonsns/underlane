@@ -112,6 +112,7 @@ export const api = {
     invoke<void>("rename_group", { id, name }),
   requestCapturePaused: (tunnelId: string) =>
     invoke<boolean>("request_capture_paused", { tunnelId }),
+  resetApp: () => invoke<void>("reset_app"),
   restart: (id: string) => invoke<void>("restart_tunnel", { id }),
   restartAll: () => invoke<void>("restart_all"),
   saveHostnames: (

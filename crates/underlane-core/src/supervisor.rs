@@ -264,10 +264,17 @@ impl RunHandle {
     }
 }
 
+#[derive(Default)]
+struct Runs {
+    handles: HashMap<String, RunHandle>,
+    resetting: bool,
+    generation: u64,
+}
+
 pub struct Supervisor {
     cfg: SupervisorConfig,
     sink: EventSink,
-    runs: Mutex<HashMap<String, RunHandle>>,
+    runs: Mutex<Runs>,
     identities: Arc<Mutex<HashMap<String, IdentityOwner>>>,
     /// Captured at construction so tunnels can be started from any thread (UI callbacks,
     /// app setup), not just from inside the runtime.
@@ -283,7 +290,7 @@ impl Supervisor {
         Arc::new(Supervisor {
             cfg,
             sink,
-            runs: Mutex::new(HashMap::new()),
+            runs: Mutex::new(Runs::default()),
             identities: Arc::new(Mutex::new(HashMap::new())),
             rt: tokio::runtime::Handle::current(),
             runs_started: AtomicU64::new(0),
@@ -296,17 +303,17 @@ impl Supervisor {
 
     /// A run task exists for this tunnel (including crashed-and-retrying and stopping).
     pub fn is_running(&self, id: &str) -> bool {
-        self.runs.lock().unwrap().get(id).map(RunHandle::live).unwrap_or(false)
+        self.runs.lock().unwrap().handles.get(id).map(RunHandle::live).unwrap_or(false)
     }
 
     pub fn running_ids(&self) -> Vec<String> {
-        self.runs.lock().unwrap().iter().filter(|(_, r)| r.live()).map(|(id, _)| id.clone()).collect()
+        self.runs.lock().unwrap().handles.iter().filter(|(_, r)| r.live()).map(|(id, _)| id.clone()).collect()
     }
 
     /// Authoritative state for comparisons, before the application's queued state events.
     pub fn config_state(&self, id: &str) -> Option<TunnelState> {
         let runs = self.runs.lock().unwrap();
-        let handle = runs.get(id).filter(|h| h.live() && !h.stopping)?;
+        let handle = runs.handles.get(id).filter(|h| h.live() && !h.stopping)?;
         let state = handle.config_state.lock().unwrap().clone();
         Some(state)
     }
@@ -334,52 +341,51 @@ impl Supervisor {
     }
 
     /// Start once the current run (if it is stopping) has fully exited.
-    fn start_after(self: &Arc<Self>, mut done: watch::Receiver<bool>, spec: RunSpec, restart: bool) {
+    fn start_after(self: &Arc<Self>, mut done: watch::Receiver<bool>, spec: RunSpec, restart: bool, generation: u64) -> JoinHandle<()> {
         let me = self.clone();
         self.rt.spawn(async move {
             let _ = done.wait_for(|d| *d).await;
-            if restart {
-                me.restart(spec);
-            } else {
-                me.start(spec);
-            }
-        });
+            me.start_or_restart(spec, restart, Some(generation));
+        })
     }
 
     /// Start a tunnel. A no-op if it is already running; deferred if it is still stopping.
     pub fn start(self: &Arc<Self>, spec: RunSpec) {
-        let mut runs = self.runs.lock().unwrap();
-        if let Some(h) = runs.get(&spec.tunnel.id).filter(|h| h.live()) {
-            if h.stopping {
-                let done = h.done.clone();
-                drop(runs);
-                self.start_after(done, spec, false);
-            }
-            return;
-        }
-        self.spawn_run(&mut runs, spec);
+        self.start_or_restart(spec, false, None);
     }
 
     /// Restart with a (possibly updated) spec; starts it if it isn't running.
     pub fn restart(self: &Arc<Self>, spec: RunSpec) {
+        self.start_or_restart(spec, true, None);
+    }
+
+    fn start_or_restart(self: &Arc<Self>, spec: RunSpec, restart: bool, generation: Option<u64>) {
         let mut runs = self.runs.lock().unwrap();
-        if let Some(h) = runs.get(&spec.tunnel.id).filter(|h| h.live()) {
+        // Check under the spawn lock so old deferred starts cannot cross a reset boundary.
+        if runs.resetting || generation.is_some_and(|generation| generation != runs.generation) {
+            return;
+        }
+        if let Some(h) = runs.handles.get(&spec.tunnel.id).filter(|h| h.live()) {
             if h.stopping {
                 let done = h.done.clone();
+                let generation = runs.generation;
                 drop(runs);
-                self.start_after(done, spec, true);
-            } else {
+                let _ = self.start_after(done, spec, restart, generation);
+            } else if restart {
                 let _ = h.tx.send(Cmd::Restart(Box::new(spec)));
             }
             return;
         }
-        self.spawn_run(&mut runs, spec);
+        self.spawn_run(&mut runs.handles, spec);
     }
 
     /// Apply an edit only to an existing run; a concurrent user Stop always wins.
     pub fn restart_if_running(&self, spec: RunSpec) -> bool {
         let runs = self.runs.lock().unwrap();
-        let Some(handle) = runs.get(&spec.tunnel.id).filter(|h| h.live() && !h.stopping) else { return false };
+        if runs.resetting {
+            return false;
+        }
+        let Some(handle) = runs.handles.get(&spec.tunnel.id).filter(|h| h.live() && !h.stopping) else { return false };
         handle.tx.send(Cmd::Restart(Box::new(spec))).is_ok()
     }
 
@@ -387,14 +393,14 @@ impl Supervisor {
     pub async fn stop(&self, id: &str) {
         let waiting = {
             let mut runs = self.runs.lock().unwrap();
-            match runs.get_mut(id) {
+            match runs.handles.get_mut(id) {
                 Some(h) if h.live() => {
                     h.stopping = true;
                     let _ = h.tx.send(Cmd::Stop);
                     Some((h.done.clone(), h.run))
                 }
                 _ => {
-                    runs.remove(id);
+                    runs.handles.remove(id);
                     None
                 }
             }
@@ -403,8 +409,8 @@ impl Supervisor {
             Some((mut done, run_no)) => {
                 let _ = done.wait_for(|d| *d).await;
                 let mut runs = self.runs.lock().unwrap();
-                if runs.get(id).map(|h| h.run == run_no).unwrap_or(false) {
-                    runs.remove(id);
+                if runs.handles.get(id).map(|h| h.run == run_no).unwrap_or(false) {
+                    runs.handles.remove(id);
                 }
             }
             None => {
@@ -427,6 +433,27 @@ impl Supervisor {
         for t in tasks {
             let _ = t.await;
         }
+    }
+
+    /// Block starts and restarts, invalidating starts deferred before this reset.
+    pub fn begin_reset(&self) {
+        let mut runs = self.runs.lock().unwrap();
+        if !runs.resetting {
+            runs.resetting = true;
+            runs.generation += 1;
+        }
+    }
+
+    /// Stop every run while keeping starts blocked until the caller clears app data.
+    pub async fn stop_all_for_reset(self: &Arc<Self>) {
+        self.begin_reset();
+        self.stop_all().await;
+        self.runs.lock().unwrap().handles.clear();
+    }
+
+    /// Allow fresh starts after reset has finished, or after a failed reset was recovered.
+    pub fn end_reset(&self) {
+        self.runs.lock().unwrap().resetting = false;
     }
 }
 
@@ -1375,4 +1402,57 @@ async fn run(mut spec: RunSpec, cfg: SupervisorConfig, sink: EventSink, mut rx: 
 pub fn backoff(base: Duration, max: Duration, attempt: u32) -> Duration {
     let exp = attempt.saturating_sub(1).min(16);
     (base * 2u32.pow(exp)).min(max)
+}
+
+#[cfg(test)]
+mod reset_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn reset_invalidates_deferred_starts_and_allows_fresh_starts() {
+        let data = tempfile::tempdir().unwrap();
+        let capture = Arc::new(RwLock::new(Default::default()));
+        let supervisor = Supervisor::new(SupervisorConfig::new(data.path().to_owned(), None, capture), Arc::new(|_| {}));
+        let spec = RunSpec {
+            tunnel: Tunnel {
+                id: "reset-test".into(),
+                group_id: None,
+                name: "Reset test".into(),
+                kind: TunnelKind::Quick,
+                config_path: None,
+                origin_url: Some("http://localhost:3000".into()),
+                inspect: false,
+                autostart: false,
+                loglevel: "info".into(),
+                created_at: 0,
+                sort: 0,
+            },
+            token: None,
+        };
+
+        for restart in [false, true] {
+            let (done, waiting) = watch::channel(false);
+            let generation = supervisor.runs.lock().unwrap().generation;
+            let deferred = supervisor.start_after(waiting, spec.clone(), restart, generation);
+            supervisor.begin_reset();
+            supervisor.start(spec.clone());
+            supervisor.restart(spec.clone());
+            assert!(!supervisor.restart_if_running(spec.clone()));
+            assert!(supervisor.running_ids().is_empty(), "reset blocks new runs");
+            supervisor.stop_all_for_reset().await;
+            supervisor.end_reset();
+
+            done.send(true).unwrap();
+            deferred.await.unwrap();
+            assert!(supervisor.running_ids().is_empty(), "pre-reset deferred work stays invalid after reset ends");
+
+            supervisor.start(spec.clone());
+            assert!(supervisor.is_running(&spec.tunnel.id), "fresh starts work after reset");
+            supervisor.begin_reset();
+            assert!(!supervisor.restart_if_running(spec.clone()), "reset blocks edits to existing runs");
+            supervisor.stop_all_for_reset().await;
+            assert!(supervisor.running_ids().is_empty(), "reset waits for existing runs to stop");
+            supervisor.end_reset();
+        }
+    }
 }

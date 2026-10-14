@@ -22,3 +22,11 @@ pub fn delete(id: &str) {
         let _ = e.delete_credential();
     }
 }
+
+pub fn delete_for_reset(id: &str) -> anyhow::Result<()> {
+    let entry = keyring::Entry::new(SERVICE, id)?;
+    match entry.delete_credential() {
+        Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
+        Err(error) => Err(error.into()),
+    }
+}

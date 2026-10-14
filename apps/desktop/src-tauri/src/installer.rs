@@ -16,7 +16,7 @@ use underlane_core::cloudflared::Binary;
 const RELEASE_URL: &str = "https://api.github.com/repos/cloudflare/cloudflared/releases/latest";
 const MAX_ARCHIVE: usize = 80 * 1024 * 1024;
 const MAX_BINARY: usize = 160 * 1024 * 1024;
-static INSTALL_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+pub(crate) static INSTALL_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 static STAGING_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
 pub fn managed_path(data_dir: &Path) -> PathBuf {

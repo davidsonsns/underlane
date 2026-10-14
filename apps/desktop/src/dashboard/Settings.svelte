@@ -9,6 +9,16 @@
   import SettingsRow from "$lib/components/app/SettingsRow.svelte";
   import StatePanel from "$lib/components/app/StatePanel.svelte";
   import Toolbar from "$lib/components/app/Toolbar.svelte";
+  import {
+    Cancel as AlertCancel,
+    Content as AlertContent,
+    Description as AlertDescription,
+    Footer as AlertFooter,
+    Header as AlertHeader,
+    Root as AlertRoot,
+    Title as AlertTitle,
+    Trigger as AlertTrigger,
+  } from "$lib/components/ui/alert-dialog/index.js";
   import { Button } from "$lib/components/ui/button/index.js";
   import { Input } from "$lib/components/ui/input/index.js";
   import {
@@ -23,8 +33,9 @@
     Trigger as SelectTrigger,
   } from "$lib/components/ui/select/index.js";
   import { Switch } from "$lib/components/ui/switch/index.js";
+  import { returnFocusTo } from "$lib/focus";
   import { notify } from "$lib/toast";
-  import { api } from "../lib/api";
+  import { api, errorText } from "../lib/api";
   import { store } from "../lib/store.svelte";
   import type { LoginItem, Settings } from "../lib/types";
 
@@ -33,6 +44,30 @@
   let detecting = $state(false);
   let redactText = $state("");
   let redactQueryText = $state("");
+  let resetOpen = $state(false);
+  let resetting = $state(false);
+  let resetFailure = $state<string | null>(null);
+  let resetTrigger = $state<HTMLElement | null>(null);
+
+  async function resetApp() {
+    if (resetting) {
+      return;
+    }
+    resetting = true;
+    resetFailure = null;
+    try {
+      await api.resetApp();
+    } catch (error) {
+      resetFailure = errorText(error);
+      resetting = false;
+    }
+  }
+
+  function preventWhileResetting(event: Event) {
+    if (resetting) {
+      event.preventDefault();
+    }
+  }
 
   // data-field → the draft key it edits; a focused field keeps its typed value (see below).
   const KEEP: Record<string, keyof Settings> = {
@@ -437,6 +472,64 @@
       {@render storageSettings(currentDraft)}
 
       {@render inspectionSettings(currentDraft)}
+
+      <SettingsGroup title="Reset">
+        <SettingsRow
+          help="Erase local app data and return to onboarding."
+          label="Start fresh"
+        >
+          <AlertRoot
+            onOpenChange={() => {
+              resetFailure = null;
+            }}
+            bind:open={resetOpen}
+          >
+            <AlertTrigger bind:ref={resetTrigger}>
+              {#snippet child({
+                props,
+              })}
+                <Button {...props} variant="destructive">Reset app…</Button>
+              {/snippet}
+            </AlertTrigger>
+            <AlertContent
+              onCloseAutoFocus={returnFocusTo(() => resetTrigger)}
+              onEscapeKeydown={preventWhileResetting}
+              onInteractOutside={preventWhileResetting}
+            >
+              <AlertHeader>
+                <AlertTitle>Reset Underlane?</AlertTitle>
+                <AlertDescription>
+                  Underlane will stop all running tunnels. This permanently
+                  deletes local projects, saved tunnel tokens, logs, captured
+                  requests, settings, and the app-managed cloudflared download.
+                  Launch at login will be turned off.
+                </AlertDescription>
+                <AlertDescription>
+                  Project config files, shared Cloudflare authorization and
+                  credentials, and remote Cloudflare tunnels and DNS records are
+                  kept. You’ll return to onboarding. This can’t be undone.
+                </AlertDescription>
+              </AlertHeader>
+              {#if resetFailure}
+                <p class="text-xs text-destructive" role="alert">
+                  {resetFailure}
+                </p>
+              {/if}
+              <AlertFooter>
+                <AlertCancel disabled={resetting}>Cancel</AlertCancel>
+                <Button
+                  aria-busy={resetting || undefined}
+                  disabled={resetting}
+                  onclick={resetApp}
+                  variant="destructive"
+                >
+                  {resetting ? "Resetting…" : "Erase data and reset"}
+                </Button>
+              </AlertFooter>
+            </AlertContent>
+          </AlertRoot>
+        </SettingsRow>
+      </SettingsGroup>
     </div>
   {/if}
 </div>

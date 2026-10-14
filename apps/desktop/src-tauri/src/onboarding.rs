@@ -58,6 +58,7 @@ pub async fn onboarding_status(core: State<'_, Arc<Core>>) -> Result<OnboardingS
 
 #[tauri::command]
 pub async fn complete_onboarding(core: State<'_, Arc<Core>>) -> Result<(), String> {
+    let _operation = core.operations.try_read().map_err(|_| "App reset is in progress. Try again when setup opens.")?;
     let core = core.inner().clone();
     tokio::task::spawn_blocking(move || mark_complete(&core.db))
         .await
@@ -69,6 +70,7 @@ pub async fn select_cloudflared(
     core: State<'_, Arc<Core>>,
     path: Option<String>,
 ) -> Result<Option<Binary>, String> {
+    let _operation = core.operations.try_read().map_err(|_| "App reset is in progress. Try again when setup opens.")?;
     let path = path
         .map(|path| path.trim().to_string())
         .filter(|path| !path.is_empty());

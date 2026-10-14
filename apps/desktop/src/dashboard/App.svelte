@@ -32,6 +32,7 @@
   let onboarding = $state<boolean | null>(null);
   let onboardingError = $state<string | null>(null);
   let existingAuthorization = $state(false);
+  let onboardingRequest = 0;
   let alive = true;
   let focusId = $state<string | null>(null);
   let adding = $state(false);
@@ -130,6 +131,18 @@
     store.init();
     loadOnboarding();
     const subs = [
+      listen("app-reset", () => {
+        adding = false;
+        sheetSession += 1;
+        addTrigger = null;
+        addedId = null;
+        focusId = null;
+        view = "tunnels";
+        existingAuthorization = false;
+        onboarding = null;
+        history.replaceState(null, "", location.pathname + location.search);
+        loadOnboarding();
+      }),
       listen<string>("navigate", (e) => navigate(e.payload)),
       listen<SnapshotRequest>("e2e-snapshot", (e) => {
         snapshots = snapshots
@@ -146,10 +159,12 @@
   });
 
   async function loadOnboarding() {
+    onboardingRequest += 1;
+    const request = onboardingRequest;
     onboardingError = null;
     try {
       const status = await api.onboardingStatus();
-      if (!alive) {
+      if (!alive || request !== onboardingRequest) {
         return;
       }
       existingAuthorization = status.account_connected;
@@ -158,7 +173,7 @@
         navigate(location.hash);
       }
     } catch (e) {
-      if (alive) {
+      if (alive && request === onboardingRequest) {
         onboardingError = errorText(e);
       }
     }

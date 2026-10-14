@@ -1,7 +1,11 @@
 // Reactive app state shared by a window's components, fed by backend events.
 import { listen } from "@tauri-apps/api/event";
 import { api, errorText } from "./api";
+import { columnPrefs } from "./columns.svelte";
+import { clearDnsCache } from "./dns-cache";
+import { sectionPrefs } from "./sections.svelte";
 import { applyTheme } from "./theme";
+import { notify } from "./toast";
 import { preserveConfigMappings } from "./tunnel-state";
 import type { Overview, TunnelState } from "./types";
 
@@ -11,6 +15,7 @@ class AppStore {
   error = $state<string | null>(null);
   /** Bumps when a request flows through a tunnel (drives the route pulse). */
   pulses = $state<Record<string, number>>({});
+  private generation = 0;
 
   get tunnels() {
     return this.overview?.tunnels ?? [];
@@ -22,15 +27,23 @@ class AppStore {
   }
 
   async refresh() {
+    const { generation } = this;
     try {
       const o = await api.overview();
+      if (generation !== this.generation) {
+        return;
+      }
       this.overview = o;
       this.error = null;
       applyTheme(o.settings.theme);
     } catch (e) {
-      this.error = errorText(e);
+      if (generation === this.generation) {
+        this.error = errorText(e);
+      }
     } finally {
-      this.loading = false;
+      if (generation === this.generation) {
+        this.loading = false;
+      }
     }
   }
 
@@ -58,6 +71,26 @@ class AppStore {
       this.applyState(e.payload)
     );
     await listen("tunnels-changed", () => this.scheduleRefresh());
+    await listen("app-reset", () => {
+      this.generation += 1;
+      clearTimeout(this.refreshTimer);
+      this.overview = null;
+      this.loading = true;
+      this.error = null;
+      this.pulses = {};
+      for (const storage of ["localStorage", "sessionStorage"] as const) {
+        try {
+          window[storage].clear();
+        } catch {
+          // Browser storage can be unavailable; still reset the live window.
+        }
+      }
+      columnPrefs.hidden = [];
+      sectionPrefs.collapsed = [];
+      clearDnsCache();
+      notify.dismiss();
+      this.refresh();
+    });
     await listen("settings-changed", (e) => {
       const s = e.payload as Overview["settings"];
       if (this.overview) {

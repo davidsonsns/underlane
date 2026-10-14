@@ -3,6 +3,7 @@
 mod commands;
 mod installer;
 mod onboarding;
+mod reset;
 mod e2e;
 mod hostnames;
 mod setup;
@@ -113,6 +114,7 @@ pub fn run() {
             commands::get_request,
             commands::clear_requests,
             commands::save_settings,
+            reset::reset_app,
             commands::detect_cloudflared,
             commands::install_cloudflared,
             onboarding::onboarding_status,

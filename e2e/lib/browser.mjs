@@ -170,7 +170,8 @@ export function installHostnameMock({ delay, mockName }) {
 
 function installTauriBridge() {
   const callbacks = {},
-    listeners = {};
+    listeners = {},
+    subscriptions = {};
   let next = 1;
   const nextId = () => {
     const id = next;
@@ -179,15 +180,22 @@ function installTauriBridge() {
   };
   window.__mockListeners = listeners;
   window.__TAURI_EVENT_PLUGIN_INTERNALS__ = {
-    unregisterListener() {
-      /* The fixture page owns listener lifetime. */
+    unregisterListener(event, id) {
+      delete subscriptions[event]?.[id];
     },
   };
   window.__TAURI_INTERNALS__ = {
     async invoke(cmd, args) {
       if (cmd === "plugin:event|listen") {
-        listeners[args.event] = callbacks[args.handler];
-        return nextId();
+        const id = nextId();
+        subscriptions[args.event] ??= {};
+        subscriptions[args.event][id] = callbacks[args.handler];
+        listeners[args.event] = (event) => {
+          for (const callback of Object.values(subscriptions[args.event])) {
+            callback(event);
+          }
+        };
+        return id;
       }
       return await window.__mockDispatch(cmd, args);
     },
