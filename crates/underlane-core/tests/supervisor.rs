@@ -15,6 +15,311 @@ use fake_cloudflared::{argv, fake, Fake};
 
 type States = Arc<Mutex<Vec<TunnelState>>>;
 
+async fn wait_project(states: &States, id: &str, predicate: impl Fn(&TunnelState) -> bool) -> TunnelState {
+    for _ in 0..200 {
+        if let Some(state) = states.lock().unwrap().iter().rev().find(|s| s.id == id && predicate(s)).cloned() {
+            return state;
+        }
+        tokio::time::sleep(Duration::from_millis(25)).await;
+    }
+    panic!("project {id} never reached expected state: {:?}", states.lock().unwrap());
+}
+
+fn project_spec(f: &Fake, id: &str, identity: &str) -> RunSpec {
+    let path = f.root.join(format!("{id}.yml"));
+    std::fs::write(&path, format!("tunnel: {identity}\ningress:\n  - hostname: {id}.example.com\n    service: http://localhost:3000\n  - service: http_status:404\n")).unwrap();
+    let mut t = tunnel(TunnelKind::Config);
+    t.id = id.into();
+    t.name = id.into();
+    t.config_path = Some(path.to_string_lossy().into_owned());
+    RunSpec { tunnel: t, token: None }
+}
+
+fn tunnel_token(identity: &str) -> String {
+    use base64::Engine;
+    base64::engine::general_purpose::STANDARD.encode(format!(r#"{{"a":"invented-account","s":"aW52ZW50ZWQtc3VwZXJ2aXNvci10b2tlbg==","t":"{identity}"}}"#))
+}
+
+#[tokio::test]
+async fn a_second_project_cannot_start_the_same_cloudflare_tunnel() {
+    let f = fake("ok");
+    let (sup, states, _) = supervisor(&f, |_| {});
+    let identity = uuid::Uuid::new_v4().to_string();
+    let first = project_spec(&f, "first", &identity);
+    let second = project_spec(&f, "second", &identity.to_ascii_uppercase());
+    sup.start(first);
+    wait_project(&states, "first", |s| s.status == Status::Connected).await;
+    sup.start(second.clone());
+    let rejected = wait_project(&states, "second", |s| s.status == Status::Connected || (s.status == Status::Stopped && s.detail.is_some())).await;
+    sup.stop_all().await;
+    assert_eq!(rejected.status, Status::Stopped);
+    assert!(!rejected.supervised);
+    assert!(rejected.pid.is_none());
+    assert!(rejected.detail.as_deref().unwrap().contains("first"));
+    assert!(rejected.failure.is_some());
+    let conflict = rejected.tunnel_conflict.unwrap();
+    assert_eq!(conflict.tunnel_id, identity);
+    assert_eq!(conflict.project_id, "first");
+    assert_eq!(conflict.project_name, "first");
+    assert!(!f.data.join("derived/second.yml").exists());
+
+    sup.start(second);
+    let connected = wait_project(&states, "second", |s| s.status == Status::Connected).await;
+    assert!(connected.tunnel_conflict.is_none());
+    assert!(connected.failure.is_none());
+    sup.stop_all().await;
+}
+
+#[tokio::test]
+async fn stopping_keeps_identity_until_the_process_group_is_gone() {
+    let f = fake("ignore-term");
+    let (sup, states, _) = supervisor(&f, |cfg| cfg.grace_period = Duration::from_millis(10));
+    let identity = uuid::Uuid::new_v4().to_string();
+    let id = identity.as_str();
+    let first = project_spec(&f, "first", id);
+    std::fs::write(first.tunnel.config_path.as_ref().unwrap(), format!("tunnel: {id}\nurl: http://localhost:3000\n")).unwrap();
+    sup.start(first);
+    wait_project(&states, "first", |s| s.pid.is_some()).await;
+    for _ in 0..200 {
+        if f.root.join("bin/pids.json").exists() { break; }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    assert!(f.root.join("bin/pids.json").exists(), "fake installed its slow-stop handler");
+    let stopping = sup.clone();
+    let stop = tokio::spawn(async move { stopping.stop("first").await });
+    while sup.config_state("first").is_some() { tokio::task::yield_now().await; }
+    let second = project_spec(&f, "second", id);
+    sup.start(second.clone());
+    let blocked = wait_project(&states, "second", |s| s.tunnel_conflict.is_some()).await;
+    assert_eq!(blocked.tunnel_conflict.unwrap().project_id, "first");
+    assert!(!stop.is_finished(), "second start was refused before slow stop completed");
+    stop.await.unwrap();
+    std::fs::write(f.root.join("bin/mode"), "ok").unwrap();
+    sup.start(second);
+    wait_project(&states, "second", |s| s.status == Status::Connected).await;
+    sup.stop_all().await;
+}
+
+#[tokio::test]
+async fn stopping_during_validation_releases_the_reservation_without_a_connector() {
+    let f = fake("ok");
+    let script = std::fs::read_to_string(&f.bin).unwrap().replace(
+        "if \"ingress\" in args:\n    print(\"OK\"); sys.exit(0)",
+        "if \"ingress\" in args:\n    open(os.path.join(here, 'validating'), 'w').close()\n    while not os.path.exists(os.path.join(here, 'release-validation')): time.sleep(0.01)\n    print(\"OK\"); sys.exit(0)",
+    );
+    std::fs::write(&f.bin, script).unwrap();
+    let (sup, states, _) = supervisor(&f, |_| {});
+    let identity = uuid::Uuid::new_v4().to_string();
+    let id = identity.as_str();
+    sup.start(project_spec(&f, "first", id));
+    for _ in 0..200 {
+        if f.root.join("bin/validating").exists() { break; }
+        tokio::time::sleep(Duration::from_millis(25)).await;
+    }
+    assert!(f.root.join("bin/validating").exists());
+    sup.stop("first").await;
+    assert!(!f.data.join("derived/first.yml").exists());
+    std::fs::write(f.root.join("bin/release-validation"), "").unwrap();
+    sup.start(project_spec(&f, "second", id));
+    wait_project(&states, "second", |s| s.status == Status::Connected).await;
+    sup.stop_all().await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn concurrent_projects_reserve_one_connector_atomically() {
+    let f = fake("ok");
+    let (sup, states, _) = supervisor(&f, |_| {});
+    let identity = uuid::Uuid::new_v4().to_string();
+    let a = project_spec(&f, "a", &identity);
+    let b = project_spec(&f, "b", &identity);
+    let start_a = sup.clone();
+    let start_b = sup.clone();
+    let (a_start, b_start) = tokio::join!(
+        tokio::spawn(async move { start_a.start(a); }),
+        tokio::spawn(async move { start_b.start(b); }),
+    );
+    a_start.unwrap();
+    b_start.unwrap();
+    let terminal = |s: &TunnelState| s.status == Status::Connected || s.tunnel_conflict.is_some();
+    let a = wait_project(&states, "a", terminal).await;
+    let b = wait_project(&states, "b", terminal).await;
+    sup.stop_all().await;
+    assert_eq!([&a, &b].into_iter().filter(|s| s.status == Status::Connected).count(), 1);
+    assert_eq!([&a, &b].into_iter().filter(|s| s.tunnel_conflict.is_some()).count(), 1);
+    assert_eq!([&a, &b].into_iter().filter(|s| s.pid.is_some()).count(), 1);
+}
+
+#[tokio::test]
+async fn source_edits_do_not_release_runtime_identity_and_conflicting_restart_releases_it() {
+    let f = fake("ok");
+    let (sup, states, _) = supervisor(&f, |_| {});
+    let original_identity = uuid::Uuid::new_v4().to_string();
+    let other_identity = uuid::Uuid::new_v4().to_string();
+    let original_id = original_identity.as_str();
+    let other_id = other_identity.as_str();
+    let first = project_spec(&f, "first", original_id);
+    let second = project_spec(&f, "second", other_id);
+    let third = project_spec(&f, "third", original_id);
+    sup.start(first.clone());
+    let original = wait_project(&states, "first", |s| s.status == Status::Connected).await;
+    sup.start(second);
+    let other = wait_project(&states, "second", |s| s.status == Status::Connected).await;
+    let path = first.tunnel.config_path.as_ref().unwrap();
+    let text = std::fs::read_to_string(path).unwrap().replace(original_id, other_id);
+    std::fs::write(path, text).unwrap();
+    sup.start(third.clone());
+    let blocked = wait_project(&states, "third", |s| s.tunnel_conflict.is_some()).await;
+    assert_eq!(blocked.tunnel_conflict.unwrap().project_id, "first");
+    assert_eq!(sup.config_state("first").unwrap().cloudflare_tunnel_id.as_deref(), Some(original_id));
+    sup.restart(first);
+    let blocked = wait_project(&states, "first", |s| s.tunnel_conflict.is_some()).await;
+    assert_eq!(blocked.status, Status::Stopped);
+    assert_eq!(blocked.tunnel_conflict.unwrap().project_id, "second");
+    assert_eq!(blocked.config_revision, original.config_revision);
+    assert!(blocked.cloudflare_tunnel_id.is_none());
+    assert_eq!(sup.config_state("second").unwrap().pid, other.pid);
+    sup.start(third);
+    wait_project(&states, "third", |s| s.status == Status::Connected).await;
+    sup.stop_all().await;
+}
+
+#[tokio::test]
+async fn retrying_and_exhausted_runs_keep_identity_until_stopped() {
+    let f = fake("crash");
+    let (sup, states, _) = supervisor(&f, |cfg| {
+        cfg.max_failures = 2;
+        cfg.backoff_base = Duration::from_millis(400);
+        cfg.backoff_max = Duration::from_millis(400);
+    });
+    let identity = uuid::Uuid::new_v4().to_string();
+    let id = identity.as_str();
+    sup.start(project_spec(&f, "first", id));
+    wait_project(&states, "first", |s| s.status == Status::Crashed && s.config_revision == 1).await;
+    let second = project_spec(&f, "second", id);
+    sup.start(second.clone());
+    let first_rejection = wait_project(&states, "second", |s| s.tunnel_conflict.is_some()).await;
+    let exhausted = wait_project(&states, "first", |s| s.status == Status::Crashed && s.config_revision == 2).await;
+    assert_eq!(exhausted.cloudflare_tunnel_id.as_deref(), Some(id));
+    sup.start(second.clone());
+    wait_project(&states, "second", |s| s.run > first_rejection.run && s.tunnel_conflict.is_some()).await;
+    sup.stop("first").await;
+    std::fs::write(f.root.join("bin/mode"), "ok").unwrap();
+    sup.start(second);
+    wait_project(&states, "second", |s| s.status == Status::Connected).await;
+    sup.stop_all().await;
+}
+
+#[tokio::test]
+async fn credential_names_and_all_token_forms_share_the_resolved_uuid() {
+    use underlane_core::secret::Secret;
+    let f = fake("ok");
+    let (sup, states, _) = supervisor(&f, |_| {});
+    let identity = uuid::Uuid::new_v4().to_string();
+    let id = identity.as_str();
+    sup.start(project_spec(&f, "owner", id));
+    wait_project(&states, "owner", |s| s.status == Status::Connected).await;
+    std::fs::write(f.root.join("credentials.json"), format!(r#"{{"TunnelID":"{id}","TunnelSecret":"invented-credentials-secret"}}"#)).unwrap();
+    let named = project_spec(&f, "named", "friendly-name");
+    let path = named.tunnel.config_path.as_ref().unwrap();
+    let source = std::fs::read_to_string(path).unwrap();
+    std::fs::write(path, format!("{source}credentials-file: credentials.json\n")).unwrap();
+    sup.start(named.clone());
+    let blocked = wait_project(&states, "named", |s| s.tunnel_conflict.is_some()).await;
+    assert_eq!(blocked.tunnel_conflict.unwrap().project_id, "owner");
+
+    let token = tunnel_token(id);
+    let mut remote = tunnel(TunnelKind::Token);
+    remote.id = "remote".into();
+    sup.start(RunSpec { tunnel: remote, token: Some(Secret::new(token.clone())) });
+    wait_project(&states, "remote", |s| s.tunnel_conflict.is_some()).await;
+    std::fs::write(f.root.join("token.txt"), &token).unwrap();
+    for (project, authentication) in [("inline", format!("token: {token}\n")), ("file", "token-file: token.txt\n".into())] {
+        let spec = project_spec(&f, project, &uuid::Uuid::new_v4().to_string());
+        let path = spec.tunnel.config_path.as_ref().unwrap();
+        let source = std::fs::read_to_string(path).unwrap();
+        std::fs::write(path, format!("{source}{authentication}")).unwrap();
+        sup.start(spec);
+        let blocked = wait_project(&states, project, |s| s.tunnel_conflict.is_some()).await;
+        assert_eq!(blocked.tunnel_conflict.as_ref().unwrap().tunnel_id, id, "token authentication takes precedence over tunnel");
+        assert!(!serde_json::to_string(&blocked).unwrap().contains(&token));
+    }
+    sup.stop("owner").await;
+    sup.start(named);
+    let connected = wait_project(&states, "named", |s| s.status == Status::Connected).await;
+    assert_eq!(connected.cloudflare_tunnel_id.as_deref(), Some(id));
+    assert_eq!(argv(&f).0.last().map(String::as_str), Some(id), "pin the credential UUID instead of leaving name resolution to a later file read");
+    sup.stop_all().await;
+}
+
+#[tokio::test]
+async fn unresolved_names_and_invalid_tokens_never_start_cloudflared() {
+    use underlane_core::secret::Secret;
+    for name in ["bare-name", "invalid-token"] {
+        let f = fake("ok");
+        let (sup, states, _) = supervisor(&f, |_| {});
+        let spec = if name == "bare-name" { project_spec(&f, name, "friendly-name") } else {
+            let mut remote = tunnel(TunnelKind::Token);
+            remote.id = name.into();
+            RunSpec { tunnel: remote, token: Some(Secret::new("invented-malformed-secret".into())) }
+        };
+        sup.start(spec);
+        let failed = wait_project(&states, name, |s| s.status == Status::Crashed).await;
+        assert!(failed.failure.is_some());
+        assert!(failed.pid.is_none());
+        assert!(!f.root.join("bin/argv.json").exists());
+        assert!(!serde_json::to_string(&failed).unwrap().contains("invented-malformed-secret"));
+        sup.stop_all().await;
+    }
+}
+
+#[test]
+fn identity_resolution_rejects_nil_and_mismatched_credentials() {
+    use underlane_core::{config::TunnelConfig, supervisor::config_tunnel_identity};
+    let f = fake("ok");
+    std::fs::write(f.root.join("credentials.json"), r#"{"TunnelID":"00000000-0000-4000-8000-000000000001"}"#).unwrap();
+    let path = f.root.join("source.yml");
+    for identity in ["00000000-0000-0000-0000-000000000000", "00000000-0000-4000-8000-000000000002"] {
+        let config = TunnelConfig::parse(&path, &format!("tunnel: {identity}\ncredentials-file: credentials.json\nurl: http://localhost:3000\n")).unwrap();
+        assert!(config_tunnel_identity(&config).is_err(), "{identity} must not be replaced by an unrelated credential identity");
+    }
+    let unnamed = TunnelConfig::parse(&path, "url: http://localhost:3000\n").unwrap();
+    assert_eq!(config_tunnel_identity(&unnamed).unwrap(), None);
+}
+
+#[tokio::test]
+async fn token_file_edits_during_validation_do_not_change_reserved_launch_identity() {
+    let f = fake("ok");
+    let script = std::fs::read_to_string(&f.bin).unwrap()
+        .replace("import json,", "import base64, json,")
+        .replace("args = sys.argv[1:]", "args = sys.argv[1:]\nif 'run' in args and os.environ.get('TUNNEL_TOKEN'):\n    with open(os.path.join(here, 'seen-token-tunnel'), 'w') as f: f.write(json.loads(base64.b64decode(os.environ['TUNNEL_TOKEN']))['t'])\n    with open(os.path.join(here, 'seen-token-trimmed'), 'w') as f: f.write('yes' if os.environ['TUNNEL_TOKEN'] == os.environ['TUNNEL_TOKEN'].strip() else 'no')")
+        .replace("if \"ingress\" in args:\n    print(\"OK\"); sys.exit(0)", "if \"ingress\" in args:\n    open(os.path.join(here, 'validating'), 'w').close()\n    while not os.path.exists(os.path.join(here, 'release-validation')): time.sleep(0.01)\n    print(\"OK\"); sys.exit(0)");
+    std::fs::write(&f.bin, script).unwrap();
+    let original_identity = uuid::Uuid::new_v4().to_string();
+    let original_id = original_identity.as_str();
+    std::fs::write(f.root.join("token.txt"), format!(" \t{}\r\n", tunnel_token(original_id))).unwrap();
+    let spec = project_spec(&f, "file", &uuid::Uuid::new_v4().to_string());
+    let path = spec.tunnel.config_path.as_ref().unwrap();
+    let source = std::fs::read_to_string(path).unwrap();
+    std::fs::write(path, format!("{source}token-file: token.txt\n")).unwrap();
+    let (sup, states, _) = supervisor(&f, |_| {});
+    sup.start(spec);
+    for _ in 0..200 {
+        if f.root.join("bin/validating").exists() { break; }
+        tokio::time::sleep(Duration::from_millis(25)).await;
+    }
+    assert!(f.root.join("bin/validating").exists());
+    std::fs::write(f.root.join("token.txt"), tunnel_token(&uuid::Uuid::new_v4().to_string())).unwrap();
+    std::fs::write(f.root.join("bin/release-validation"), "").unwrap();
+    let loaded = wait_project(&states, "file", |s| s.status == Status::Connected).await;
+    sup.stop_all().await;
+    assert_eq!(loaded.cloudflare_tunnel_id.as_deref(), Some(original_id));
+    assert_eq!(std::fs::read_to_string(f.root.join("bin/seen-token-tunnel")).unwrap(), original_id);
+    assert_eq!(std::fs::read_to_string(f.root.join("bin/seen-token-trimmed")).unwrap(), "yes", "token-file whitespace is trimmed before passing the token to cloudflared");
+    let derived = std::fs::read_to_string(f.data.join("derived/file.yml")).unwrap();
+    assert!(!derived.contains("token-file:"));
+    assert!(!derived.contains("token:"));
+}
+
 #[tokio::test]
 async fn applying_edits_never_starts_a_stopped_or_stopping_tunnel() {
     let f = fake("ignore-term");
@@ -53,12 +358,14 @@ async fn token_echo_is_redacted_before_persisted_logs() {
         Event::Log(log) => { log_db.insert_logs(&[log]).unwrap(); }
         Event::Request(_) => {}
     }));
-    sup.start(RunSpec { tunnel: tunnel(TunnelKind::Token), token: Some(Secret::new("invented-supervisor-token".into())) });
+    let token = tunnel_token(&uuid::Uuid::new_v4().to_string());
+    sup.start(RunSpec { tunnel: tunnel(TunnelKind::Token), token: Some(Secret::new(token.clone())) });
     wait_status(&states, Status::Connected).await;
     sup.stop("tun-1").await;
     let logs = db.query_logs(&LogQuery { limit: 100, ..Default::default() }).unwrap();
     assert!(logs.iter().any(|log| log.message.contains("synthetic child echoed [redacted]")));
     assert!(!format!("{logs:?} {states:?}").contains("invented-supervisor-token"));
+    assert!(!format!("{logs:?} {states:?}").contains(&token));
 }
 
 fn supervisor(f: &Fake, tune: impl FnOnce(&mut SupervisorConfig)) -> (Arc<Supervisor>, States, Arc<Mutex<usize>>) {
@@ -207,8 +514,8 @@ async fn loaded_source_deletion_and_read_failure_are_unreadable() {
 #[tokio::test]
 async fn failed_validation_and_spawn_keep_the_previous_loaded_baseline() {
     let f = fake("ok");
-    let original = "tunnel: test-id\ningress:\n  - service: http://localhost:4000\n";
-    let spec = config_spec(&f, original);
+    let original = format!("tunnel: {}\ningress:\n  - service: http://localhost:4000\n", uuid::Uuid::new_v4());
+    let spec = config_spec(&f, &original);
     let path = spec.tunnel.config_path.as_deref().unwrap();
     let (sup, states, _) = supervisor(&f, |_| {});
     sup.start(spec.clone());
@@ -242,8 +549,8 @@ async fn edit_during_preparation_keeps_the_bytes_used_for_derived_config() {
         "if \"ingress\" in args:\n    open(os.path.join(here, 'validating'), 'w').close()\n    while not os.path.exists(os.path.join(here, 'release-validation')): time.sleep(0.01)\n    print(\"OK\"); sys.exit(0)",
     );
     std::fs::write(&f.bin, script).unwrap();
-    let original = "tunnel: test-id\ningress:\n  - service: http://localhost:4000\n";
-    let spec = config_spec(&f, original);
+    let original = format!("tunnel: {}\ningress:\n  - service: http://localhost:4000\n", uuid::Uuid::new_v4());
+    let spec = config_spec(&f, &original);
     let path = spec.tunnel.config_path.as_deref().unwrap();
     let (sup, states, _) = supervisor(&f, |_| {});
     sup.start(spec.clone());
@@ -342,7 +649,7 @@ async fn config_tunnel_runs_a_derived_copy_from_the_config_dir() {
     let f = fake("ok");
     let proj = f.root.join("project/.cloudflared");
     std::fs::create_dir_all(&proj).unwrap();
-    let id = "00000000-0000-4000-8000-000000000101";
+    let id = uuid::Uuid::new_v4();
     std::fs::write(proj.join("creds.json"), format!(r#"{{"TunnelID":"{id}"}}"#)).unwrap();
     let original = format!("tunnel: {id}\ncredentials-file: creds.json\ningress:\n  - hostname: app.example.com\n    service: http://localhost:4000\n  - service: http_status:404\n");
     let cfg_path = proj.join("config.yml");

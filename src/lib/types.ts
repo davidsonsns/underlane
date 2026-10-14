@@ -38,6 +38,8 @@ export interface TunnelState {
   detail: string | null;
   hint: string | null;
   failure: FailureExplanation | null;
+  cloudflare_tunnel_id?: string | null;
+  tunnel_conflict?: { tunnel_id: string; project_id: string; project_name: string } | null;
   public_url: string | null;
   mappings: RouteMapping[];
   pid: number | null;
@@ -76,6 +78,10 @@ export interface Tunnel {
   has_token: boolean;
   /** A config project without a Cloudflare tunnel identity yet. */
   setup_needed?: boolean;
+  /** Resolved source identity; active runs carry their pinned identity in state. */
+  cloudflare_tunnel_id?: string | null;
+  separating_tunnel?: boolean;
+  separate_tunnel_pending?: boolean;
 }
 
 interface Group {
@@ -176,6 +182,27 @@ export interface TunnelSetupProgress {
 export interface TunnelSetupResult {
   tunnel_id: string;
   credentials_file: string;
+}
+
+export interface SeparateTunnelPreview {
+  revision: string;
+  old_tunnel_id: string;
+  hostnames: string[];
+  config_path: string;
+  resuming: boolean;
+}
+
+export interface SeparateTunnelResult {
+  tunnel_id: string;
+  config_path: string;
+  moved_hostnames: string[];
+  start_error: string | null;
+}
+
+export interface SeparateTunnelProgress {
+  id: string;
+  request_id: string;
+  stage: "checking" | "creating" | "dns" | "linking" | "starting";
 }
 
 export interface ImportReport {

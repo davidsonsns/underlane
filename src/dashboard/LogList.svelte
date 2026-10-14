@@ -19,6 +19,8 @@
     lines = $bindable(),
     names = {},
     showTunnel = false,
+    showTime = true,
+    showLevel = true,
     cap = 3000,
     ceiling = cap * 2,
   }: {
@@ -27,6 +29,8 @@
     names?: Record<string, string>;
     /** Show the tunnel column (the "All tunnels" view). */
     showTunnel?: boolean;
+    showTime?: boolean;
+    showLevel?: boolean;
     /** Lines kept while following (the view at the bottom). */
     cap?: number;
     /** Lines kept while the user is scrolled up (the head trim waits until they're back). */
@@ -39,6 +43,7 @@
   let follow = $state(true);
   /** Lines that arrived past the ceiling while scrolled up; shown once the user is back at the bottom. */
   let held: LogLine[] = [];
+  export function discardHeld() { held = []; }
   let activeId = $state<number | null>(null);
   /** Expanded lines by id: only open ones are kept, and trimmed lines are pruned. */
   let open = $state<Record<number, true>>({});
@@ -96,6 +101,18 @@
     await tick();
     if (follow && lines.length) list?.scrollToIndex(lines.length - 1, { align: "end" });
   }
+
+  // Columns change wrapping and row heights; keep the live edge once virtua remeasures.
+  $effect(() => {
+    void showTime;
+    void showLevel;
+    void showTunnel;
+    let live = true;
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      if (live && follow) void scrollToEnd();
+    }));
+    return () => { live = false; };
+  });
 
   // Snapshot mode unmounts the VList; when it (or the list itself) mounts again, restore the
   // view from the saved state (02 §4.3): the end while following, else the active line.
@@ -299,8 +316,8 @@
     <!-- 1.55 line height: the lines' rhythm from before the port (text-code's own is 16px). -->
     <div role="gridcell" class="px-4 py-px leading-[1.55]">
       <div class="flex gap-2.5">
-        <span class="flex-none text-muted-foreground tabular-nums">{formatClock(l.ts)}</span>
-        <span class={cn("w-7 flex-none", lvlText[l.level])}>{lvl(l)}</span>
+        {#if showTime}<span class="flex-none text-muted-foreground tabular-nums">{formatClock(l.ts)}</span>{/if}
+        {#if showLevel}<span class={cn("w-7 flex-none", lvlText[l.level])}>{lvl(l)}</span>{/if}
         {#if showTunnel}<span class="max-w-[110px] flex-none truncate text-muted-foreground">{names[l.tunnel_id] ?? "removed"}</span>{/if}
         <span class={cn("min-w-0 break-words whitespace-pre-wrap", msgText[l.level])}>{l.message}</span>
       </div>

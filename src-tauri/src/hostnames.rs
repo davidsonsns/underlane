@@ -61,6 +61,12 @@ pub async fn save(
     fallback_service: String,
 ) -> Result<SaveResult, String> {
     let _guard = SAVES.lock().await;
+    if crate::separate_tunnel::is_running(&id) {
+        return Err("Finish creating the separate tunnel before saving hostnames.".into());
+    }
+    if crate::separate_tunnel::start_blocked(&core, &id)? {
+        return Err("Finish the saved separate tunnel setup before changing its hostname rules.".into());
+    }
     let path = source_path(&core, &id)?;
     let prepared = hostnames::prepare(&path, &revision, &routes, &fallback_service)
         .map_err(|e| redact_text(&e.to_string()))?;

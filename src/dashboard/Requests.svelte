@@ -6,21 +6,27 @@
   import { api, errorText } from "../lib/api";
   import { latest } from "../lib/latest";
   import type { RequestSummary, RequestDetail as Detail } from "../lib/types";
-  import SearchIcon from "@lucide/svelte/icons/search";
-  import Columns3 from "@lucide/svelte/icons/columns-3";
+  import SlidersHorizontal from "@lucide/svelte/icons/sliders-horizontal";
+  import Pause from "@lucide/svelte/icons/pause";
+  import Play from "@lucide/svelte/icons/play";
+  import Trash2 from "@lucide/svelte/icons/trash-2";
+  import X from "@lucide/svelte/icons/x";
   import { Button } from "$lib/components/ui/button/index.js";
-  import * as InputGroup from "$lib/components/ui/input-group/index.js";
   import * as Popover from "$lib/components/ui/popover/index.js";
   import * as ToggleGroup from "$lib/components/ui/toggle-group/index.js";
+  import * as AlertDialog from "$lib/components/ui/alert-dialog/index.js";
   import IconAction from "$lib/components/app/IconAction.svelte";
+  import SearchAction from "$lib/components/app/SearchAction.svelte";
   import Toolbar from "$lib/components/app/Toolbar.svelte";
   import StatePanel from "$lib/components/app/StatePanel.svelte";
-  import TunnelPicker from "./TunnelPicker.svelte";
   import RequestList, { columns } from "./RequestList.svelte";
   import RequestDetail from "./RequestDetail.svelte";
+  import RequestFilters from "./RequestFilters.svelte";
   import { COLUMNS, columnPrefs, gridTemplate, setHidden, type ColumnId } from "$lib/columns.svelte";
   import { formatAt } from "$lib/format";
   import { motion } from "$lib/theme";
+  import { matchesRequestFilters } from "$lib/request-filters";
+  import { returnFocusOnClose, returnFocusTo } from "$lib/focus";
 
   const CAP = 500;
   let { focusId = null }: { focusId?: string | null } = $props();
@@ -30,6 +36,22 @@
   let loading = $state(true);
   let error = $state<string | null>(null);
   let search = $state("");
+  let searchOpen = $state(false);
+  let searchAction = $state<SearchAction>();
+  let filterBoundary = $state<HTMLDivElement | null>(null);
+  let statuses = $state<number[]>([]);
+  let methods = $state<string[]>([]);
+  const filtered = $derived(Boolean(search || statuses.length || methods.length || tunnelId));
+  const matchingFiltered = $derived(Boolean(search || statuses.length || methods.length));
+  let headerMenu = $state<"filters" | "options" | null>(null);
+  let optionsTrigger = $state<HTMLElement | null>(null);
+  let paused = $state(false);
+  let pauseKnown = $state(false);
+  let pauseBusy = $state(false);
+  let actionError = $state<string | null>(null);
+  let clearOpen = $state(false);
+  let clearTarget = $state<{ id: string | null; name: string } | null>(null);
+  let clearing = $state(false);
   /** The active request, by id (02 §4.2): the list derives its index from `rows`. */
   let selected = $state<string | null>(null);
   let detail = $state<Detail | null>(null);
@@ -48,10 +70,53 @@
 
   const inspectable = (t: { kind: string }) => t.kind !== "token";
   $effect(() => {
-    if (focusId) tunnelId = focusId;
-    else if (!tunnelId) tunnelId = store.tunnels.find((t) => t.inspect)?.id ?? store.tunnels.find(inspectable)?.id ?? null;
+    tunnelId = focusId;
   });
   const tunnel = $derived(store.tunnels.find((t) => t.id === tunnelId) ?? null);
+
+  let pauseGen = 0;
+  $effect(() => {
+    const id = tunnelId;
+    const g = ++pauseGen;
+    paused = false;
+    pauseKnown = false;
+    actionError = null;
+    if (!id) return;
+    api.requestCapturePaused(id).then((value) => {
+      if (g === pauseGen) { paused = value; pauseKnown = true; }
+    }, (e) => {
+      if (g === pauseGen) actionError = errorText(e);
+    });
+  });
+
+  function setHeaderMenu(name: "filters" | "options", open: boolean) {
+    if (open) headerMenu = name;
+    else if (headerMenu === name) headerMenu = null;
+  }
+
+  async function toggleCapture() {
+    if (!tunnelId || pauseBusy) return;
+    const id = tunnelId;
+    const next = !paused;
+    pauseBusy = true;
+    actionError = null;
+    try {
+      await api.setRequestCapturePaused(id, next);
+      if (id === tunnelId) {
+        const g = ++pauseGen;
+        const current = await api.requestCapturePaused(id);
+        if (id !== tunnelId) return;
+        if (id === tunnelId && g === pauseGen) { paused = current; pauseKnown = true; }
+        list?.discardPending();
+        if (headerMenu === "options") headerMenu = null;
+        if (!paused) await load();
+      }
+    } catch (e) {
+      if (id === tunnelId) actionError = errorText(e);
+    } finally {
+      pauseBusy = false;
+    }
+  }
 
   // The detail load: superseded by every select(), and cancelled on tunnel change, Clear and
   // unmount. A getRequest answer (or error) that arrives after any of those is dropped (03 R-23),
@@ -92,7 +157,9 @@
   let loadGen = 0;
   let loadKey: string | undefined;
   let inflight: Promise<void> | null = null;
+  let loadEvents = new Map<string, RequestSummary>();
   function load(): Promise<void> {
+    if (clearing) return Promise.resolve();
     if (loadedFor !== tunnelId) {
       // Switching tunnels: don't keep showing another tunnel's request.
       select(null);
@@ -101,21 +168,31 @@
     // Each change of tunnel or filter starts a new generation, so a slow answer for an older one
     // never lands, even after A -> B -> A. A load for the same generation while one is in flight
     // shares it, so the one selectFirst() awaits is never discarded by a concurrent twin.
-    const key = `${tunnelId}\u0000${search}`;
+    const key = JSON.stringify([tunnelId, search, statuses, methods]);
     if (key === loadKey && inflight) return inflight;
     if (key !== loadKey) {
       loadGen++;
       loadKey = key;
+      list?.discardPending();
     }
     const g = loadGen;
     const current = () => g === loadGen;
     const t = tunnelId;
     const q = search;
+    const statusFilter = [...statuses];
+    const methodFilter = [...methods];
+    const events = new Map<string, RequestSummary>();
+    loadEvents = events;
     error = null;
     const run = (async () => {
       try {
-        const r = await api.listRequests(t, q);
-        if (current()) rows = r;
+        const r = await api.listRequests(t, q, CAP, statusFilter, methodFilter);
+        if (current()) {
+          // Live completions arriving during the query supersede its older snapshot.
+          rows = [...events.values(), ...r.filter((x) => !events.has(x.id))]
+            .filter((x) => matchesRequestFilters(x, statusFilter, methodFilter))
+            .sort((a, b) => b.ts - a.ts).slice(0, CAP);
+        }
       } catch (e) {
         if (current()) error = errorText(e);
       } finally {
@@ -132,6 +209,8 @@
   $effect(() => {
     void tunnelId;
     void search;
+    void statuses;
+    void methods;
     const t = setTimeout(load, search ? 180 : 0);
     return () => clearTimeout(t);
   });
@@ -149,17 +228,29 @@
   }
 
   onMount(() => {
+    const unPause = listen<{ tunnel_id: string; paused: boolean }>("request-capture-paused", (e) => {
+      if (e.payload.tunnel_id !== tunnelId) return;
+      pauseGen++;
+      paused = e.payload.paused;
+      pauseKnown = true;
+      list?.discardPending();
+    });
     const un = listen<RequestSummary>("request", (e) => {
       const r = e.payload;
       if (tunnelId && r.tunnel_id !== tunnelId) return;
-      if (search) return;
+      if (paused || clearing || search) return;
+      if (inflight) loadEvents.set(r.id, r);
+      if (!matchesRequestFilters(r, statuses, methods)) {
+        rows = rows.filter((x) => x.id !== r.id);
+        return;
+      }
       const i = rows.findIndex((x) => x.id === r.id);
       if (i >= 0) rows[i] = r;
       else if (list) list.add(r); // batched, keeps the view when scrolled down
       else rows = [r, ...rows].slice(0, CAP);
       if (selected === r.id) select(r.id);
     });
-    return () => un.then((f) => f());
+    return () => { un.then((f) => f()); unPause.then((f) => f()); };
   });
 
   onDestroy(() => detailLoad.cancel());
@@ -238,32 +329,46 @@
   }
 
   async function clear() {
+    if (!clearTarget || clearing) return;
+    const target = clearTarget;
+    clearing = true;
+    actionError = null;
     detailLoad.cancel();
     // A list load still in flight answers from before the Clear: drop it.
     loadGen++;
     loadKey = undefined;
     inflight = null;
-    await api.clearRequests(tunnelId);
-    rows = [];
-    select(null);
+    list?.discardPending();
+    try {
+      await api.clearRequests(target.id);
+      if (target.id === tunnelId) {
+        rows = [];
+        select(null);
+      }
+      clearOpen = false;
+    } catch (e) {
+      actionError = errorText(e);
+    } finally {
+      clearing = false;
+      void load();
+    }
   }
 </script>
 
-<div class="flex h-full flex-col">
-  <Toolbar title="Requests" subtitle={tunnel ? (tunnel.inspect ? (tunnel.state.inspecting ? "Inspecting" : "Inspection on, starts with the tunnel") : "Inspection is off for this tunnel") : ""}>
-    <TunnelPicker bind:value={tunnelId} filter={inspectable} />
-    <InputGroup.Root class="w-50">
-      <InputGroup.Addon><SearchIcon /></InputGroup.Addon>
-      <InputGroup.Input placeholder="Filter path, method, status" bind:value={search} aria-label="Filter requests" autocorrect="off" autocapitalize="off" spellcheck="false" />
-    </InputGroup.Root>
-    <Popover.Root>
+<div class="relative flex h-full flex-col">
+  <div class="pointer-events-none absolute inset-x-0 bottom-0 top-(--toolbar-h)" bind:this={filterBoundary} aria-hidden="true"></div>
+  <Toolbar title="Requests" subtitle={paused ? "Capture paused" : tunnel ? (tunnel.inspect ? (tunnel.state.inspecting ? "Inspecting" : "Inspection on, starts with the tunnel") : "Inspection is off for this tunnel") : ""}>
+    <SearchAction label="Search requests" bind:value={search} bind:open={searchOpen} bind:this={searchAction} />
+    <RequestFilters bind:statuses bind:methods bind:tunnelId boundary={filterBoundary} bind:open={() => headerMenu === "filters", (value) => setHeaderMenu("filters", value)} />
+    <span class="mx-0.5 h-4 border-l border-border" aria-hidden="true"></span>
+    <Popover.Root bind:open={() => headerMenu === "options", (value) => setHeaderMenu("options", value)}>
       <Popover.Trigger>
         {#snippet child({ props })}
-          <IconAction {...props} label="Columns"><Columns3 /></IconAction>
+          <IconAction {...props} bind:ref={optionsTrigger} label="Columns and actions"><SlidersHorizontal /></IconAction>
         {/snippet}
       </Popover.Trigger>
-      <Popover.Content align="end" class="w-auto max-w-72 gap-1.5 p-2.5">
-        <span id="columns-label" class="text-xs text-muted-foreground">Columns</span>
+      <Popover.Content align="end" class="w-64 gap-2 p-2.5" {...returnFocusOnClose(() => optionsTrigger)}>
+        <span id="columns-label" class="text-xs text-muted-foreground">Display columns</span>
         <ToggleGroup.Root
           type="multiple"
           spacing={1}
@@ -275,17 +380,49 @@
           }
         >
           {#each COLUMNS as c (c.id)}
-            {#if !("always" in c)}
-              <ToggleGroup.Item value={c.id} class="text-muted-foreground data-[state=on]:text-foreground">{c.label}</ToggleGroup.Item>
-            {/if}
+            <ToggleGroup.Item value={c.id} disabled={"always" in c} class="rounded-full text-muted-foreground data-[state=on]:text-foreground">{c.label}</ToggleGroup.Item>
           {/each}
         </ToggleGroup.Root>
+        <div class="-mx-2.5 mt-1 border-t border-border px-0.5 pt-1.5">
+          <Button variant="ghost" class="w-full justify-start" disabled={!tunnel?.inspect || !pauseKnown || pauseBusy} onclick={toggleCapture}>{#if paused}<Play />Resume capture{:else}<Pause />Pause capture{/if}</Button>
+          <Button variant="ghost" class="w-full justify-start" disabled={!store.tunnels.some(inspectable) || clearing} onclick={() => { clearTarget = { id: tunnelId, name: tunnel?.name ?? "all projects / tunnels" }; headerMenu = null; clearOpen = true; actionError = null; }}><Trash2 />Clear request history…</Button>
+        </div>
       </Popover.Content>
     </Popover.Root>
-    <Button variant="outline" onclick={clear} disabled={!rows.length}>Clear</Button>
   </Toolbar>
 
-  {#if !tunnel && !store.loading}
+  {#if filtered}
+  <div class="flex min-h-11 flex-none flex-wrap items-center gap-2 border-b-[0.5px] border-border px-3 py-1.5">
+    {#if tunnelId}
+      <div class="flex items-center gap-1 rounded-md border border-input bg-fill/50 pl-2 text-xs">
+        <span class="text-muted-foreground">Project / tunnel</span><span class="max-w-48 truncate">{tunnel?.name ?? tunnelId}</span>
+        <IconAction label="Remove project or tunnel filter" size="icon-sm" onclick={() => tunnelId = null}><X /></IconAction>
+      </div>
+    {/if}
+    {#if search && !searchOpen}
+      <div class="flex items-center gap-1 rounded-md border border-input bg-fill/50 pl-2 text-xs" title={search}>
+        <span class="text-muted-foreground">Search</span><button class="max-w-48 truncate rounded-sm kb-focus:ring-[3px] kb-focus:ring-ring/50 outline-none" onclick={() => searchAction?.focus()}>{search}</button>
+        <IconAction label="Remove search filter" size="icon-sm" onclick={() => search = ""}><X /></IconAction>
+      </div>
+    {/if}
+    {#if statuses.length}
+      <div class="flex items-center gap-1 rounded-md border border-input bg-fill/50 pl-2 text-xs" title={statuses.join(", ")}>
+        <span class="text-muted-foreground">Status</span><span class="max-w-48 truncate">{statuses.join(", ")}</span>
+        <IconAction label="Remove status filter" size="icon-sm" onclick={() => statuses = []}><X /></IconAction>
+      </div>
+    {/if}
+    {#if methods.length}
+      <div class="flex items-center gap-1 rounded-md border border-input bg-fill/50 pl-2 text-xs" title={methods.join(", ")}>
+        <span class="text-muted-foreground">Method</span><span class="max-w-48 truncate">{methods.join(", ")}</span>
+        <IconAction label="Remove method filter" size="icon-sm" onclick={() => methods = []}><X /></IconAction>
+      </div>
+    {/if}
+    <Button variant="ghost" class="ml-auto text-xs" onclick={() => { search = ""; statuses = []; methods = []; tunnelId = null; }}>Reset filters</Button>
+  </div>
+  {/if}
+  {#if actionError && !clearOpen}<div role="alert" class="border-b border-border px-3 py-2 text-xs text-destructive">{actionError}</div>{/if}
+
+  {#if !store.tunnels.some(inspectable) && !store.loading}
     <div class="grid flex-1 place-items-center">
       <StatePanel kind="empty" title="No tunnels to inspect" message="Add a config-file or quick tunnel, then turn on request inspection." />
     </div>
@@ -306,7 +443,7 @@
         {:else if error}
           <StatePanel kind="error" title="Couldn't load requests" message={error}><Button variant="outline" onclick={load}>Try again</Button></StatePanel>
         {:else if rows.length === 0}
-          <StatePanel kind="empty" title={search ? "No matching requests" : "Waiting for requests"} message={search ? "Try a different filter." : tunnel?.state.status === "connected" ? `Requests to ${tunnel.state.public_url ?? "this tunnel"} will appear here as they happen.` : "Start the tunnel, then send it some traffic."} />
+          <StatePanel kind="empty" title={matchingFiltered ? "No matching requests" : paused ? "Capture paused" : "Waiting for requests"} message={matchingFiltered ? "Try a different filter." : paused ? "Resume capture from Columns and actions to record new requests." : tunnel?.state.status === "connected" ? `Requests to ${tunnel.state.public_url ?? "this tunnel"} will appear here as they happen.` : "Start the tunnel, then send it some traffic."} />
         {:else}
           <RequestList bind:this={list} bind:rows {selected} {template} {now} cap={CAP} onselect={(id) => select(id)} />
         {/if}
@@ -356,3 +493,17 @@
     </div>
   {/if}
 </div>
+
+<AlertDialog.Root bind:open={clearOpen}>
+  <AlertDialog.Content onCloseAutoFocus={returnFocusTo(() => optionsTrigger)} onEscapeKeydown={(e) => { if (clearing) e.preventDefault(); }} onInteractOutside={(e) => { if (clearing) e.preventDefault(); }}>
+    <AlertDialog.Header>
+      <AlertDialog.Title>Clear request history?</AlertDialog.Title>
+      <AlertDialog.Description>Delete all captured requests for “{clearTarget?.name}”, including requests hidden by filters. This can't be undone.</AlertDialog.Description>
+    </AlertDialog.Header>
+    {#if actionError}<p role="alert" class="text-xs text-destructive">{actionError}</p>{/if}
+    <AlertDialog.Footer>
+      <AlertDialog.Cancel disabled={clearing}>Cancel</AlertDialog.Cancel>
+      <Button variant="destructive" disabled={clearing} onclick={clear}>{clearing ? "Clearing…" : "Clear history"}</Button>
+    </AlertDialog.Footer>
+  </AlertDialog.Content>
+</AlertDialog.Root>

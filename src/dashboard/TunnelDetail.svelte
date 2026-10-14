@@ -22,7 +22,8 @@
   import { api, errorText } from "../lib/api";
   import { motion } from "../lib/theme";
   import { formatUptime, isOn, statusHint } from "../lib/format";
-  import type { ConfigChange, Status, Tunnel, TunnelSetupProgress, Validation } from "../lib/types";
+  import type { ConfigChange, SeparateTunnelPreview, SeparateTunnelProgress, Status, Tunnel, TunnelSetupProgress, Validation } from "../lib/types";
+  import { activeTunnelOwner, sharedTunnelProjects } from "$lib/tunnel-conflict";
   import { configChecker } from "$lib/config-change";
   import { failurePresentation } from "$lib/failure";
   import { notify } from "$lib/toast";
@@ -55,6 +56,12 @@
   let setupStage = $state<TunnelSetupProgress["stage"] | null>(null);
   let cancellingSetup = $state(false);
   let setupSubscription: Promise<UnlistenFn> | null = null;
+  let separateSubscription: Promise<UnlistenFn> | null = null;
+  let separateOpen = $state(false);
+  let separatePreview = $state<SeparateTunnelPreview | null>(null);
+  let separateRequest = $state<string | null>(null);
+  let separateStage = $state<SeparateTunnelProgress["stage"] | null>(null);
+  let separateTrigger = $state<HTMLElement | null>(null);
   let configChange = $state<ConfigChange | null>(null);
   let configError = $state<string | null>(null);
   let validation = $state<Validation | null>(null);
@@ -81,6 +88,10 @@
     ? failurePresentation(s.failure, s.detail, s.hint)
     : null);
   const on = $derived(isOn(tunnel));
+  const sharedProjects = $derived(sharedTunnelProjects(tunnel, store.tunnels));
+  const tunnelOwner = $derived(activeTunnelOwner(tunnel, store.tunnels));
+  const operationBusy = $derived(busy || !!tunnel.separating_tunnel);
+  const conflictName = $derived(tunnelOwner?.name ?? s.tunnel_conflict?.project_name);
   const headerMeta = $derived([
     s.status === "connected" && s.started_at ? formatUptime(s.started_at, now) : "",
     s.connections > 0 ? `${s.connections} edge connection${s.connections === 1 ? "" : "s"}` : "",
@@ -118,6 +129,10 @@
     });
     // Preserve the rejection for setup() without an unhandled rejection before its first click.
     void setupSubscription.catch(() => {});
+    separateSubscription = listen<SeparateTunnelProgress>("project-separate-progress", ({ payload }) => {
+      if (mounted && payload.id === tunnel.id && payload.request_id === separateRequest) separateStage = payload.stage;
+    });
+    void separateSubscription.catch(() => {});
     const check = () => {
       void configCheck.check();
       // Draft setup is completed in an external editor. Reload stopped configs on return so
@@ -131,6 +146,7 @@
       mounted = false;
       if (setupRequest) void api.cancelProjectSetup(tunnel.id, setupRequest).catch(() => {});
       void setupSubscription?.then((unsubscribe) => unsubscribe()).catch(() => {});
+      void separateSubscription?.then((unsubscribe) => unsubscribe()).catch(() => {});
       window.removeEventListener("focus", check);
       document.removeEventListener("visibilitychange", visible);
       configCheck.cancel();
@@ -142,6 +158,13 @@
     login: "Complete Cloudflare login in your browser. Setup will continue when you return.",
     creating: "Creating your Cloudflare tunnel…",
     linking: "Linking the tunnel ID and credentials to this project…",
+  };
+  const separateMessages: Record<SeparateTunnelProgress["stage"], string> = {
+    checking: "Checking the config, credentials and hostname ownership…",
+    creating: "Creating a separate Cloudflare tunnel…",
+    dns: "Moving this project's hostname DNS records to the new tunnel…",
+    linking: "Updating this project to use the new tunnel…",
+    starting: "Starting this project with its separate tunnel…",
   };
   const noticeVariant: Record<Status, Alert.AlertVariant> = {
     connected: "success",
@@ -203,6 +226,46 @@
       if (mounted) { setupError = errorText(e); cancellingSetup = false; }
     }
   }
+
+  async function previewSeparate() {
+    if (operationBusy || separateRequest) return;
+    await run(async () => {
+      separatePreview = await api.previewSeparateTunnel(tunnel.id);
+      if (mounted) separateOpen = true;
+    });
+  }
+
+  async function createSeparate() {
+    if (busy || !separatePreview || separateRequest) return;
+    const target = tunnel.id;
+    const name = tunnel.name;
+    const revision = separatePreview.revision;
+    const request = crypto.randomUUID();
+    separateOpen = false;
+    separateRequest = request;
+    separateStage = "checking";
+    busy = true;
+    error = null;
+    try {
+      await separateSubscription;
+      const result = await api.createSeparateTunnel(target, revision, request);
+      await store.refresh();
+      if (result.start_error) throw new Error(`The separate tunnel and DNS are ready, but the project could not start: ${result.start_error}`);
+      notify.success(`${name}: separate tunnel configured. Starting project…`);
+    } catch (e) {
+      if (mounted) error = errorText(e);
+      notify.error(e, `${name}: separate tunnel setup failed. Retry Create separate tunnel to finish.`);
+      await store.refresh();
+    } finally {
+      if (mounted && separateRequest === request) {
+        separateRequest = null;
+        separateStage = null;
+        busy = false;
+      }
+    }
+  }
+
+  const backToSeparate = returnFocusTo(() => separateTrigger);
 
   // Settings edits skip `busy`: disabling every control for each field change made the whole panel flash.
   async function patch(p: Parameters<typeof api.updateTunnel>[1]) {
@@ -291,9 +354,9 @@
   <span class="min-w-0 flex-1 truncate text-callout text-muted-foreground" title={headerMeta}>{headerMeta}</span>
   <div class="flex shrink-0 items-center gap-2">
     {#if on}
-      <Button variant="outline" disabled={busy} onclick={() => run(() => api.stop(tunnel.id))}><Square class="size-2.5 fill-current" /> Stop</Button>
+      <Button variant="outline" disabled={operationBusy} onclick={() => run(() => api.stop(tunnel.id))}><Square class="size-2.5 fill-current" /> Stop</Button>
     {:else}
-      <Button variant="outline" disabled={busy || tunnel.setup_needed || !store.overview?.cloudflared} onclick={() => run(() => api.start(tunnel.id))}>
+      <Button variant="outline" disabled={operationBusy || tunnel.separate_tunnel_pending || !!tunnelOwner || tunnel.setup_needed || !store.overview?.cloudflared} onclick={() => run(() => api.start(tunnel.id))}>
         <Play class="size-2.5 fill-current" /> Start
       </Button>
     {/if}
@@ -305,17 +368,70 @@
       </DropdownMenu.Trigger>
       <DropdownMenu.Portal>
         <DropdownMenu.Content align="end" sideOffset={3} class={cn(menuContent, "min-w-32")}>
-          <DropdownMenu.Item class={cn(menuItem, "ps-2")} disabled={busy || !on} onSelect={restart}>
+          <DropdownMenu.Item class={cn(menuItem, "ps-2")} disabled={operationBusy || !on} onSelect={restart}>
             <RotateCw class="size-3.5" /> {restarting ? "Restarting…" : "Restart"}
           </DropdownMenu.Item>
           {#if tunnel.kind === "config"}
-            <DropdownMenu.Item class={cn(menuItem, "ps-2")} disabled={busy} onSelect={validate}><Check class="size-3.5" /> Validate</DropdownMenu.Item>
+            <DropdownMenu.Item class={cn(menuItem, "ps-2")} disabled={operationBusy} onSelect={validate}><Check class="size-3.5" /> Validate</DropdownMenu.Item>
+            <DropdownMenu.Item class={cn(menuItem, "ps-2")} disabled={operationBusy || tunnel.setup_needed || !store.overview?.cloudflared} onSelect={previewSeparate}>Create separate tunnel…</DropdownMenu.Item>
           {/if}
         </DropdownMenu.Content>
       </DropdownMenu.Portal>
     </DropdownMenu.Root>
   </div>
 </header>
+
+{#if separateRequest || tunnel.separating_tunnel}
+  <div class="mb-3.5" role="status">
+    <Alert.Root>
+      {#snippet icon()}<RotateCw />{/snippet}
+      <Alert.Title>Creating separate tunnel</Alert.Title>
+      <Alert.Description>{separateMessages[separateStage ?? "checking"]}</Alert.Description>
+    </Alert.Root>
+  </div>
+{:else if sharedProjects.length || s.tunnel_conflict || tunnel.separate_tunnel_pending}
+  <div class="mb-3.5" role="status">
+    <Alert.Root variant="warning">
+      {#snippet icon()}<TriangleAlert />{/snippet}
+      <Alert.Title>{tunnel.separate_tunnel_pending ? "Separate tunnel setup is unfinished" : tunnelOwner ? `Cannot start while ${tunnelOwner.name} is running` : s.tunnel_conflict ? `Not started: ${conflictName} uses this tunnel` : `Shares a Cloudflare tunnel with ${sharedProjects.map((project) => project.name).join(", ")}`}</Alert.Title>
+      <Alert.Description>{tunnel.separate_tunnel_pending ? "Retry Create separate tunnel to finish updating DNS using the saved tunnel before starting this project." : "Run one project at a time, or create a separate tunnel for this project."}</Alert.Description>
+      <div class="mt-2 flex flex-wrap gap-2">
+        {#if tunnel.kind === "config"}
+          <Button bind:ref={separateTrigger} disabled={operationBusy || !store.overview?.cloudflared} onclick={previewSeparate}>Create separate tunnel</Button>
+        {/if}
+        {#if tunnelOwner ?? sharedProjects[0]}
+          {@const sibling = tunnelOwner ?? sharedProjects[0]}
+          <Button variant="outline" onclick={() => api.openDashboard(`tunnels:${sibling.id}`)}>View {sibling.name}</Button>
+        {/if}
+      </div>
+    </Alert.Root>
+  </div>
+{/if}
+
+<AlertDialog.Root bind:open={separateOpen}>
+  <AlertDialog.Content onCloseAutoFocus={backToSeparate}>
+    <AlertDialog.Header>
+      <AlertDialog.Title>{separatePreview?.resuming ? "Finish creating" : "Create"} a separate tunnel for “{tunnel.name}”?</AlertDialog.Title>
+      <AlertDialog.Description>Creates a Cloudflare tunnel and a separate config, switches this project to it, moves the hostname DNS records below, then starts this project. The original config file is preserved and the other project's tunnel stays running.</AlertDialog.Description>
+    </AlertDialog.Header>
+    {#if separatePreview}
+      <div class="space-y-3 text-sm">
+        <div><span class="text-muted-foreground">Config file</span><p class="break-all font-mono text-xs select-text">{separatePreview.config_path}</p></div>
+        <div><span class="text-muted-foreground">Current tunnel</span><p class="break-all font-mono text-xs select-text">{separatePreview.old_tunnel_id}</p></div>
+        <div><span class="text-muted-foreground">Hostnames to move</span>
+          {#if separatePreview.hostnames.length}
+            <ul class="mt-1 max-h-40 overflow-auto space-y-1 font-mono text-xs select-text">{#each separatePreview.hostnames as hostname}<li>{hostname}</li>{/each}</ul>
+          {:else}<p>No hostname DNS records need updating.</p>{/if}
+        </div>
+        <p class="text-muted-foreground">This project will stop during setup. DNS changes can briefly interrupt requests to these hostnames. If setup fails, retry this action to finish using the same new tunnel.</p>
+      </div>
+    {/if}
+    <AlertDialog.Footer>
+      <AlertDialog.Cancel>Cancel</AlertDialog.Cancel>
+      <Button disabled={operationBusy || !separatePreview} onclick={createSeparate}>{separatePreview?.resuming ? "Finish setup and start" : "Create separate tunnel"}</Button>
+    </AlertDialog.Footer>
+  </AlertDialog.Content>
+</AlertDialog.Root>
 
 {#if tunnel.setup_needed || setupRequest}
   <div class="mb-3.5" role="status">
@@ -327,12 +443,12 @@
         {#if setupRequest}
           <Button variant="outline" disabled={cancellingSetup || setupStage === "linking"} onclick={cancelSetup}>Cancel setup</Button>
         {:else}
-          <Button disabled={busy || on || !store.overview?.cloudflared} onclick={setup}>Set up tunnel</Button>
+          <Button disabled={operationBusy || on || !store.overview?.cloudflared} onclick={setup}>Set up tunnel</Button>
         {/if}
       {/snippet}
     </Alert.Root>
   </div>
-{:else if failure}
+{:else if failure && !s.tunnel_conflict}
   {#key JSON.stringify([tunnel.id, s.run, s.status, failure])}
     <div class="mb-3.5" transition:slide={{ duration: motion(180) }}>
       <FailureNotice {failure} status={s.status} detail={s.detail} />
@@ -361,7 +477,7 @@
   <div class="mb-3.5" transition:slide={{ duration: motion(180) }}>
     <Alert.Root variant="warning" role="status">
       {#snippet icon()}<FilePenLine />{/snippet}
-      {#snippet action()}<Button variant="outline" disabled={busy} onclick={restart}>{restarting ? "Restarting…" : "Restart"}</Button>{/snippet}
+      {#snippet action()}<Button variant="outline" disabled={operationBusy} onclick={restart}>{restarting ? "Restarting…" : "Restart"}</Button>{/snippet}
       <Alert.Title>Config changed on disk</Alert.Title>
       <Alert.Description>Restart to apply your changes.</Alert.Description>
     </Alert.Root>
@@ -389,12 +505,12 @@
       : `Routes traffic through Underlane's local proxy and stores request and response bodies (up to ${store.overview?.settings.max_body_kb ?? 1024} KB each). Bodies may contain secrets.`}
   >
     {#snippet control({ id, describedBy })}
-      <Switch {id} aria-describedby={describedBy} disabled={tunnel.kind === "token" || busy} bind:checked={() => tunnel.inspect, (v) => patch({ inspect: v })} />
+      <Switch {id} aria-describedby={describedBy} disabled={tunnel.kind === "token" || operationBusy} bind:checked={() => tunnel.inspect, (v) => patch({ inspect: v })} />
     {/snippet}
   </SettingsRow>
   <SettingsRow label="Start automatically" help="Start this tunnel whenever Underlane launches.">
     {#snippet control({ id, describedBy })}
-      <Switch {id} aria-describedby={describedBy} disabled={busy || tunnel.setup_needed} bind:checked={() => tunnel.autostart, (v) => patch({ autostart: v })} />
+      <Switch {id} aria-describedby={describedBy} disabled={operationBusy || tunnel.setup_needed} bind:checked={() => tunnel.autostart, (v) => patch({ autostart: v })} />
     {/snippet}
   </SettingsRow>
   <SettingsRow label="Log level" help="Debug logs every request's headers (redacted before storage).">
@@ -442,6 +558,9 @@
 
 <SettingsGroup title="Source" footer={tunnel.kind === "token" ? undefined : sourceNote}>
   <SettingsRow label="Type"><span class="text-muted-foreground">{kindText[tunnel.kind]}</span></SettingsRow>
+  {#if s.cloudflare_tunnel_id ?? tunnel.cloudflare_tunnel_id}
+    <SettingsRow label="Tunnel ID"><span class="break-all font-mono text-xs text-muted-foreground select-text">{s.cloudflare_tunnel_id ?? tunnel.cloudflare_tunnel_id}</span></SettingsRow>
+  {/if}
   {#if tunnel.kind === "config" && tunnel.config_path}
     <SettingsRow label="Config file">
       <!-- Truncated, so the native title reveals the whole path (02 §2 Tip exception). -->
@@ -475,7 +594,7 @@
   <AlertDialog.Root bind:open={removeOpen}>
     <AlertDialog.Trigger bind:ref={removeTrigger}>
       {#snippet child({ props })}
-        <Button {...props} variant="ghost" disabled={busy} class="text-destructive hover:text-destructive aria-expanded:text-destructive"><Trash2 class="size-3.5" /> Remove</Button>
+        <Button {...props} variant="ghost" disabled={operationBusy} class="text-destructive hover:text-destructive aria-expanded:text-destructive"><Trash2 class="size-3.5" /> Remove</Button>
       {/snippet}
     </AlertDialog.Trigger>
     <!-- Escape/Cancel return focus to Remove explicitly (02 R7); after a removal Tunnels focuses the next tunnel. -->

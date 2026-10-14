@@ -4,6 +4,7 @@ mod commands;
 mod e2e;
 mod hostnames;
 mod setup;
+mod separate_tunnel;
 mod dns;
 mod platform;
 mod state;
@@ -86,6 +87,8 @@ pub fn run() {
             commands::preview_project_config,
             commands::create_project,
             commands::setup_project_tunnel,
+            commands::preview_separate_tunnel,
+            commands::create_separate_tunnel,
             commands::cancel_project_setup,
             commands::add_quick_tunnel,
             commands::add_token_tunnel,
@@ -103,6 +106,8 @@ pub fn run() {
             commands::query_logs,
             commands::clear_logs,
             commands::list_requests,
+            commands::request_capture_paused,
+            commands::set_request_capture_paused,
             commands::get_request,
             commands::clear_requests,
             commands::save_settings,

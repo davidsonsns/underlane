@@ -131,6 +131,11 @@
   let incoming: RequestSummary[] = [];
   let flushing = false;
 
+  /** A filter/scope change or pause discards events waiting to join the current view. */
+  export function discardPending() {
+    incoming = [];
+  }
+
   /** A request that just arrived (newer than every row). Updates of a known id go to the parent. */
   export function add(r: RequestSummary) {
     const q = incoming.findIndex((x) => x.id === r.id);

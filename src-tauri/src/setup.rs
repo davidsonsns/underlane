@@ -135,6 +135,9 @@ pub fn cancel(id: &str, request: &str) {
 }
 
 pub async fn run(core: Arc<Core>, id: String, request: String) -> Result<SetupResult, String> {
+    if crate::separate_tunnel::is_running(&id) {
+        return Err("Finish creating the separate tunnel before setting up this project.".into());
+    }
     let _account = ACCOUNT.try_lock().map_err(|_| "Another Cloudflare setup or DNS operation is running. Finish it before starting this one.")?;
     if request.is_empty()
         || request.len() > 80

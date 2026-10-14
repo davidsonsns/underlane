@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import type {
-  Binary, Candidate, ConfigChange, HostnameConfig, HostnameDns, HostnameRoute, HostnameSaveResult, ImportReport, LogLine, LoginItem, Overview, ProjectConfigPreview, RequestDetail, RequestSummary, Settings, TunnelSetupResult, Validation,
+  Binary, Candidate, ConfigChange, HostnameConfig, HostnameDns, HostnameRoute, HostnameSaveResult, ImportReport, LogLine, LoginItem, Overview, ProjectConfigPreview, RequestDetail, RequestSummary, SeparateTunnelPreview, SeparateTunnelResult, Settings, TunnelSetupResult, Validation,
 } from "./types";
 
 export const api = {
@@ -13,6 +13,8 @@ export const api = {
   createProject: (name: string, group: string, configPath: string | null, directory: string | null) =>
     invoke<string>("create_project", { name, group, configPath, directory }),
   setupProjectTunnel: (id: string, requestId: string) => invoke<TunnelSetupResult>("setup_project_tunnel", { id, requestId }),
+  previewSeparateTunnel: (id: string) => invoke<SeparateTunnelPreview>("preview_separate_tunnel", { id }),
+  createSeparateTunnel: (id: string, revision: string, requestId: string) => invoke<SeparateTunnelResult>("create_separate_tunnel", { id, revision, requestId }),
   cancelProjectSetup: (id: string, requestId: string) => invoke<void>("cancel_project_setup", { id, requestId }),
   addQuick: (name: string, origin: string, group: string, inspect: boolean) =>
     invoke<string>("add_quick_tunnel", { name, origin, group, inspect }),
@@ -39,8 +41,10 @@ export const api = {
   queryLogs: (args: { tunnelId?: string | null; levels?: string[]; search?: string; beforeId?: number; afterId?: number; limit?: number }) =>
     invoke<LogLine[]>("query_logs", { args }),
   clearLogs: (tunnelId: string | null) => invoke<void>("clear_logs", { tunnelId }),
-  listRequests: (tunnelId: string | null, search?: string, limit = 500) =>
-    invoke<RequestSummary[]>("list_requests", { tunnelId, search: search || null, limit }),
+  listRequests: (tunnelId: string | null, search?: string, limit = 500, statuses: number[] = [], methods: string[] = []) =>
+    invoke<RequestSummary[]>("list_requests", { tunnelId, search: search || null, limit, statuses, methods }),
+  requestCapturePaused: (tunnelId: string) => invoke<boolean>("request_capture_paused", { tunnelId }),
+  setRequestCapturePaused: (tunnelId: string, paused: boolean) => invoke<void>("set_request_capture_paused", { tunnelId, paused }),
   getRequest: (id: string) => invoke<RequestDetail | null>("get_request", { id }),
   clearRequests: (tunnelId: string | null) => invoke<void>("clear_requests", { tunnelId }),
   saveSettings: (settings: Settings) => invoke<void>("save_settings", { settings }),

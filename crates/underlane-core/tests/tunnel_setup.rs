@@ -691,3 +691,30 @@ fn linked_config_refuses_existing_tokens_single_origin_and_invalid_identity() {
     };
     assert!(tunnel_setup::linked_config(&config, &identity).is_err());
 }
+
+#[test]
+fn reidentification_removes_superseded_credentials_and_keeps_routes() {
+    use underlane_core::config::TunnelConfig;
+    let source = TunnelConfig::parse(std::path::Path::new("/synthetic/source.yml"), &format!("tunnel: old\ncredentials-contents: '{{\"TunnelID\":\"{TUNNEL}\",\"TunnelSecret\":\"invented-secret\"}}'\ncred-file: old.json\ningress:\n - hostname: app.example.invalid\n   service: http://localhost:8080\n - service: http_status:404\n")).unwrap();
+    let identity = SetupIdentity { tunnel_id: "00000000-0000-4000-8000-000000000009".into(), credentials_file: "/synthetic/new.json".into() };
+    let text = tunnel_setup::reidentified_config(&source, &identity).unwrap();
+    assert!(!text.contains("invented-secret"));
+    let candidate = TunnelConfig::parse(&source.source, &text).unwrap();
+    assert!(!candidate.raw.as_mapping().unwrap().contains_key("credentials-contents"));
+    assert!(!candidate.raw.as_mapping().unwrap().contains_key("cred-file"));
+    assert_eq!(candidate.tunnel.as_deref(), Some(identity.tunnel_id.as_str()));
+    assert_eq!(candidate.ingress, source.ingress);
+}
+
+#[tokio::test]
+async fn separate_setup_does_not_repeat_an_ambiguous_create_when_list_is_empty() {
+    let f = fixture("create-fail-no-file", true);
+    let attempt = "00000000-0000-4000-8000-000000000008";
+    let certificate = f.root.join(".cloudflared/cert.pem");
+    assert!(tunnel_setup::setup_separate(&f.bin, &f.data, &f.root, attempt, "Separate project", &certificate, Cancellation::new(), |_| {}).await.is_err());
+    // Simulate an eventually consistent list that does not yet show the accepted create.
+    std::fs::write(f.root.join("bin/remote.json"), "[]").unwrap();
+    let error = tunnel_setup::setup_separate(&f.bin, &f.data, &f.root, attempt, "Renamed separate project", &certificate, Cancellation::new(), |_| {}).await.err().unwrap();
+    assert!(error.to_string().contains("already attempted"));
+    assert_eq!(command_count(&f, "create"), 1);
+}

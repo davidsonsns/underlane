@@ -63,6 +63,16 @@ pub async fn setup_project_tunnel(core: CoreState<'_>, id: String, request_id: S
 }
 
 #[tauri::command]
+pub async fn preview_separate_tunnel(core: CoreState<'_>, id: String) -> Res<crate::separate_tunnel::Preview> {
+    blocking(&core, move |c| crate::separate_tunnel::preview(c, &id)).await
+}
+
+#[tauri::command]
+pub async fn create_separate_tunnel(core: CoreState<'_>, id: String, revision: String, request_id: String) -> Res<crate::separate_tunnel::ResultView> {
+    crate::separate_tunnel::run(core.inner().clone(), id, revision, request_id).await
+}
+
+#[tauri::command]
 pub async fn check_hostname_dns(core: CoreState<'_>, id: String, hostname: String) -> Res<underlane_core::dns::HostnameDns> {
     crate::dns::check(core.inner().clone(), id, hostname).await
 }
@@ -232,6 +242,9 @@ pub async fn update_tunnel(core: CoreState<'_>, id: String, patch: TunnelPatch) 
 }
 
 fn update_tunnel_inner(core: &Core, id: String, patch: TunnelPatch) -> Res<()> {
+    if crate::separate_tunnel::is_running(&id) {
+        return Err("Finish creating the separate tunnel before changing this project.".into());
+    }
     let mut t = core.db.tunnel(&id).map_err(err)?.ok_or("Tunnel not found")?;
     let mut needs_restart = false;
     if let Some(name) = patch.name {
@@ -279,6 +292,9 @@ fn update_tunnel_inner(core: &Core, id: String, patch: TunnelPatch) -> Res<()> {
 
 #[tauri::command]
 pub async fn delete_tunnel(core: CoreState<'_>, id: String, delete_config: Option<bool>) -> Res<()> {
+    if crate::separate_tunnel::is_running(&id) {
+        return Err("Finish creating the separate tunnel before removing this project.".into());
+    }
     let tunnel = core.db.tunnel(&id).map_err(err)?;
     core.stop(&id).await;
     if let Some(tunnel) = tunnel {
@@ -435,8 +451,23 @@ pub async fn clear_logs(core: CoreState<'_>, tunnel_id: Option<String>) -> Res<(
 }
 
 #[tauri::command]
-pub async fn list_requests(core: CoreState<'_>, tunnel_id: Option<String>, search: Option<String>, limit: Option<usize>) -> Res<Vec<RequestSummary>> {
-    blocking(&core, move |c| c.db.list_requests(tunnel_id.as_deref(), search.as_deref(), limit.unwrap_or(500)).map_err(err)).await
+pub async fn list_requests(
+    core: CoreState<'_>, tunnel_id: Option<String>, search: Option<String>, limit: Option<usize>,
+    statuses: Option<Vec<u16>>, methods: Option<Vec<String>>,
+) -> Res<Vec<RequestSummary>> {
+    blocking(&core, move |c| c.db.list_requests_filtered(
+        tunnel_id.as_deref(), search.as_deref(), &statuses.unwrap_or_default(), &methods.unwrap_or_default(), limit.unwrap_or(500),
+    ).map_err(err)).await
+}
+
+#[tauri::command]
+pub async fn request_capture_paused(core: CoreState<'_>, tunnel_id: String) -> Res<bool> {
+    blocking(&core, move |c| c.request_capture_paused(&tunnel_id).map_err(err)).await
+}
+
+#[tauri::command]
+pub async fn set_request_capture_paused(core: CoreState<'_>, tunnel_id: String, paused: bool) -> Res<()> {
+    blocking(&core, move |c| c.set_request_capture_paused(&tunnel_id, paused).map_err(err)).await
 }
 
 #[derive(Serialize)]

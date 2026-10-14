@@ -480,6 +480,12 @@ impl Db {
     }
 
     pub fn list_requests(&self, tunnel_id: Option<&str>, search: Option<&str>, limit: usize) -> anyhow::Result<Vec<RequestSummary>> {
+        self.list_requests_filtered(tunnel_id, search, &[], &[], limit)
+    }
+
+    pub fn list_requests_filtered(
+        &self, tunnel_id: Option<&str>, search: Option<&str>, statuses: &[u16], methods: &[String], limit: usize,
+    ) -> anyhow::Result<Vec<RequestSummary>> {
         let mut sql = String::from(
             "SELECT id, tunnel_id, ts, duration_ms, kind, method, host, path, status, resp_size, error FROM requests WHERE 1=1",
         );
@@ -495,6 +501,14 @@ impl Db {
             args.push(pat.clone().into());
             args.push(pat.into());
             args.push(s.trim().to_string().into());
+        }
+        if !statuses.is_empty() {
+            sql.push_str(&format!(" AND status IN ({})", vec!["?"; statuses.len()].join(",")));
+            args.extend(statuses.iter().map(|s| rusqlite::types::Value::from(i64::from(*s))));
+        }
+        if !methods.is_empty() {
+            sql.push_str(&format!(" AND method IN ({})", vec!["?"; methods.len()].join(",")));
+            args.extend(methods.iter().map(|m| rusqlite::types::Value::from(m.clone())));
         }
         sql.push_str(" ORDER BY ts DESC LIMIT ?");
         args.push((limit.clamp(1, 5000) as i64).into());

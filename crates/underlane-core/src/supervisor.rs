@@ -9,6 +9,7 @@ use std::sync::{Arc, Mutex, RwLock};
 use std::time::{Duration, Instant};
 
 use bytes::Bytes;
+use base64::Engine;
 use http_body_util::{BodyExt, Empty};
 use hyper_util::client::legacy::Client;
 use hyper_util::rt::TokioExecutor;
@@ -63,6 +64,9 @@ pub struct TunnelState {
     /// Plain-language validation hint, when the config failed validation.
     pub hint: Option<String>,
     pub failure: Option<FailureExplanation>,
+    /// The identity reserved by this supervisor run, including while it retries.
+    pub cloudflare_tunnel_id: Option<String>,
+    pub tunnel_conflict: Option<TunnelConflict>,
     /// Public URL for quick tunnels.
     pub public_url: Option<String>,
     /// hostname -> service, from the config (or the metrics `/config` endpoint for token tunnels).
@@ -83,6 +87,13 @@ pub struct TunnelState {
     pub config_revision: u64,
     #[serde(skip)]
     pub loaded_config: Option<LoadedConfig>,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct TunnelConflict {
+    pub tunnel_id: String,
+    pub project_id: String,
+    pub project_name: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -146,6 +157,8 @@ impl TunnelState {
             detail: None,
             hint: None,
             failure: None,
+            cloudflare_tunnel_id: None,
+            tunnel_conflict: None,
             public_url: None,
             mappings: Vec::new(),
             pid: None,
@@ -255,6 +268,7 @@ pub struct Supervisor {
     cfg: SupervisorConfig,
     sink: EventSink,
     runs: Mutex<HashMap<String, RunHandle>>,
+    identities: Arc<Mutex<HashMap<String, IdentityOwner>>>,
     /// Captured at construction so tunnels can be started from any thread (UI callbacks,
     /// app setup), not just from inside the runtime.
     rt: tokio::runtime::Handle,
@@ -270,6 +284,7 @@ impl Supervisor {
             cfg,
             sink,
             runs: Mutex::new(HashMap::new()),
+            identities: Arc::new(Mutex::new(HashMap::new())),
             rt: tokio::runtime::Handle::current(),
             runs_started: AtomicU64::new(0),
         })
@@ -305,7 +320,12 @@ impl Supervisor {
         initial.run = run_no;
         initial.supervised = true;
         let config_state = Arc::new(Mutex::new(initial));
-        let fut = run(spec, self.cfg.clone(), self.sink.clone(), rx, run_no, config_state.clone());
+        let ownership = TunnelOwnership {
+            identities: self.identities.clone(),
+            owner: IdentityOwner { project_id: id.clone(), project_name: spec.tunnel.name.clone(), run: run_no },
+            identity: None,
+        };
+        let fut = run(spec, self.cfg.clone(), self.sink.clone(), rx, run_no, config_state.clone(), ownership);
         let task = self.rt.spawn(async move {
             fut.await;
             let _ = done_tx.send(true);
@@ -425,15 +445,138 @@ struct Prepared {
 /// Won't get better by retrying (bad config, missing binary, already running elsewhere...).
 struct Fatal {
     failure: FailureExplanation,
+    conflict: Option<Box<TunnelConflict>>,
 }
 
 fn fatal(detail: impl Into<String>) -> Fatal {
     let raw = detail.into();
-    Fatal { failure: explain_diagnostic(&raw) }
+    Fatal { failure: explain_diagnostic(&raw), conflict: None }
 }
 
 fn observed_failure(cause: &str, action: &str, raw: &str) -> Fatal {
-    Fatal { failure: FailureExplanation::new(cause, Some(action), raw) }
+    Fatal { failure: FailureExplanation::new(cause, Some(action), raw), conflict: None }
+}
+
+struct IdentityOwner {
+    project_id: String,
+    project_name: String,
+    run: u64,
+}
+
+struct TunnelOwnership {
+    identities: Arc<Mutex<HashMap<String, IdentityOwner>>>,
+    owner: IdentityOwner,
+    identity: Option<String>,
+}
+
+impl TunnelOwnership {
+    /// Called only before a child starts, after the previous child's process group is gone.
+    fn claim(&mut self, identity: Option<String>) -> Result<(), Fatal> {
+        let mut owners = self.identities.lock().unwrap();
+        if let Some(id) = &identity {
+            if let Some(owner) = owners.get(id).filter(|owner| owner.run != self.owner.run) {
+                let conflict = TunnelConflict {
+                    tunnel_id: id.clone(), project_id: owner.project_id.clone(), project_name: owner.project_name.clone(),
+                };
+                let cause = format!("Cannot start while {} is running.", crate::secret::redact_text(&owner.project_name));
+                let action = "These projects use the same Cloudflare tunnel ID. Stop the running project, or create a separate tunnel for this project.";
+                return Err(Fatal { failure: FailureExplanation::new(&cause, Some(action), &cause), conflict: Some(Box::new(conflict)) });
+            }
+        }
+        if self.identity != identity {
+            self.release(&mut owners);
+        }
+        if let Some(id) = &identity {
+            owners.insert(id.clone(), IdentityOwner {
+                project_id: self.owner.project_id.clone(), project_name: self.owner.project_name.clone(), run: self.owner.run,
+            });
+        }
+        self.identity = identity;
+        Ok(())
+    }
+
+    fn release(&self, owners: &mut HashMap<String, IdentityOwner>) {
+        if let Some(id) = self.identity.as_ref().filter(|id| owners.get(*id).is_some_and(|owner| owner.run == self.owner.run)) {
+            owners.remove(id);
+        }
+    }
+}
+
+impl Drop for TunnelOwnership {
+    fn drop(&mut self) {
+        self.release(&mut self.identities.lock().unwrap());
+    }
+}
+
+fn non_nil_uuid(value: &str) -> Option<String> {
+    uuid::Uuid::parse_str(value.trim()).ok().filter(|id| !id.is_nil()).map(|id| id.to_string())
+}
+
+/// Cloudflared tokens are standard-base64 JSON; only their nonsecret tunnel UUID escapes.
+pub fn token_tunnel_identity(token: &str) -> Result<String, String> {
+    #[derive(serde::Deserialize)]
+    struct Token<'a> { #[serde(borrow)] t: &'a str }
+    let invalid = || "The tunnel token has no valid tunnel UUID. Copy a fresh token from Cloudflare.".to_string();
+    let bytes = Secret::new(base64::engine::general_purpose::STANDARD.decode(token.trim()).map_err(|_| invalid())?);
+    let value: Token<'_> = serde_json::from_slice(bytes.expose()).map_err(|_| invalid())?;
+    non_nil_uuid(value.t).ok_or_else(invalid)
+}
+
+struct ConfigIdentity {
+    id: Option<String>,
+    token: Option<Secret<String>>,
+}
+
+/// Resolve source authentication without Cloudflare access or returning any credentials.
+/// Names need explicit credentials; unresolved names never silently bypass duplicate protection.
+pub fn config_tunnel_identity(config: &TunnelConfig) -> Result<Option<String>, String> {
+    Ok(resolve_config_identity(config)?.id)
+}
+
+fn resolve_config_identity(config: &TunnelConfig) -> Result<ConfigIdentity, String> {
+    let map = config.raw.as_mapping().expect("parsed config mapping");
+    let field = |key: &str| map.get(key).and_then(serde_norway::Value::as_str).filter(|value| !value.trim().is_empty());
+    let token = if let Some(token) = field("token") {
+        Some(Secret::new(token.trim().to_string()))
+    } else if let Some(path) = field("token-file") {
+        let path = crate::config::resolve_path(config.source.parent().unwrap_or(Path::new(".")), path);
+        Some(Secret::new(std::fs::read_to_string(path).map_err(|_| "The token file cannot be read. Check token-file in the source config.".to_string())?))
+    } else { None };
+    if let Some(token) = token {
+        let token = Secret::new(token.expose().trim().to_string());
+        return Ok(ConfigIdentity { id: Some(token_tunnel_identity(token.expose())?), token: Some(token) });
+    }
+
+    let configured = config.tunnel.as_deref().filter(|id| !id.trim().is_empty());
+    if configured.and_then(|id| uuid::Uuid::parse_str(id.trim()).ok()).is_some_and(|id| id.is_nil()) {
+        return Err("The config contains an empty tunnel UUID. Set tunnel to a valid Cloudflare UUID.".into());
+    }
+    let uuid = configured.and_then(non_nil_uuid);
+    let credentials = if let Some(contents) = field("credentials-contents") {
+        Some(Secret::new(contents.as_bytes().to_vec()))
+    } else if let Some(path) = config.credentials_file.clone().or_else(|| field("cred-file").map(|path| crate::config::resolve_path(config.source.parent().unwrap_or(Path::new(".")), path))) {
+        Some(Secret::new(std::fs::read(path).map_err(|_| "The credentials file cannot be read. Check credentials-file in the source config.".to_string())?))
+    } else { None };
+    let credential_id = if let Some(bytes) = credentials {
+        #[derive(serde::Deserialize)]
+        struct Credentials<'a> { #[serde(rename = "TunnelID", borrow)] id: Option<&'a str> }
+        let value: Credentials<'_> = serde_json::from_slice(bytes.expose()).map_err(|_| "The tunnel credentials are not valid JSON.".to_string())?;
+        value.id.map(|id| non_nil_uuid(id).ok_or_else(|| "The credentials contain an invalid TunnelID.".to_string())).transpose()?
+    } else { None };
+    if let Some(uuid) = uuid {
+        if credential_id.as_ref().is_some_and(|id| *id != uuid) {
+            return Err("The credentials file belongs to a different tunnel than the config UUID. Check credentials-file and tunnel in the source config.".into());
+        }
+        return Ok(ConfigIdentity { id: Some(uuid), token: None });
+    }
+    if configured.is_some() {
+        let id = credential_id.ok_or_else(|| "The tunnel name cannot be resolved safely. Set tunnel to its Cloudflare UUID, or select credentials containing TunnelID.".to_string())?;
+        return Ok(ConfigIdentity { id: Some(id), token: None });
+    }
+    if config.is_single_origin() {
+        return Ok(ConfigIdentity { id: None, token: None });
+    }
+    Err("The config has no tunnel UUID. Set up this project's tunnel before starting.".into())
 }
 
 fn explain_diagnostic(diagnostics: &str) -> FailureExplanation {
@@ -504,6 +647,7 @@ async fn prepare(
     proxies: &mut HashMap<usize, ProxyHandle>,
     ctx: &ProxyContext,
     force_no_inspect: bool,
+    ownership: &mut TunnelOwnership,
 ) -> Result<Prepared, Fatal> {
     let t = &spec.tunnel;
     let want_inspect = t.inspect && t.kind.supports_inspection() && !force_no_inspect;
@@ -524,6 +668,12 @@ async fn prepare(
                 return Err(observed_failure(crate::projects::DRAFT_DETAIL, crate::projects::DRAFT_HINT,
                     "The source config has no tunnel identity. Add tunnel and credentials-file in your editor."));
             }
+
+            let resolved = resolve_config_identity(&config).map_err(|message| observed_failure(
+                "The Cloudflare tunnel identity could not be resolved.",
+                &message, &message,
+            ))?;
+            ownership.claim(resolved.id.clone())?;
 
             let home_cf = crate::config::home_dir().join(".cloudflared");
             let identity = cloudflared::TunnelIdentity {
@@ -546,10 +696,12 @@ async fn prepare(
             if !config.is_single_origin() {
                 let Validation { ok, raw, failure, .. } = cloudflared::validate(bin, &path).await;
                 if !ok {
-                    return Err(Fatal { failure: failure.unwrap_or_else(|| explain_exit(Some(1), &raw)) });
+                    return Err(Fatal { failure: failure.unwrap_or_else(|| explain_exit(Some(1), &raw)), conflict: None });
                 }
             }
-            derived::preflight_credentials(&config).map_err(|raw| observed_failure("The tunnel credentials are missing or do not match the config.", "Check credentials-file and the tunnel ID in the source config, then restart.", &raw))?;
+            if resolved.token.is_none() {
+                derived::preflight_credentials(&config).map_err(|raw| observed_failure("The tunnel credentials are missing or do not match the config.", "Check credentials-file and the tunnel ID in the source config, then restart.", &raw))?;
+            }
 
             let mut mappings: Vec<RouteMapping> = config
                 .ingress
@@ -578,7 +730,7 @@ async fn prepare(
                 } else {
                     match ensure_proxies(&plan.upstreams, proxies, ctx).await {
                         Ok(p) => {
-                            for (idx, _) in &p {
+                            for idx in p.keys() {
                                 if let Some(m) = mappings.get_mut(*idx) {
                                     m.inspected = true;
                                 }
@@ -599,14 +751,22 @@ async fn prepare(
             }
             // Always run a derived copy from the data dir, even without inspection, so every
             // process Underlane starts is identifiable as its own.
-            let doc = derived::derive(&config, &ports);
+            let mut doc = derived::derive(&config, &ports);
+            if resolved.token.is_some() {
+                let map = doc.as_mapping_mut().expect("derived config mapping");
+                map.remove("token");
+                map.remove("token-file");
+            }
             let out = cfg.derived_dir().join(format!("{}.yml", t.id));
             derived::write_derived(&doc, &path, &out).map_err(|e| fatal(format!("Could not write the derived config: {e}")))?;
             let mut args = base_args(t, &out, cfg.grace_period);
             args.push("run".into());
+            if let Some(id) = resolved.id { args.push(id); }
             Ok(Prepared {
                 args,
-                env: vec![],
+                // Snapshot token-file authentication so an external edit cannot change the
+                // identity between reservation and cloudflared's file read.
+                env: resolved.token.map(|token| vec![("TUNNEL_TOKEN".into(), token)]).unwrap_or_default(),
                 cwd: path.parent().filter(|d| d.is_dir()).map(Path::to_path_buf),
                 mappings,
                 inspecting,
@@ -615,6 +775,7 @@ async fn prepare(
             })
         }
         TunnelKind::Quick => {
+            ownership.claim(None)?;
             let origin = normalize_origin(t.origin_url.as_deref().ok_or_else(|| observed_failure("No origin URL is set for this quick tunnel.", "Set the origin URL in the tunnel settings, then restart.", "No local URL is set for this quick tunnel."))?);
             if derived::split_service(&origin).is_none() {
                 return Err(observed_failure("The origin URL is invalid.", "Use a complete HTTP or HTTPS origin URL, then restart.", &format!("`{origin}` isn't an http:// or https:// URL.")));
@@ -650,6 +811,10 @@ async fn prepare(
                 .as_ref()
                 .filter(|t| !t.expose().trim().is_empty())
                 .ok_or_else(|| observed_failure("No token is stored for this tunnel.", "Paste the token again in the tunnel settings, then restart.", "No token is stored for this tunnel."))?;
+            let identity = token_tunnel_identity(token.expose()).map_err(|message| observed_failure(
+                "The tunnel token could not be read.", "Copy a fresh token from Cloudflare, then try again.", &message,
+            ))?;
+            ownership.claim(Some(identity))?;
             let neutral = cfg.neutral_config().map_err(|e| fatal(e.to_string()))?;
             let mut args = base_args(t, &neutral, cfg.grace_period);
             args.push("run".into());
@@ -699,6 +864,8 @@ fn spawn_child(bin: &Path, p: &Prepared, shim: Option<&Path>) -> std::io::Result
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .env_remove("TUNNEL_TOKEN")
+        .env_remove("TUNNEL_TOKEN_FILE")
+        .env_remove("TUNNEL_CRED_FILE")
         .env_remove("TUNNEL_CRED_CONTENTS")
         .env_remove("TUNNEL_CREDENTIALS_CONTENTS");
     if let Some(dir) = &p.cwd {
@@ -818,7 +985,7 @@ fn remove_own_pidfile(cfg: &SupervisorConfig, id: &str, pid: Option<u32>) {
     }
 }
 
-async fn run(mut spec: RunSpec, cfg: SupervisorConfig, sink: EventSink, mut rx: mpsc::UnboundedReceiver<Cmd>, run_no: u64, config_state: Arc<Mutex<TunnelState>>) {
+async fn run(mut spec: RunSpec, cfg: SupervisorConfig, sink: EventSink, mut rx: mpsc::UnboundedReceiver<Cmd>, run_no: u64, config_state: Arc<Mutex<TunnelState>>, mut ownership: TunnelOwnership) {
     let id = spec.tunnel.id.clone();
     let mut state = TunnelState::stopped(&id);
     state.run = run_no;
@@ -841,10 +1008,12 @@ async fn run(mut spec: RunSpec, cfg: SupervisorConfig, sink: EventSink, mut rx: 
     let _ = std::fs::create_dir_all(cfg.run_dir());
 
     'outer: loop {
+        ownership.owner.project_name = spec.tunnel.name.clone();
         state.status = Status::Starting;
         state.detail = None;
         state.hint = None;
         state.failure = None;
+        state.tunnel_conflict = None;
         state.public_url = None;
         state.connections = 0;
         state.pid = None;
@@ -870,7 +1039,7 @@ async fn run(mut spec: RunSpec, cfg: SupervisorConfig, sink: EventSink, mut rx: 
 
         // Preparing runs `ingress validate`; stay responsive to Stop while it does.
         let prepared = tokio::select! {
-            p = prepare(&spec, &cfg, &bin, &mut proxies, &ctx, force_no_inspect) => p,
+            p = prepare(&spec, &cfg, &bin, &mut proxies, &ctx, force_no_inspect, &mut ownership) => p,
             cmd = rx.recv() => match cmd {
                 Some(Cmd::Restart(s)) => {
                     spec = *s;
@@ -880,9 +1049,25 @@ async fn run(mut spec: RunSpec, cfg: SupervisorConfig, sink: EventSink, mut rx: 
                 _ => break 'outer,
             },
         };
+        state.cloudflare_tunnel_id = ownership.identity.clone();
         let prepared = match prepared {
             Ok(p) => p,
-            Err(Fatal { failure }) => {
+            Err(Fatal { failure, conflict: Some(conflict) }) => {
+                drop(proxies);
+                drop(ownership);
+                let mut blocked = TunnelState::stopped(&id);
+                blocked.run = run_no;
+                blocked.config_revision = state.config_revision;
+                blocked.restarts = state.restarts;
+                blocked.detail = Some(failure.cause.clone());
+                blocked.hint = failure.action.clone();
+                blocked.failure = Some(failure);
+                blocked.tunnel_conflict = Some(*conflict);
+                blocked.mappings = state.mappings;
+                emit_state(&blocked);
+                return;
+            }
+            Err(Fatal { failure, conflict: None }) => {
                 state.status = Status::Crashed;
                 state.detail = Some(failure.cause.clone());
                 state.hint = failure.action.clone();

@@ -6,7 +6,7 @@ use std::time::Duration;
 
 use anyhow::{ensure, Context};
 use bytes::Bytes;
-use http_body_util::{BodyExt, Empty};
+use http_body_util::{BodyExt, Full};
 use hyper::Request;
 use hyper_util::client::legacy::Client;
 use hyper_util::rt::TokioExecutor;
@@ -169,14 +169,18 @@ fn response(bytes: &[u8], hostname: &str, id: uuid::Uuid) -> HostnameDns {
 }
 
 async fn get(url: &str, token: Option<&Secret<String>>) -> anyhow::Result<Vec<u8>> {
+    request(url, token, hyper::Method::GET, Vec::new()).await
+}
+
+async fn request(url: &str, token: Option<&Secret<String>>, method: hyper::Method, body: Vec<u8>) -> anyhow::Result<Vec<u8>> {
     let https = hyper_rustls::HttpsConnectorBuilder::new()
         .with_native_roots()
         .map_err(|_| anyhow::anyhow!("Could not load trusted HTTPS certificates."))?
         .https_only()
         .enable_http1()
         .build();
-    let client = Client::builder(TokioExecutor::new()).build::<_, Empty<Bytes>>(https);
-    let mut request = Request::get(url).header(
+    let client = Client::builder(TokioExecutor::new()).build::<_, Full<Bytes>>(https);
+    let mut request = Request::builder().method(method).uri(url).header("content-type", "application/json").header(
         "accept",
         if token.is_some() {
             "application/json"
@@ -196,7 +200,7 @@ async fn get(url: &str, token: Option<&Secret<String>>) -> anyhow::Result<Vec<u8
         request = request.header(hyper::header::AUTHORIZATION, authorization);
     }
     let request = request
-        .body(Empty::new())
+        .body(Full::new(Bytes::from(body)))
         .map_err(|_| anyhow::anyhow!("Could not build the DNS request."))?;
     let response = client.request(request).await.map_err(|_| {
         anyhow::anyhow!("Could not reach Cloudflare. Check your connection and retry.")
@@ -223,10 +227,20 @@ async fn get(url: &str, token: Option<&Secret<String>>) -> anyhow::Result<Vec<u8
     Ok(bytes)
 }
 
-async fn bounded_get(url: &str, token: Option<&Secret<String>>) -> anyhow::Result<Vec<u8>> {
+pub(crate) async fn bounded_get(url: &str, token: Option<&Secret<String>>) -> anyhow::Result<Vec<u8>> {
     tokio::time::timeout(Duration::from_secs(15), get(url, token))
         .await
         .map_err(|_| anyhow::anyhow!("Cloudflare DNS verification timed out. Retry."))?
+}
+
+pub(crate) async fn bounded_patch(url: &str, token: &Secret<String>, body: Vec<u8>) -> anyhow::Result<Vec<u8>> {
+    tokio::time::timeout(Duration::from_secs(15), request(url, Some(token), hyper::Method::PATCH, body))
+        .await.map_err(|_| anyhow::anyhow!("DNS migration timed out. Retry to verify whether Cloudflare accepted it."))?
+}
+
+pub(crate) async fn bounded_post(url: &str, token: &Secret<String>, body: Vec<u8>) -> anyhow::Result<Vec<u8>> {
+    tokio::time::timeout(Duration::from_secs(15), request(url, Some(token), hyper::Method::POST, body))
+        .await.map_err(|_| anyhow::anyhow!("DNS creation timed out. Retry to verify whether Cloudflare accepted it."))?
 }
 
 async fn lookup(hostname: &str) -> anyhow::Result<Vec<u8>> {

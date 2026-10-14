@@ -18,3 +18,4 @@ pub mod secret;
 pub mod shim;
 pub mod supervisor;
 pub mod tunnel_setup;
+pub mod separate_tunnel;

@@ -11,6 +11,7 @@
   import { api } from "../lib/api";
   import { motion } from "../lib/theme";
   import { isOn, publicUrl, statusHint, statusLabel } from "../lib/format";
+  import { activeTunnelOwner } from "$lib/tunnel-conflict";
   import { next } from "../lib/listnav";
   import type { Tunnel } from "../lib/types";
   import { mergeProps } from "bits-ui";
@@ -195,7 +196,13 @@
                 onclick={() => api.openDashboard(`tunnels:${t.id}`)}
               >
                 <span class="truncate font-medium">{t.name}</span>
-                {#if t.state.status === "crashed" || t.state.status === "degraded"}
+                {#if t.separating_tunnel}
+                  <span class={detail}>Creating separate tunnel…</span>
+                {:else if t.separate_tunnel_pending}
+                  <span class={detail}>Separate tunnel setup is unfinished</span>
+                {:else if !isOn(t) && activeTunnelOwner(t, store.tunnels)}
+                  <span class={detail}>Not started: {activeTunnelOwner(t, store.tunnels)?.name} uses this tunnel</span>
+                {:else if t.state.failure || t.state.status === "crashed" || t.state.status === "degraded"}
                   <span class={cn(detail, t.state.status === "crashed" && "text-bad-text")}>{t.state.detail ?? statusLabel[t.state.status]}</span>
                 {:else if m}
                   <RouteLine hostname={t.kind === "quick" ? (t.state.public_url?.replace("https://", "") ?? null) : m.hostname} service={m.service} inspected={m.inspected} pulse={store.pulses[t.id] ?? 0} compact />
@@ -215,7 +222,7 @@
               <!-- Busy while a start/stop is in flight: disabled, announced, and the thumb pulses. -->
               <Switch
                 bind:checked={() => isOn(t), (v) => toggle(t, v)}
-                disabled={busy[t.id] || (t.setup_needed && !isOn(t))}
+                disabled={busy[t.id] || t.separating_tunnel || (!isOn(t) && (t.setup_needed || t.separate_tunnel_pending || !!activeTunnelOwner(t, store.tunnels)))}
                 aria-busy={busy[t.id] || undefined}
                 aria-label={isOn(t) ? `Stop ${t.name}` : `Start ${t.name}`}
                 class={cn(busy[t.id] && "*:animate-pulse")}

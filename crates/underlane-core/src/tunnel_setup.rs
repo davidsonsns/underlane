@@ -35,6 +35,18 @@ pub fn linked_config(
         crate::projects::needs_setup(config),
         "This config already has a tunnel identity or uses a single origin."
     );
+    reidentified_config(config, identity)
+}
+
+/// Retain every route/option while changing a locally managed tunnel's credentials.
+/// Callers moving the file must first resolve paths against its original directory.
+pub fn reidentified_config(
+    config: &crate::config::TunnelConfig,
+    identity: &SetupIdentity,
+) -> anyhow::Result<String> {
+    ensure!(!config.is_single_origin(), "Single-origin configs cannot be separated automatically.");
+    let root = config.raw.as_mapping().context("The source config must be a YAML mapping.")?;
+    ensure!(!root.contains_key("token") && !root.contains_key("token-file"), "Token-authenticated configs cannot be separated automatically.");
     let id =
         uuid::Uuid::parse_str(&identity.tunnel_id).context("The setup tunnel ID is invalid.")?;
     ensure!(!id.is_nil(), "The setup tunnel ID is invalid.");
@@ -50,6 +62,9 @@ pub fn linked_config(
     let map = raw
         .as_mapping_mut()
         .context("The source config must be a YAML mapping.")?;
+    // cloudflared accepts credential aliases/content too; they must not retain the old identity.
+    map.remove("credentials-contents");
+    map.remove("cred-file");
     map.insert("tunnel".into(), id.to_string().into());
     map.insert("credentials-file".into(), path.into());
     serde_norway::to_string(&raw)
@@ -260,7 +275,7 @@ pub fn certificate_identity(path: &Path) -> anyhow::Result<CertificateIdentity> 
     })
 }
 
-fn credential_identity(path: &Path, account: &Secret<String>) -> anyhow::Result<SetupIdentity> {
+pub(crate) fn credential_identity(path: &Path, account: &Secret<String>) -> anyhow::Result<SetupIdentity> {
     let metadata = std::fs::symlink_metadata(path)
         .context("Could not inspect app-owned tunnel credentials.")?;
     ensure!(
@@ -338,6 +353,39 @@ pub async fn setup(
     cancel: Cancellation,
     progress: impl Fn(Stage),
 ) -> anyhow::Result<SetupIdentity> {
+    setup_inner(binary, data_dir, home_dir, project_id, name, None, false, cancel, progress).await
+}
+
+/// Recovery uses a separate durable setup namespace and a pinned account certificate.
+/// An ambiguous create is never repeated, even if a subsequent list has not caught up.
+// Keep the existing setup call shape; recovery adds only its pinned certificate.
+#[allow(clippy::too_many_arguments)]
+pub async fn setup_separate(
+    binary: &Path,
+    data_dir: &Path,
+    home_dir: &Path,
+    attempt_id: &str,
+    name: &str,
+    certificate: &Path,
+    cancel: Cancellation,
+    progress: impl Fn(Stage),
+) -> anyhow::Result<SetupIdentity> {
+    setup_inner(binary, data_dir, home_dir, attempt_id, name, Some(certificate), true, cancel, progress).await
+}
+
+// Share the provisioning implementation without introducing a public options type.
+#[allow(clippy::too_many_arguments)]
+async fn setup_inner(
+    binary: &Path,
+    data_dir: &Path,
+    home_dir: &Path,
+    project_id: &str,
+    name: &str,
+    certificate: Option<&Path>,
+    never_repeat_create: bool,
+    cancel: Cancellation,
+    progress: impl Fn(Stage),
+) -> anyhow::Result<SetupIdentity> {
     ensure!(
         home_dir.is_absolute(),
         "The default home directory must be absolute."
@@ -345,13 +393,14 @@ pub async fn setup(
     let project_id = uuid::Uuid::parse_str(project_id).context("The project ID is invalid.")?;
     ensure!(!project_id.is_nil(), "The project ID is invalid.");
     let name = crate::db::normalize_name(name)?;
-    let cert = home_dir.join(".cloudflared/cert.pem");
+    let cert = certificate.map(Path::to_path_buf).unwrap_or_else(|| home_dir.join(".cloudflared/cert.pem"));
     let directory = home_dir.join(".cloudflared/underlane");
     let credentials = directory.join(format!("{project_id}.json"));
     progress(Stage::Checking);
     match std::fs::symlink_metadata(&cert) {
         Ok(_) => {}
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            ensure!(certificate.is_none(), "The pinned Cloudflare certificate is missing. Retry recovery.");
             progress(Stage::Login);
             let args = vec!["--origincert".into(), cert.as_os_str().into(), "login".into()];
             cli::exec(binary, invocation(args, data_dir, &cancel, Duration::from_secs(300))).await
@@ -395,6 +444,7 @@ pub async fn setup(
         }
         bail!("A Cloudflare tunnel with this project name already exists, but this project has no app-owned credentials. Choose a different project name or restore its credentials before retrying.");
     }
+    ensure!(!never_repeat_create || intent.is_none(), "A separate tunnel creation was already attempted, but its credentials are missing. Restore the saved credentials or check the tunnel in Cloudflare before retrying; another tunnel was not created.");
     if intent.is_none() {
         write_intent(
             &intent_path,

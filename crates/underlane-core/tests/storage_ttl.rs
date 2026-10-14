@@ -121,6 +121,39 @@ fn requests_round_trip_and_upsert() {
 }
 
 #[test]
+fn request_filters_apply_before_limit_and_combine_categories() {
+    let db = Db::open_in_memory().unwrap();
+    for (id, ts, status, method, tunnel) in [
+        ("get-ok", 1, Some(200), "GET", "t1"),
+        ("post-error", 2, Some(502), "POST", "t1"),
+        ("get-error", 3, Some(502), "GET", "t1"),
+        ("other-tunnel", 4, Some(502), "POST", "t2"),
+        ("pending", 5, None, "POST", "t1"),
+    ] {
+        let mut x = exchange(id, ts, 0);
+        x.status = status;
+        x.method = method.into();
+        x.tunnel_id = tunnel.into();
+        db.upsert_request(&x).unwrap();
+    }
+    // All recent rows are outside the selected status/method; matches must precede LIMIT.
+    for i in 0..20 {
+        db.upsert_request(&exchange(&format!("recent-{i}"), 100 + i, 0)).unwrap();
+    }
+    let methods = vec!["GET".into(), "POST".into()];
+    let rows = db.list_requests_filtered(Some("t1"), None, &[200, 502], &methods, 2).unwrap();
+    assert_eq!(rows.iter().map(|r| r.id.as_str()).collect::<Vec<_>>(), vec!["get-error", "post-error"]);
+    let rows = db.list_requests_filtered(Some("t1"), Some("items"), &[200, 502], &["GET".into()], 10).unwrap();
+    assert_eq!(rows.iter().map(|r| r.id.as_str()).collect::<Vec<_>>(), vec!["get-error", "get-ok"]);
+    assert_eq!(db.list_requests_filtered(Some("t1"), None, &[502], &["POST".into()], 1).unwrap()[0].id, "post-error");
+    assert!(db.list_requests_filtered(None, None, &[502], &["POST' OR 1=1 --".into()], 10).unwrap().is_empty());
+    assert_eq!(db.list_requests_filtered(None, None, &[], &[], 100).unwrap().len(), db.list_requests(None, None, 100).unwrap().len());
+    let posts = db.list_requests_filtered(None, None, &[], &["POST".into()], 100).unwrap();
+    assert_eq!(posts.len(), 23);
+    assert!(posts.iter().any(|r| r.id == "pending"), "no status selection includes pending responses");
+}
+
+#[test]
 fn settings_groups_and_tunnels_persist() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("b.db");
