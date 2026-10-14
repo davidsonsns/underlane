@@ -118,7 +118,7 @@
             {#if g.id !== null}<GroupName id={g.id} name={g.name} />{/if}
             {#each g.tunnels as t (t.id)}
               <button
-                class={cn("flex w-full items-center gap-2.5 rounded-md px-2.5 py-2.5 transition-colors text-left", t.id === selected ? "bg-(--selected)" : "hover:bg-fill", kbRing)}
+                class={cn("flex h-8 w-full items-center gap-2.5 rounded-md px-2.5 transition-colors text-left", t.id === selected ? "bg-(--selected)" : "hover:bg-fill", kbRing)}
                 data-tunnel-id={t.id}
                 tabindex={t.id === selected ? 0 : -1}
                 aria-current={t.id === selected ? "true" : undefined}
