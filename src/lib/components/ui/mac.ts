@@ -21,9 +21,9 @@ export const menuItem =
 /** Left check column. */
 export const menuIndicator = "pointer-events-none absolute start-[6px] flex w-3 items-center justify-center [&_svg]:size-3 [&_svg]:stroke-[2.5]";
 
-export const menuSeparator = "pointer-events-none mx-[5px] my-[5px] h-0 border-t border-border";
+
 
 export const menuLabel = "ps-[22px] pe-3 pt-1 pb-0.5 text-xs font-semibold text-muted-foreground";
 
-export const menuShortcut =
+const menuShortcut =
   "ms-auto ps-6 text-sm tracking-normal text-muted-foreground group-data-highlighted/menu-item:text-accent-foreground";

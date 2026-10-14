@@ -13,12 +13,20 @@
   // a prepend, a filter, Clear or the cap can't move the selection to another request.
   import { tick, untrack } from "svelte";
   import { VList } from "virtua/svelte";
-  import { next } from "$lib/listnav";
-  import { snapshot } from "$lib/snapshot.svelte";
-  import { formatAt, formatBytes, formatDuration, methodText, statusClass } from "$lib/format";
   import { columnPrefs } from "$lib/columns.svelte";
-  import { cn } from "$lib/utils";
+  import {
+    formatAt,
+    formatBytes,
+    formatDuration,
+    methodText,
+    statusClass,
+  } from "$lib/format";
+  import { snapshot } from "$lib/snapshot.svelte";
   import type { RequestSummary } from "$lib/types";
+  import { cn } from "$lib/utils";
+  import { observeDescendant } from "./descendant";
+  import { prependRequestWindow, requestKeyAction } from "./list-state";
+  import { track } from "./reactivity";
 
   let {
     rows = $bindable(),
@@ -50,7 +58,9 @@
   let shift = $state(false);
   /** Ids that just arrived: their row flashes the accent bar once. */
   let fresh = $state<Record<string, boolean>>({});
-  const active = $derived(selected == null ? -1 : rows.findIndex((r) => r.id === selected));
+  const active = $derived(
+    selected === null ? -1 : rows.findIndex((r) => r.id === selected)
+  );
   // Keep the active row mounted while the pointer scrolls it away, so aria-activedescendant
   // never points at a recycled row (03 R-22).
   const keep = $derived(active >= 0 ? [active] : []);
@@ -64,65 +74,84 @@
       lastIndex = i;
       return;
     }
-    if (selected == null) return;
-    untrack(() => onselect(rows.length ? rows[Math.min(Math.max(lastIndex, 0), rows.length - 1)].id : null));
+    if (selected === null) {
+      return;
+    }
+    untrack(() =>
+      onselect(
+        rows.length
+          ? rows[Math.min(Math.max(lastIndex, 0), rows.length - 1)].id
+          : null
+      )
+    );
   });
 
   // aria-activedescendant only once the row exists: virtua mounts a row one animation frame
   // after scrollToIndex, not on the next tick (decisions.md §17).
   let descendant = $state<string | undefined>();
   $effect(() => {
-    const id = selected == null ? null : `req-${selected}`;
-    void active;
-    void snapshot.full;
-    let live = true;
-    (async () => {
-      await tick();
-      for (let n = 0; live && n < 4; n++) {
-        if (!id || box?.querySelector(`[id="${id}"]`)) break;
-        await new Promise((r) => requestAnimationFrame(r));
+    const id = selected === null ? null : `req-${selected}`;
+    track(active);
+    track(snapshot.full);
+    return observeDescendant(
+      () => box,
+      id,
+      (value) => {
+        descendant = value;
       }
-      if (live) descendant = id && box?.querySelector(`[id="${id}"]`) ? id : undefined;
-    })();
-    return () => {
-      live = false;
-    };
+    );
   });
 
   // Snapshot mode unmounts the VList; when it (or the list itself) mounts again, bring the
   // active row back into view (02 §4.3).
   $effect(() => {
     const l = list;
-    if (!l) return;
+    if (!l) {
+      return;
+    }
     untrack(() => active >= 0 && l.scrollToIndex(active, { align: "nearest" }));
   });
 
   function move(i: number) {
-    if (i < 0 || i >= rows.length) return;
-    if (i !== active) onselect(rows[i].id);
+    if (i < 0 || i >= rows.length) {
+      return;
+    }
+    if (i !== active) {
+      onselect(rows[i].id);
+    }
     list?.scrollToIndex(i, { align: "nearest" });
   }
 
+  const pageSize = () =>
+    Math.floor((list?.getViewportSize() ?? box?.clientHeight ?? ROW) / ROW);
   function onkeydown(e: KeyboardEvent) {
-    if (e.metaKey || e.ctrlKey || e.altKey) return;
-    if (e.key === "Escape" && selected != null) {
-      e.preventDefault();
-      onselect(null);
+    const action = requestKeyAction(
+      e,
+      selected !== null,
+      active,
+      rows.length,
+      pageSize()
+    );
+    if (action === null) {
       return;
     }
-    const page = Math.floor((list?.getViewportSize() ?? box?.clientHeight ?? ROW) / ROW);
-    const i = next(e.key, active, rows.length, page);
-    if (i == null) return;
     e.preventDefault();
-    move(i);
+    if (action.type === "clear") {
+      onselect(null);
+    } else {
+      move(action.index);
+    }
   }
 
   function onclick(e: MouseEvent) {
     const el = (e.target as Element).closest<HTMLElement>("[role=option]");
     const i = el ? rows.findIndex((r) => r.id === el.dataset.id) : -1;
     // Clicking the active row again closes its detail.
-    if (i >= 0 && i === active) onselect(null);
-    else if (i >= 0) move(i);
+    if (i >= 0 && i === active) {
+      onselect(null);
+    } else if (i >= 0) {
+      move(i);
+    }
     box?.focus({ preventScroll: true });
   }
 
@@ -139,18 +168,24 @@
   /** A request that just arrived (newer than every row). Updates of a known id go to the parent. */
   export function add(r: RequestSummary) {
     const q = incoming.findIndex((x) => x.id === r.id);
-    if (q >= 0) incoming[q] = r;
-    else incoming.push(r);
+    if (q >= 0) {
+      incoming[q] = r;
+    } else {
+      incoming.push(r);
+    }
     flush();
   }
 
   async function flush() {
-    if (flushing) return;
+    if (flushing) {
+      return;
+    }
     flushing = true;
     try {
       while (incoming.length) {
         const batch = incoming.reverse(); // newest first
         incoming = [];
+        // biome-ignore lint/performance/noAwaitInLoops: Batches must re-anchor serially so scrolling does not jump.
         await prepend(batch);
         for (const r of batch) {
           fresh[r.id] = true;
@@ -165,7 +200,8 @@
   // The VList's scrolling element. Anchoring reads and writes its scrollTop, not
   // list.getScrollOffset(): virtua's offset only catches up on the next scroll event, so in a
   // burst it would still hold the offset from before the previous batch's re-anchoring.
-  const viewport = () => (list ? (box?.firstElementChild as HTMLElement | null) : null);
+  const viewport = () =>
+    list ? (box?.firstElementChild as HTMLElement | null) : null;
 
   /**
    * Put a batch (newest first) on top (decisions.md §17). At the top of the list the new rows
@@ -175,34 +211,39 @@
    * can't wait: the list stays at `ceiling` and the first visible row is re-anchored by hand.
    */
   async function prepend(batch: RequestSummary[]) {
-    const ids = new Set(batch.map((r) => r.id));
-    const merged = [...batch, ...rows.filter((r) => !ids.has(r.id))];
     const vp = viewport();
-    const top = vp?.scrollTop ?? 0;
-    if (!vp || snapshot.full || top <= 0) {
-      rows = merged.slice(0, cap);
-    } else if (merged.length <= ceiling) {
-      shift = true;
-      rows = merged;
-      await tick();
-      shift = false;
-    } else {
-      // Hold the first visible row at its offset. If the trim removed it (the view was within a
-      // batch of the end), its untrimmed index aims past the new end and the browser clamps the
-      // scroll: the view shows the oldest rows kept. Nothing that was on screen survived, so
-      // there's no row to hold still; the same clamp applies when the view was already at the end.
-      const i = Math.floor(top / ROW);
-      const j = merged.findIndex((r) => r.id === rows[i]?.id);
-      rows = merged.slice(0, ceiling);
-      await tick();
-      if (j >= 0) vp.scrollTop = j * ROW + (top - i * ROW);
+    const window = prependRequestWindow(
+      rows,
+      batch,
+      vp?.scrollTop ?? null,
+      snapshot.full,
+      cap,
+      ceiling,
+      ROW
+    );
+    ({ rows } = window);
+    if (!window.wait) {
+      return;
+    }
+    ({ shift } = window);
+    await tick();
+    shift = false;
+    restoreAnchor(vp, window.anchor);
+  }
+
+  // A trimmed-away anchor aims past the new end; browser clamping keeps the oldest retained rows visible.
+  function restoreAnchor(vp: HTMLElement | null, anchor: number | null) {
+    if (vp && anchor !== null) {
+      vp.scrollTop = anchor;
     }
   }
 
   // Back at the top: drop the rows kept while the user was scrolled away. The trimmed rows are
   // off screen, and an active row among them falls back like any other trimmed row.
   function onscroll() {
-    if (rows.length > cap && (viewport()?.scrollTop ?? 1) <= 0) rows = rows.slice(0, cap);
+    if (rows.length > cap && (viewport()?.scrollTop ?? 1) <= 0) {
+      rows = rows.slice(0, cap);
+    }
   }
 
   export function focus() {
@@ -210,55 +251,107 @@
   }
 
   const hidden = $derived(new Set(columnPrefs.hidden));
-  const statusText = { ok: "text-ok-text", redirect: "text-muted-foreground", client: "text-degraded-text", server: "text-bad-text", none: "" };
+  const statusText = {
+    client: "text-degraded-text",
+    none: "",
+    ok: "text-ok-text",
+    redirect: "text-muted-foreground",
+    server: "text-bad-text",
+  };
 </script>
 
-{#snippet row(r: RequestSummary, i: number)}
+{#snippet row(
+  r: RequestSummary,
+  i: number
+)}
   <div
-    role="option"
-    id="req-{r.id}"
-    data-id={r.id}
+    aria-label="{r.method} {r.path}, status {r.status ?? "none"}"
     aria-selected={r.id === selected}
-    aria-label="{r.method} {r.path}, status {r.status ?? 'none'}"
-    style:grid-template-columns={template}
     class={cn(
       columns,
       "h-7 text-callout tabular-nums",
-      r.id === selected ? "bg-(--selected)" : i % 2 ? "bg-fill/50 hover:bg-fill" : "hover:bg-fill",
-      fresh[r.id] && "animate-arrive",
+      r.id === selected && "bg-(--selected)",
+      r.id !== selected &&
+        (i % 2 ? "bg-fill/50 hover:bg-fill" : "hover:bg-fill"),
+      fresh[r.id] && "animate-arrive"
     )}
+    data-id={r.id}
+    id="req-{r.id}"
+    role="option"
+    tabindex="-1"
+    style:grid-template-columns={template}
   >
-    {#if !hidden.has("method")}<span class={cn("text-xs font-semibold", methodText(r.method))}>{r.kind === "websocket" ? "WS" : r.method}</span>{/if}
-    {#if !hidden.has("route")}<span class="truncate text-muted-foreground" title={r.host}>{r.host}</span>{/if}
+    {#if !hidden.has("method")}
+      <span class={cn("font-semibold text-xs", methodText(r.method))}
+        >{r.kind === "websocket" ? "WS" : r.method}</span
+      >
+    {/if}
+    {#if !hidden.has("route")}
+      <span class="truncate text-muted-foreground" title={r.host}
+        >{r.host}</span
+      >
+    {/if}
     <span class="truncate font-mono text-code" title={r.path}>{r.path}</span>
-    {#if !hidden.has("status")}<span class={cn("text-right font-semibold", statusText[statusClass(r.status)])}>{r.status ?? "—"}</span>{/if}
-    {#if !hidden.has("time")}<span class="text-right">{formatDuration(r.duration_ms)}</span>{/if}
-    {#if !hidden.has("size")}<span class="text-right">{formatBytes(r.resp_size)}</span>{/if}
-    {#if !hidden.has("at")}<span class="text-right whitespace-nowrap text-muted-foreground">{formatAt(r.ts, now)}</span>{/if}
+    {#if !hidden.has("status")}
+      <span
+        class={cn(
+          "text-right font-semibold",
+          statusText[statusClass(r.status)]
+        )}
+        >{r.status ?? "—"}</span
+      >
+    {/if}
+    {#if !hidden.has("time")}
+      <span class="text-right">{formatDuration(r.duration_ms)}</span>
+    {/if}
+    {#if !hidden.has("size")}
+      <span class="text-right">{formatBytes(r.resp_size)}</span>
+    {/if}
+    {#if !hidden.has("at")}
+      <span class="text-right whitespace-nowrap text-muted-foreground"
+        >{formatAt(r.ts, now)}</span
+      >
+    {/if}
   </div>
 {/snippet}
 
 <!-- Focus stays on this wrapper (never on a row, which virtua may unmount). The inset ring is an
      overlay so the row backgrounds can't cover it; it shows only during keyboard navigation. -->
 <div
-  bind:this={box}
-  role="listbox"
-  aria-label="Requests"
-  tabindex="0"
   aria-activedescendant={descendant}
+  aria-label="Requests"
   class="relative min-h-0 flex-1 outline-none after:pointer-events-none after:absolute after:inset-0 after:z-10 kb-focus:after:ring-[3px] kb-focus:after:ring-ring/50 kb-focus:after:ring-inset"
-  {onkeydown}
   {onclick}
+  {onkeydown}
+  role="listbox"
+  tabindex="0"
+  bind:this={box}
 >
   {#if snapshot.full}
     <!-- overflow-y: scroll keeps the scrollbar gutter even when the rows fit, so the columns line
          up with the header in Requests.svelte, which pads by the same --scrollbar-size. -->
     <div class="h-full overflow-y-scroll">
-      {#each rows as r, i (r.id)}{@render row(r, i)}{/each}
+      {#each rows as r, i (r.id)}
+        {@render row(r, i)}
+      {/each}
     </div>
   {:else}
-    <VList bind:this={list} data={rows} getKey={(r) => r.id} itemSize={ROW} {shift} keepMounted={keep} {onscroll} style="overflow-y: scroll">
-      {#snippet children(r, i)}{@render row(r, i)}{/snippet}
+    <VList
+      data={rows}
+      getKey={(r) => r.id}
+      itemSize={ROW}
+      keepMounted={keep}
+      {onscroll}
+      {shift}
+      style="overflow-y: scroll"
+      bind:this={list}
+    >
+      {#snippet children(
+        r,
+        i
+      )}
+        {@render row(r, i)}
+      {/snippet}
     </VList>
   {/if}
 </div>

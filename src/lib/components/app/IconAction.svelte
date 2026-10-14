@@ -1,9 +1,14 @@
 <script lang="ts">
+  import { mergeProps } from "bits-ui";
   // Icon-only button: always an aria-label and a tooltip (02 §2, .icon-btn). The glyph is
   // the children snippet, e.g. <IconAction label="Copy public URL" onclick={…}><Copy /></IconAction>.
   import type { Snippet } from "svelte";
-  import { mergeProps } from "bits-ui";
-  import { Button, type ButtonProps, type ButtonSize, type ButtonVariant } from "$lib/components/ui/button/index.js";
+  import {
+    Button,
+    type ButtonProps,
+    type ButtonSize,
+    type ButtonVariant,
+  } from "$lib/components/ui/button/index.js";
   import Tip from "./Tip.svelte";
 
   let {
@@ -27,8 +32,17 @@
   } = $props();
 </script>
 
-<Tip text={tip} {shortcut}>
-  {#snippet children({ props })}
-    <Button bind:ref {...mergeProps(props, rest)} {variant} {size} aria-label={label}>{@render glyph()}</Button>
+<Tip {shortcut} text={tip}>
+  {#snippet children({
+    props,
+  })}
+    <Button
+      bind:ref
+      {...mergeProps(props, rest)}
+      aria-label={label}
+      {size}
+      {variant}
+      >{@render glyph()}</Button
+    >
   {/snippet}
 </Tip>

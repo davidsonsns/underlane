@@ -3,12 +3,22 @@ import { hostnameChanged, hostnamePayload } from "./hostname-draft";
 import type { HostnameConfig } from "./types";
 
 const config: HostnameConfig = {
+  fallback_service: "http_status:404",
   revision: "revision",
   routes: [
-    { index: 0, hostname: "example.com", service: "https://localhost:3000", path: "/api/.*" },
-    { index: 1, hostname: "example.com", service: "tcp://localhost:5432", path: null },
+    {
+      hostname: "example.com",
+      index: 0,
+      path: "/api/.*",
+      service: "https://localhost:3000",
+    },
+    {
+      hostname: "example.com",
+      index: 1,
+      path: null,
+      service: "tcp://localhost:5432",
+    },
   ],
-  fallback_service: "http_status:404",
 };
 
 describe("hostname drafts", () => {
@@ -19,13 +29,32 @@ describe("hostname drafts", () => {
   });
 
   it("stages removal, edits and new routes without mutating the loaded config", () => {
-    const payload = hostnamePayload([
-      { ...config.routes[1], service: " tcp://localhost:5433 " },
-      { index: null, hostname: " new.example.com ", service: " localhost:4000 ", path: null },
-    ], true, "");
+    const payload = hostnamePayload(
+      [
+        { ...config.routes[1], service: " tcp://localhost:5433 " },
+        {
+          hostname: " new.example.com ",
+          index: null,
+          path: null,
+          service: " localhost:4000 ",
+        },
+      ],
+      true,
+      ""
+    );
     expect(payload.routes).toEqual([
-      { index: 1, hostname: "example.com", service: "tcp://localhost:5433", path: null },
-      { index: null, hostname: "new.example.com", service: "localhost:4000", path: null },
+      {
+        hostname: "example.com",
+        index: 1,
+        path: null,
+        service: "tcp://localhost:5433",
+      },
+      {
+        hostname: "new.example.com",
+        index: null,
+        path: null,
+        service: "localhost:4000",
+      },
     ]);
     expect(hostnameChanged(config, payload)).toBe(true);
     expect(config.routes).toHaveLength(2);
@@ -34,9 +63,15 @@ describe("hostname drafts", () => {
 
   it("always sends an explicit fallback and preserves custom text across checkbox toggles", () => {
     const custom = " https://fallback.example.com ";
-    expect(hostnamePayload([], false, custom).fallbackService).toBe("https://fallback.example.com");
-    expect(hostnamePayload([], true, custom).fallbackService).toBe("http_status:404");
-    expect(hostnamePayload([], false, custom).fallbackService).toBe("https://fallback.example.com");
+    expect(hostnamePayload([], false, custom).fallbackService).toBe(
+      "https://fallback.example.com"
+    );
+    expect(hostnamePayload([], true, custom).fallbackService).toBe(
+      "http_status:404"
+    );
+    expect(hostnamePayload([], false, custom).fallbackService).toBe(
+      "https://fallback.example.com"
+    );
     expect(hostnamePayload([], false, "").fallbackService).toBe("");
   });
 });

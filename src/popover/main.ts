@@ -4,4 +4,8 @@ import { installFocusModality } from "../lib/theme";
 import Popover from "./Popover.svelte";
 
 installFocusModality();
-mount(Popover, { target: document.getElementById("app")! });
+const target = document.getElementById("app");
+if (!target) {
+  throw new Error("Missing popover mount element");
+}
+mount(Popover, { target });

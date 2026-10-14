@@ -3,7 +3,9 @@ import { groupNameError, normalizeGroupName } from "./group-name";
 
 describe("project names", () => {
   it("trims and collapses whitespace, including pasted lines and Unicode spaces", () => {
-    expect(normalizeGroupName("  My   project\n\t name\u00a0\u0085 ")).toBe("My project name");
+    expect(normalizeGroupName("  My   project\n\t name\u00a0\u0085 ")).toBe(
+      "My project name"
+    );
     expect(groupNameError(normalizeGroupName(" \n\t "))).toBe("Enter a name.");
   });
 

@@ -1,3 +1,5 @@
+<!-- Tip renders this component after importing the shared lazy chunk. -->
+<!-- fallow-ignore-file unrendered-component -->
 <script lang="ts">
 	// underlane: macOS overrides, see .scratch/shadcn-luma/01-theming.md §5 (stock Luma: commit 9f0aa7b).
 	import { Tooltip as TooltipPrimitive } from "bits-ui";

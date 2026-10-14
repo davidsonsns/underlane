@@ -1,22 +1,22 @@
-import { defineConfig } from "vite";
+import { resolve } from "node:path";
 import { svelte } from "@sveltejs/vite-plugin-svelte";
 import tailwindcss from "@tailwindcss/vite";
-import { resolve } from "node:path";
+import { defineConfig } from "vite";
 
 // Two pages: the dashboard window (index.html) and the menu bar popover (popover.html).
 export default defineConfig({
-  plugins: [tailwindcss(), svelte()],
-  clearScreen: false,
-  server: { port: 1420, strictPort: true },
-  resolve: { alias: { $lib: resolve(__dirname, "src/lib") } },
   build: {
-    target: "safari16.4",
     rollupOptions: {
       input: {
-        dashboard: resolve(__dirname, "index.html"),
-        popover: resolve(__dirname, "popover.html"),
+        dashboard: resolve(import.meta.dirname, "index.html"),
+        popover: resolve(import.meta.dirname, "popover.html"),
       },
     },
+    target: "safari16.4",
   },
+  clearScreen: false,
+  plugins: [tailwindcss(), svelte()],
+  resolve: { alias: { $lib: resolve(import.meta.dirname, "src/lib") } },
+  server: { port: 1420, strictPort: true },
   test: { environment: "node", include: ["src/**/*.test.ts"] },
 });

@@ -9,13 +9,13 @@
 
 @layer theme, base, components, utilities;
 @import "tailwindcss" source(none);
+@import "tw-animate-css";
+@import "shadcn-svelte/tailwind.css";
 /* The shipped code in src/ only (skips src-tauri/, target/ and crates/). No utilities in the
    HTML files. */
 @source "../dashboard";
 @source "../popover";
 @source "../lib";
-@import "tw-animate-css";
-@import "shadcn-svelte/tailwind.css";
 
 /* ---------------------------------------------------------------------------------------------
    1. Dark variant: data-theme wins, otherwise the system. Replaces shadcn's `.dark` class.
@@ -26,7 +26,10 @@
     @slot;
   }
   @media (prefers-color-scheme: dark) {
-    &:where(:root:not([data-theme="light"]), :root:not([data-theme="light"]) *) {
+    &:where(
+        :root:not([data-theme="light"]),
+        :root:not([data-theme="light"]) *
+      ) {
       @slot;
     }
   }
@@ -43,7 +46,9 @@
    can use var(--text-sm) etc. as well as the utilities). */
 @theme static {
   /* "Segoe UI" and Consolas are for the later Windows build. */
-  --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", system-ui, sans-serif;
+  --font-sans:
+    -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", system-ui,
+    sans-serif;
   --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
 
   /* macOS text styles. text-sm is the 13px body/control size, so every stock shadcn
@@ -79,7 +84,6 @@
 
   --ease-out: cubic-bezier(0.22, 1, 0.36, 1);
   --ease-spring: cubic-bezier(0.34, 1.4, 0.64, 1);
-
 }
 
 /* Motion for the shared app components (keyframes in section 6). Emitted only when used. */
@@ -152,9 +156,6 @@
    4. Tokens. Underlane names are the source of truth; shadcn names alias them. */
 @layer base {
   :root {
-    color-scheme: light dark;
-
-    /* One quiet brand accent; status colours retain their separate meanings. */
     --tint: #087f8c;
     --selection-fill: #087f8c;
     --on-selection: #ffffff;
@@ -174,7 +175,7 @@
     /* Placeholder text uses the readable secondary colour in both themes. */
     --text-placeholder: var(--text-2);
     --line: rgb(0 0 0 / 0.07);
-    --line-strong: rgb(0 0 0 / 0.10);
+    --line-strong: rgb(0 0 0 / 0.1);
     --fill: rgb(0 0 0 / 0.05);
     --fill-strong: rgb(0 0 0 / 0.09);
     --hover: var(--fill);
@@ -207,6 +208,44 @@
     --syn-number: #1c00cf;
     --syn-literal: #9b2393;
 
+    /* Neutral menu highlights keep the brand accent for primary actions and switches. */
+    --background: var(--bg);
+    --foreground: var(--text-1);
+    --card: var(--surface);
+    --card-foreground: var(--text-1);
+    --popover: var(--menu);
+    --popover-foreground: var(--text-1);
+    --primary: var(--selection-fill);
+    --primary-foreground: var(--on-selection);
+    --secondary: var(--control);
+    --secondary-foreground: var(--text-1);
+    --muted: var(--fill);
+    --muted-foreground: var(--text-2);
+    --accent: var(--fill-strong);
+    --accent-foreground: var(--text-1);
+    --destructive: var(--bad-text);
+    --border: var(--line);
+    --input: var(--line-strong);
+    --ring: var(--tint);
+    /* Opaque neutral chrome keeps surfaces consistent over the native window material. */
+    --sidebar: var(--sidebar-tint);
+    --sidebar-foreground: var(--text-1);
+    --sidebar-primary: var(--selection-fill);
+    --sidebar-primary-foreground: var(--on-selection);
+    --sidebar-accent: var(--selected);
+    --sidebar-accent-foreground: var(--text-1);
+    --sidebar-border: var(--line);
+    --sidebar-ring: var(--tint);
+    --radius: 8px;
+
+    /* Layout constants */
+    --toolbar-h: 52px;
+    --sheet-top: var(--toolbar-h);
+    --dur: 180ms;
+    color-scheme: light dark;
+  }
+
+  :root {
     @variant dark {
       --tint: #67c6ce;
       --selection-fill: #087f8c;
@@ -247,41 +286,6 @@
       --syn-literal: #fc5fa3;
       /* --off keeps #a1a1a6 in both themes, as before the migration (01 §3.3). */
     }
-
-    /* Neutral menu highlights keep the brand accent for primary actions and switches. */
-    --background: var(--bg);
-    --foreground: var(--text-1);
-    --card: var(--surface);
-    --card-foreground: var(--text-1);
-    --popover: var(--menu);
-    --popover-foreground: var(--text-1);
-    --primary: var(--selection-fill);
-    --primary-foreground: var(--on-selection);
-    --secondary: var(--control);
-    --secondary-foreground: var(--text-1);
-    --muted: var(--fill);
-    --muted-foreground: var(--text-2);
-    --accent: var(--fill-strong);
-    --accent-foreground: var(--text-1);
-    --destructive: var(--bad-text);
-    --border: var(--line);
-    --input: var(--line-strong);
-    --ring: var(--tint);
-    /* Opaque neutral chrome keeps surfaces consistent over the native window material. */
-    --sidebar: var(--sidebar-tint);
-    --sidebar-foreground: var(--text-1);
-    --sidebar-primary: var(--selection-fill);
-    --sidebar-primary-foreground: var(--on-selection);
-    --sidebar-accent: var(--selected);
-    --sidebar-accent-foreground: var(--text-1);
-    --sidebar-border: var(--line);
-    --sidebar-ring: var(--tint);
-    --radius: 8px;
-
-    /* Layout constants */
-    --toolbar-h: 52px;
-    --sheet-top: var(--toolbar-h);
-    --dur: 180ms;
   }
 
   :root[data-theme="light"] {
@@ -304,20 +308,20 @@
     background: transparent; /* both windows are transparent over NSVisualEffectView */
   }
   body {
-    margin: 0;
     height: 100%;
+    margin: 0;
+    overflow: hidden;
     font-family: var(--font-sans);
     font-size: var(--text-sm);
+    -webkit-font-smoothing: antialiased;
     line-height: var(--text-sm--line-height);
     color: var(--foreground);
-    background: transparent;
-    -webkit-font-smoothing: antialiased;
+    cursor: default;
     /* Labels and headings aren't selectable, as in AppKit; content opts in with select-text,
        and inputs/pre/code below. */
     -webkit-user-select: none;
     user-select: none;
-    cursor: default;
-    overflow: hidden;
+    background: transparent;
   }
   /* lucide draws 24px at stroke 2, heavier than SF Symbols at 13-15px.
      A CSS stroke-width beats the presentation attribute; utilities still win. */
@@ -325,8 +329,8 @@
     stroke-width: 1.75;
   }
   * {
-    border-color: var(--border);
     outline-color: color-mix(in srgb, var(--ring) 50%, transparent);
+    border-color: var(--border);
   }
   /* App chrome is not selectable (like AppKit labels); content opts back in. */
   button,
@@ -363,11 +367,11 @@
     background: transparent;
   }
   ::-webkit-scrollbar-thumb {
+    min-height: 32px;
     background-color: var(--scrollbar-thumb);
     background-clip: padding-box;
     border: 2px solid transparent;
     border-radius: 9999px;
-    min-height: 32px;
   }
   ::-webkit-scrollbar-thumb:hover {
     background-color: var(--scrollbar-thumb-hover);
@@ -437,9 +441,9 @@
   ::view-transition-group(*),
   ::view-transition-old(*),
   ::view-transition-new(*) {
+    transition-duration: 0.001ms !important;
     animation-duration: 0.001ms !important;
     animation-iteration-count: 1 !important;
-    transition-duration: 0.001ms !important;
   }
 }
 
@@ -453,6 +457,6 @@
 }
 @utility routes-row {
   display: grid;
-  grid-column: 1 / -1;
   grid-template-columns: subgrid;
+  grid-column: 1 / -1;
 }

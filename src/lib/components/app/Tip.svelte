@@ -6,30 +6,34 @@
   // loads it during the 250ms delay; keyboard focus opens at once, so there it fades in once
   // loaded. The dashboard imports it statically elsewhere, so there it's already loaded.
   let Content = $state<typeof TooltipContent | null>(null);
-  let loading: Promise<unknown> | undefined;
+  let _loading: Promise<unknown> | undefined;
   /** Load the tooltip content ahead of the first hover (the popover calls this once it's idle
    *  after opening): content mounted late, mid-hover, can't run its exit animation and stays. */
   export function preloadTipContent() {
     load();
   }
   function load() {
-    loading ??= import("$lib/lazy").then(
-      (m) => (Content = m.TooltipContent),
-      () => (loading = undefined), // retry on the next hover instead of never showing tooltips
+    _loading ??= import("$lib/lazy").then(
+      (m) => {
+        Content = m.TooltipContent;
+      },
+      () => {
+        _loading = undefined;
+      } // retry on the next hover instead of never showing tooltips
     );
   }
 </script>
 
 <script lang="ts">
+  import { mergeProps } from "bits-ui";
   // The one tooltip wrapper (02 §1.1). The trigger is the caller's own element: Tip hands it
   // the trigger props through the children snippet, so no extra wrapper element is added.
   //   <Tip text="Copy public URL">{#snippet children({ props })}<button {...props}>…</button>{/snippet}</Tip>
   // Needs a <Tooltip.Provider delayDuration={250} ignoreNonKeyboardFocus> above it (mounted once per window).
   import type { Snippet } from "svelte";
-  import { mergeProps } from "bits-ui";
+  import { Kbd } from "$lib/components/ui/kbd/index.js";
   import TooltipRoot from "$lib/components/ui/tooltip/tooltip.svelte";
   import TooltipTrigger from "$lib/components/ui/tooltip/tooltip-trigger.svelte";
-  import { Kbd } from "$lib/components/ui/kbd/index.js";
 
   let {
     text,
@@ -51,7 +55,9 @@
   // away. Close it ourselves on leave/blur while Content is missing.
   let open = $state(false);
   const closeIfNotLoaded = () => {
-    if (!Content) open = false;
+    if (!Content) {
+      open = false;
+    }
   };
 
   // Open on focus only during keyboard navigation (html[data-kb-nav], installFocusModality).
@@ -63,19 +69,31 @@
     return mergeProps(
       { ...props, onfocus: (e: FocusEvent) => kbNav() && onfocus?.(e) },
       // Start loading the content on the first hover or keyboard focus.
-      { onpointerenter: load, onfocus: () => kbNav() && load(), onpointerleave: closeIfNotLoaded, onblur: closeIfNotLoaded }
+      {
+        onblur: closeIfNotLoaded,
+        onfocus: () => kbNav() && load(),
+        onpointerenter: load,
+        onpointerleave: closeIfNotLoaded,
+      }
     );
   }
 </script>
 
 <TooltipRoot {disabled} bind:open>
   <TooltipTrigger>
-    {#snippet child({ props })}{@render children({ props: keyboardFocusOnly(props) })}{/snippet}
+    {#snippet child({
+      props,
+    })}
+      {@render children({ props: keyboardFocusOnly(props) })}
+    {/snippet}
   </TooltipTrigger>
   {#if Content}
     <!-- 8px keeps tooltips inside the 360x500 popover window. -->
-    <Content {side} collisionPadding={8}>
-      {text}{#if shortcut}<Kbd class="ms-2">{shortcut}</Kbd>{/if}
+    <Content collisionPadding={8} {side}>
+      {text}
+      {#if shortcut}
+        <Kbd class="ms-2">{shortcut}</Kbd>
+      {/if}
     </Content>
   {/if}
 </TooltipRoot>

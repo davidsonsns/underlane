@@ -23,32 +23,44 @@ function show(fn: (toast: typeof Toast) => void) {
     (e) => {
       sonner = undefined;
       throw e;
-    },
+    }
   );
   sonner.then(fn, (e) => console.error("Couldn't load toasts", e));
 }
 
 export const notify = {
-  /** A successful action. */
-  success(message: string) {
-    show((t) => t.success(message));
-  },
   /** "Copied <what>". Repeated copies replace each other instead of stacking. */
   copied(what: string) {
-    show((t) => t.success(`Copied ${what}`, { id: "copied", duration: 1400 }));
-  },
-  /** An error event. The message is the description and can be selected and copied. */
-  error(e: unknown, title = "Something went wrong") {
-    show((t) => t.error(title, { description: errorText(e), classes: { description: "select-text cursor-text" } }));
+    show((t) => t.success(`Copied ${what}`, { duration: 1400, id: "copied" }));
   },
   /** Drop every toast, e.g. when the popover hides so a stale one doesn't reappear. */
   dismiss() {
-    sonner?.then((t) => t.dismiss(), () => {});
+    sonner?.then(
+      (t) => t.dismiss(),
+      () => {
+        /* A failed lazy load has no toast to dismiss. */
+      }
+    );
+  },
+  /** An error event. The message is the description and can be selected and copied. */
+  error(e: unknown, title = "Something went wrong") {
+    show((t) =>
+      t.error(title, {
+        classes: { description: "select-text cursor-text" },
+        description: errorText(e),
+      })
+    );
   },
   /** Runs once svelte-sonner has loaded for the first toast. The popover mounts its Toaster
    *  then (a Toaster mounted after a toast() call still shows it: the toast list is global). */
   onLoad(fn: () => void) {
     loaded = fn;
-    if (isLoaded) fn();
+    if (isLoaded) {
+      fn();
+    }
+  },
+  /** A successful action. */
+  success(message: string) {
+    show((t) => t.success(message));
   },
 };

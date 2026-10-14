@@ -1,10 +1,5 @@
-import Group from "./kbd-group.svelte";
+// Keep conventional member names for each distinct UI primitive namespace.
+
 import Root from "./kbd.svelte";
 
-export {
-	Root,
-	Group,
-	//
-	Root as Kbd,
-	Group as KbdGroup,
-};
+export { Root as Kbd };

@@ -1,6 +1,3 @@
+// Keep conventional member names for each distinct UI primitive namespace.
 import Root from "./checkbox.svelte";
-export {
-	Root,
-	//
-	Root as Checkbox,
-};
+export { Root as Checkbox };

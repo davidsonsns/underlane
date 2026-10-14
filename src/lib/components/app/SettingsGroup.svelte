@@ -21,15 +21,27 @@
   const id = $props.id();
 </script>
 
-<section class={className} aria-labelledby={title ? `${id}-title` : undefined}>
+<section aria-labelledby={title ? `${id}-title` : undefined} class={className}>
   {#if title || aside}
     <div class="mt-8 mb-3 ms-3.5 flex items-baseline justify-between gap-3">
-      {#if title}<h2 id="{id}-title" class="text-sm font-medium">{title}</h2>{/if}
-      {#if aside}<div class="text-xs text-muted-foreground">{@render aside()}</div>{/if}
+      {#if title}
+        <h2 class="text-sm font-medium" id="{id}-title">{title}</h2>
+      {/if}
+      {#if aside}
+        <div class="text-xs text-muted-foreground">{@render aside()}</div>
+      {/if}
     </div>
   {/if}
-  <div class={cn("rounded-xl bg-card px-4 *:not-first:border-t *:not-first:border-border")}>
+  <div
+    class={cn(
+      "rounded-xl bg-card px-4 *:not-first:border-border *:not-first:border-t"
+    )}
+  >
     {@render children()}
   </div>
-  {#if footer}<div class="mt-2.5 mx-3.5 text-xs text-muted-foreground">{@render footer()}</div>{/if}
+  {#if footer}
+    <div class="mt-2.5 mx-3.5 text-xs text-muted-foreground">
+      {@render footer()}
+    </div>
+  {/if}
 </section>

@@ -1,3 +1,4 @@
+// Keep conventional member names for each distinct UI primitive namespace.
 import Root, {
 	type ButtonProps,
 	type ButtonSize,
@@ -5,13 +6,8 @@ import Root, {
 	buttonVariants,
 } from "./button.svelte";
 
-export {
-	Root,
-	type ButtonProps as Props,
-	//
-	Root as Button,
-	buttonVariants,
-	type ButtonProps,
-	type ButtonSize,
-	type ButtonVariant,
-};
+export { Root as Button };
+export { buttonVariants };
+export { type ButtonProps };
+export { type ButtonSize };
+export { type ButtonVariant };

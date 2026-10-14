@@ -11,13 +11,16 @@ export function latest() {
   let settle: (() => void) | undefined;
 
   function cancel() {
-    gen++;
+    gen += 1;
     clearTimeout(timer);
     settle?.();
     settle = undefined;
   }
 
-  function run(job: (current: () => boolean) => Promise<void>, delay = 0): Promise<void> {
+  function run(
+    job: (current: () => boolean) => Promise<void>,
+    delay = 0
+  ): Promise<void> {
     cancel();
     const g = gen;
     const current = () => g === gen;
@@ -29,12 +32,15 @@ export function latest() {
           resolve();
         } catch (e) {
           // The current job's failure reaches the caller; a superseded job's is dropped with it.
-          if (current()) reject(e);
-          else resolve();
+          if (current()) {
+            reject(e);
+          } else {
+            resolve();
+          }
         }
       }, delay);
     });
   }
 
-  return { run, cancel };
+  return { cancel, run };
 }

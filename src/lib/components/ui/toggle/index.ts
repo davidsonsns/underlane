@@ -1,13 +1,3 @@
-import Root from "./toggle.svelte";
-export {
-	toggleVariants,
-	type ToggleSize,
-	type ToggleVariant,
-	type ToggleVariants,
-} from "./toggle.svelte";
+// Keep conventional member names for each distinct UI primitive namespace.
 
-export {
-	Root,
-	//
-	Root as Toggle,
-};
+export { toggleVariants, type ToggleVariants } from "./toggle.svelte";

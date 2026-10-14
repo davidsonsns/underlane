@@ -11,7 +11,11 @@
   import type { Snippet } from "svelte";
   import { cn } from "$lib/utils";
 
-  type Ids = { id: string; labelId: string; describedBy: string | undefined };
+  interface Ids {
+    describedBy: string | undefined;
+    id: string;
+    labelId: string;
+  }
   let {
     label,
     help,
@@ -29,13 +33,33 @@
   } = $props();
 
   const uid = $props.id();
-  const ids = $derived<Ids>({ id: `${uid}-control`, labelId: `${uid}-label`, describedBy: help ? `${uid}-help` : undefined });
+  const ids = $derived<Ids>({
+    describedBy: help ? `${uid}-help` : undefined,
+    id: `${uid}-control`,
+    labelId: `${uid}-label`,
+  });
 </script>
 
-<div class={cn("flex min-h-[58px] items-center gap-4 py-3.5", column && "flex-col items-stretch", className)}>
+<div
+  class={cn(
+    "flex min-h-[58px] items-center gap-4 py-3.5",
+    column && "flex-col items-stretch",
+    className
+  )}
+>
   <div class="flex min-w-0 flex-1 flex-col">
-    {#if control}<label id={ids.labelId} for={ids.id} class="self-start">{label}</label>{:else}<span id={ids.labelId}>{label}</span>{/if}
-    {#if help}<span id={ids.describedBy} class="mt-1 text-callout leading-[1.4] text-muted-foreground">{help}</span>{/if}
+    {#if control}
+      <label class="self-start" for={ids.id} id={ids.labelId}>{label}</label>
+    {:else}
+      <span id={ids.labelId}>{label}</span>
+    {/if}
+    {#if help}
+      <span
+        class="mt-1 text-callout leading-[1.4] text-muted-foreground"
+        id={ids.describedBy}
+        >{help}</span
+      >
+    {/if}
   </div>
   {@render control?.(ids)}
   {@render children?.()}

@@ -1,11 +1,15 @@
 <script lang="ts">
   // The New sheet: a Dialog that owns its open state. The body lives in
-  // AddSheetBody, inside Dialog.Content, so it remounts on every open; the Root stays mounted for
+  // AddSheetBody, inside DialogContent, so it remounts on every open; the Root stays mounted for
   // the close animation and the return focus.
   import { untrack } from "svelte";
+  import {
+    Content as DialogContent,
+    Root as DialogRoot,
+  } from "$lib/components/ui/dialog/index.js";
   import { returnFocusTo } from "$lib/focus";
-  import * as Dialog from "$lib/components/ui/dialog/index.js";
   import AddSheetBody, { type AddTab } from "./AddSheetBody.svelte";
+  import { track } from "./reactivity";
 
   let {
     open = $bindable(false),
@@ -26,15 +30,42 @@
   let opens = $state(0);
   let busy = $state(false);
   $effect.pre(() => {
-    tab;
-    if (open) untrack(() => { opens++; busy = false; });
+    track(tab);
+    if (open) {
+      untrack(() => {
+        opens += 1;
+        busy = false;
+      });
+    }
   });
 </script>
 
-<Dialog.Root bind:open>
-  <Dialog.Content class="w-[min(560px,calc(100vw-48px))]" onCloseAutoFocus={returnFocusTo(returnFocus)} onEscapeKeydown={(e) => { if (busy) e.preventDefault(); }} onInteractOutside={(e) => { if (busy) e.preventDefault(); }}>
+<DialogRoot bind:open>
+  <DialogContent
+    class="w-[min(560px,calc(100vw-48px))]"
+    onCloseAutoFocus={returnFocusTo(returnFocus)}
+    onEscapeKeydown={(e) => {
+      if (busy) {
+        e.preventDefault();
+      }
+    }}
+    onInteractOutside={(e) => {
+      if (busy) {
+        e.preventDefault();
+      }
+    }}
+  >
     {#key `${opens}:${tab}`}
-      <AddSheetBody initialTab={tab} bind:busy onclose={() => { if (!busy) open = false; }} {onadded} />
+      <AddSheetBody
+        initialTab={tab}
+        {onadded}
+        onclose={() => {
+          if (!busy) {
+            open = false;
+          }
+        }}
+        bind:busy
+      />
     {/key}
-  </Dialog.Content>
-</Dialog.Root>
+  </DialogContent>
+</DialogRoot>

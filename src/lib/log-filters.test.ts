@@ -1,7 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { logLevels, matchesLogFilters } from "./log-filters";
 
-const line = { tunnel_id: "a", level: "fatal" as const, message: "Connection failed", fields: '{"reason":"timeout"}' };
+const line = {
+  fields: '{"reason":"timeout"}',
+  level: "fatal" as const,
+  message: "Connection failed",
+  tunnel_id: "a",
+};
 
 describe("log filters", () => {
   it("shows every severity by default and includes fatal under Error", () => {
@@ -10,13 +15,22 @@ describe("log filters", () => {
     expect(matchesLogFilters(line, null, logLevels(["error"]), "")).toBe(true);
   });
   it("combines scope, severity and trimmed case-insensitive text", () => {
-    expect(matchesLogFilters(line, "a", logLevels(["error"]), " FAILED ")).toBe(true);
+    expect(matchesLogFilters(line, "a", logLevels(["error"]), " FAILED ")).toBe(
+      true
+    );
     expect(matchesLogFilters(line, "b", logLevels([]), "")).toBe(false);
     expect(matchesLogFilters(line, null, logLevels(["info"]), "")).toBe(false);
     expect(matchesLogFilters(line, null, logLevels([]), "unknown")).toBe(false);
   });
   it("searches fields independently of the message, as the history query does", () => {
     expect(matchesLogFilters(line, null, logLevels([]), "TIMEOUT")).toBe(true);
-    expect(matchesLogFilters({ ...line, message: "foo", fields: "bar" }, null, logLevels([]), "oob")).toBe(false);
+    expect(
+      matchesLogFilters(
+        { ...line, fields: "bar", message: "foo" },
+        null,
+        logLevels([]),
+        "oob"
+      )
+    ).toBe(false);
   });
 });

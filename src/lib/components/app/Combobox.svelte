@@ -7,15 +7,26 @@
   //   <Combobox value={group} items={names} placeholder="Move to group…" onpick={(name) => …} />
   import Check from "@lucide/svelte/icons/check";
   import ChevronDown from "@lucide/svelte/icons/chevron-down";
-  import * as Popover from "$lib/components/ui/popover/index.js";
   import { Command as CommandPrimitive } from "bits-ui";
-  import * as Command from "$lib/components/ui/command/index.js";
-  import { Button } from "$lib/components/ui/button/index.js";
-  import { returnFocusOnClose } from "$lib/focus";
-  import { menuIndicator } from "$lib/components/ui/mac";
-  import { cn } from "$lib/utils";
-  import { comboRows } from "$lib/combobox";
   import { tick } from "svelte";
+  import { comboRows } from "$lib/combobox";
+  import { Button } from "$lib/components/ui/button/index.js";
+  import {
+    Empty as CommandEmpty,
+    Group as CommandGroup,
+    Input as CommandInput,
+    Item as CommandItem,
+    List as CommandList,
+    Root as CommandRoot,
+  } from "$lib/components/ui/command/index.js";
+  import { menuIndicator } from "$lib/components/ui/mac";
+  import {
+    Content as PopoverContent,
+    Root as PopoverRoot,
+    Trigger as PopoverTrigger,
+  } from "$lib/components/ui/popover/index.js";
+  import { returnFocusOnClose } from "$lib/focus";
+  import { cn } from "$lib/utils";
 
   let {
     value,
@@ -63,48 +74,94 @@
     await tick();
     await tick();
     const i = items.indexOf(value);
-    if (!query.trim() && cmd && i >= 0) cmd.updateSelectedToIndex(i);
+    if (!query.trim() && cmd && i >= 0) {
+      cmd.updateSelectedToIndex(i);
+    }
   }
 
   function pick(name: string) {
     open = false;
     query = "";
-    if (name !== value) onpick(name);
+    if (name !== value) {
+      onpick(name);
+    }
   }
 </script>
 
-<Popover.Root bind:open onOpenChange={(o) => !o && (query = "")}>
-  <Popover.Trigger bind:ref={trigger}>
-    {#snippet child({ props })}
-      <Button {...props} {id} {disabled} title={value || undefined} aria-describedby={describedBy} aria-labelledby={labelledBy} variant="outline" class={cn("w-55 justify-between", className)}>
-        <span class="truncate">{value || "None"}</span><ChevronDown class="size-3 text-muted-foreground" />
+<PopoverRoot
+  onOpenChange={(o) => {
+    if (!o) {
+      query = "";
+    }
+  }}
+  bind:open
+>
+  <PopoverTrigger bind:ref={trigger}>
+    {#snippet child({
+      props,
+    })}
+      <Button
+        {...props}
+        aria-describedby={describedBy}
+        aria-labelledby={labelledBy}
+        class={cn("w-55 justify-between", className)}
+        {disabled}
+        {id}
+        title={value || undefined}
+        variant="outline"
+      >
+        <span class="truncate">{value || "None"}</span>
+        <ChevronDown class="size-3 text-muted-foreground" />
       </Button>
     {/snippet}
-  </Popover.Trigger>
-  <Popover.Content class="w-56" {...focusOnClose}>
+  </PopoverTrigger>
+  <PopoverContent class="w-56" {...focusOnClose}>
     <!-- Filtering and order are ours (comboRows), so Bits neither scores nor reorders rows; it
          highlights the first row after each keystroke, and `value` on open. The Viewport gives
          the input aria-controls and aria-activedescendant (Bits reads both from it). -->
-    <Command.Root bind:api={cmd} {value} shouldFilter={false} class="rounded-none bg-transparent p-0 backdrop-blur-none">
-      <Command.Input {placeholder} bind:value={query} oninput={restoreHighlight} autocapitalize="off" writingsuggestions="false" />
-      <Command.List>
+    <CommandRoot
+      class="rounded-none bg-transparent p-0 backdrop-blur-none"
+      shouldFilter={false}
+      {value}
+      bind:api={cmd}
+    >
+      <CommandInput
+        autocapitalize="off"
+        oninput={restoreHighlight}
+        {placeholder}
+        writingsuggestions="false"
+        bind:value={query}
+      />
+      <CommandList>
         <CommandPrimitive.Viewport>
           {#if rows.create}
-            <Command.Item value={CREATE} onSelect={() => pick(rows.create!)} class={row}><span class="truncate">Create “{rows.create}”</span></Command.Item>
+            <CommandItem
+              class={row}
+              onSelect={() => pick(rows.create ?? "")}
+              value={CREATE}
+              ><span class="truncate">Create “{rows.create}”</span></CommandItem
+            >
           {/if}
           {#if rows.matches.length}
-            <Command.Group {heading}>
+            <CommandGroup {heading}>
               {#each rows.matches as name (name)}
-                <Command.Item value={name} onSelect={() => pick(name)} class={row}>
-                  {#if name === value}<span class={menuIndicator}><Check /></span>{/if}<span class="truncate" title={name}>{name}</span>
-                </Command.Item>
+                <CommandItem
+                  class={row}
+                  onSelect={() => pick(name)}
+                  value={name}
+                >
+                  {#if name === value}
+                    <span class={menuIndicator}><Check /></span>
+                  {/if}
+                  <span class="truncate" title={name}>{name}</span>
+                </CommandItem>
               {/each}
-            </Command.Group>
+            </CommandGroup>
           {:else if !rows.create}
-            <Command.Empty forceMount>Type a name to create one</Command.Empty>
+            <CommandEmpty forceMount>Type a name to create one</CommandEmpty>
           {/if}
         </CommandPrimitive.Viewport>
-      </Command.List>
-    </Command.Root>
-  </Popover.Content>
-</Popover.Root>
+      </CommandList>
+    </CommandRoot>
+  </PopoverContent>
+</PopoverRoot>

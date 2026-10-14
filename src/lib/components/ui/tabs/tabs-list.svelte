@@ -21,6 +21,7 @@
 <script lang="ts">
 	import { Tabs as TabsPrimitive } from "bits-ui";
 	import { cn } from "$lib/utils.js";
+	import SelectionThumb from "../SelectionThumb.svelte";
 
 	let {
 		ref = $bindable(null),
@@ -68,16 +69,7 @@
 	{...restProps}
 >
 	{#if variant === "default" && thumb}
-		<div
-			aria-hidden="true"
-			class={cn(
-				"pointer-events-none absolute top-0 left-0 -z-1 rounded-[5px] border-[0.5px] border-input bg-segment",
-				animate && "transition-[translate,width,height] duration-200 ease-out motion-reduce:transition-none"
-			)}
-			style:translate="{thumb.x}px {thumb.y}px"
-			style:width="{thumb.w}px"
-			style:height="{thumb.h}px"
-		></div>
+		<SelectionThumb {thumb} {animate} />
 	{/if}
 	{@render children?.()}
 </TabsPrimitive.List>

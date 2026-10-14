@@ -25,14 +25,25 @@ describe("next", () => {
     expect(next("End", -1, 10)).toBe(9);
   });
   it("starts at the first row when nothing is selected", () => {
-    for (const k of ["ArrowDown", "ArrowUp", "PageDown", "PageUp", "Home"]) expect(next(k, -1, 10, 5)).toBe(0);
+    for (const k of ["ArrowDown", "ArrowUp", "PageDown", "PageUp", "Home"]) {
+      expect(next(k, -1, 10, 5)).toBe(0);
+    }
   });
   it("clamps an index that is past the end (the list shrank)", () => {
     expect(next("ArrowUp", 20, 10)).toBe(9);
     expect(next("ArrowDown", 20, 10)).toBe(9);
   });
   it("gives -1 for an empty list", () => {
-    for (const k of ["ArrowDown", "ArrowUp", "PageDown", "PageUp", "Home", "End"]) expect(next(k, 0, 0, 5)).toBe(-1);
+    for (const k of [
+      "ArrowDown",
+      "ArrowUp",
+      "PageDown",
+      "PageUp",
+      "Home",
+      "End",
+    ]) {
+      expect(next(k, 0, 0, 5)).toBe(-1);
+    }
     expect(next("ArrowDown", -1, 0)).toBe(-1);
   });
   it("returns null for keys it doesn't handle", () => {

@@ -1,7 +1,4 @@
+// Keep conventional member names for each distinct UI primitive namespace.
 import Root from "./switch.svelte";
 
-export {
-	Root,
-	//
-	Root as Switch,
-};
+export { Root as Switch };

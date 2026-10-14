@@ -7,6 +7,11 @@ export function logFields(json: string): [string, string][] {
   } catch {
     return [];
   }
-  if (!o || typeof o !== "object" || Array.isArray(o)) return [];
-  return Object.entries(o).map(([k, v]) => [k, typeof v === "string" ? v : JSON.stringify(v)]);
+  if (!o || typeof o !== "object" || Array.isArray(o)) {
+    return [];
+  }
+  return Object.entries(o).map(([k, v]) => [
+    k,
+    typeof v === "string" ? v : JSON.stringify(v),
+  ]);
 }

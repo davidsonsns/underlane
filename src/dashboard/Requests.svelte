@@ -1,48 +1,72 @@
 <script lang="ts">
-  import { onDestroy, onMount, untrack } from "svelte";
-  import { cubicOut } from "svelte/easing";
-  import { listen } from "@tauri-apps/api/event";
-  import { store } from "../lib/store.svelte";
-  import { api, errorText } from "../lib/api";
-  import { latest } from "../lib/latest";
-  import type { RequestSummary, RequestDetail as Detail } from "../lib/types";
-  import SlidersHorizontal from "@lucide/svelte/icons/sliders-horizontal";
   import Pause from "@lucide/svelte/icons/pause";
   import Play from "@lucide/svelte/icons/play";
+
   import Trash2 from "@lucide/svelte/icons/trash-2";
-  import X from "@lucide/svelte/icons/x";
-  import { Button } from "$lib/components/ui/button/index.js";
-  import * as Popover from "$lib/components/ui/popover/index.js";
-  import * as ToggleGroup from "$lib/components/ui/toggle-group/index.js";
-  import * as AlertDialog from "$lib/components/ui/alert-dialog/index.js";
-  import IconAction from "$lib/components/app/IconAction.svelte";
+
+  import { listen } from "@tauri-apps/api/event";
+  import { onDestroy, onMount, untrack } from "svelte";
+  import { cubicOut } from "svelte/easing";
+  import {
+    COLUMNS,
+    type ColumnId,
+    columnPrefs,
+    gridTemplate,
+    setHidden,
+  } from "$lib/columns.svelte";
+
   import SearchAction from "$lib/components/app/SearchAction.svelte";
-  import Toolbar from "$lib/components/app/Toolbar.svelte";
   import StatePanel from "$lib/components/app/StatePanel.svelte";
-  import RequestList, { columns } from "./RequestList.svelte";
+  import Toolbar from "$lib/components/app/Toolbar.svelte";
+
+  import { Button } from "$lib/components/ui/button/index.js";
+
+  import {
+    Item as ToggleGroupItem,
+    Root as ToggleGroupRoot,
+  } from "$lib/components/ui/toggle-group/index.js";
+
+  import { formatAt } from "$lib/format";
+  import { matchesRequestFilters } from "$lib/request-filters";
+  import { motion } from "$lib/theme";
+  import { api, errorText } from "../lib/api";
+  import { latest } from "../lib/latest";
+  import { store } from "../lib/store.svelte";
+  import type { RequestDetail as Detail, RequestSummary } from "../lib/types";
+  import ClearHistoryDialog from "./ClearHistoryDialog.svelte";
+  import FilterChip from "./FilterChip.svelte";
+  import { queryTracker } from "./guarded-query";
+  import OptionsMenu from "./OptionsMenu.svelte";
   import RequestDetail from "./RequestDetail.svelte";
   import RequestFilters from "./RequestFilters.svelte";
-  import { COLUMNS, columnPrefs, gridTemplate, setHidden, type ColumnId } from "$lib/columns.svelte";
-  import { formatAt } from "$lib/format";
-  import { motion } from "$lib/theme";
-  import { matchesRequestFilters } from "$lib/request-filters";
-  import { returnFocusOnClose, returnFocusTo } from "$lib/focus";
+  import RequestList, { columns } from "./RequestList.svelte";
+  import { track } from "./reactivity";
+  import {
+    inspectionSubtitle as getInspectionSubtitle,
+    requestEmptyMessage,
+  } from "./view-state";
 
   const CAP = 500;
   let { focusId = null }: { focusId?: string | null } = $props();
   let tunnelId = $state<string | null>(null);
   let rows = $state<RequestSummary[]>([]);
-  /** Only the first load shows the loading panel; later reloads keep the current view until they land. */
-  let loading = $state(true);
-  let error = $state<string | null>(null);
+  /** Only the first load shows the queryStatus.loading panel; later reloads keep the current view until they land. */
+  const queryStatus = $state<{ failure: string | null; loading: boolean }>({
+    failure: null,
+    loading: true,
+  });
   let search = $state("");
   let searchOpen = $state(false);
   let searchAction = $state<SearchAction>();
   let filterBoundary = $state<HTMLDivElement | null>(null);
   let statuses = $state<number[]>([]);
   let methods = $state<string[]>([]);
-  const filtered = $derived(Boolean(search || statuses.length || methods.length || tunnelId));
-  const matchingFiltered = $derived(Boolean(search || statuses.length || methods.length));
+  const filtered = $derived(
+    Boolean(search || statuses.length || methods.length || tunnelId)
+  );
+  const matchingFiltered = $derived(
+    Boolean(search || statuses.length || methods.length)
+  );
   let headerMenu = $state<"filters" | "options" | null>(null);
   let optionsTrigger = $state<HTMLElement | null>(null);
   let paused = $state(false);
@@ -62,11 +86,20 @@
   // labels gain their date once the day turns.
   let now = $state(Date.now());
   onMount(() => {
-    const t = setInterval(() => (now = Date.now()), 60_000);
+    const t = setInterval(() => {
+      now = Date.now();
+    }, 60_000);
     return () => clearInterval(t);
   });
-  const shown = $derived(COLUMNS.filter((c) => !columnPrefs.hidden.includes(c.id)));
-  const template = $derived(gridTemplate(columnPrefs.hidden, rows.reduce((n, r) => Math.max(n, formatAt(r.ts, now).length), 2)));
+  const shown = $derived(
+    COLUMNS.filter((c) => !columnPrefs.hidden.includes(c.id))
+  );
+  const template = $derived(
+    gridTemplate(
+      columnPrefs.hidden,
+      rows.reduce((n, r) => Math.max(n, formatAt(r.ts, now).length), 2)
+    )
+  );
 
   const inspectable = (t: { kind: string }) => t.kind !== "token";
   $effect(() => {
@@ -77,25 +110,41 @@
   let pauseGen = 0;
   $effect(() => {
     const id = tunnelId;
-    const g = ++pauseGen;
+    pauseGen += 1;
+    const g = pauseGen;
     paused = false;
     pauseKnown = false;
     actionError = null;
-    if (!id) return;
-    api.requestCapturePaused(id).then((value) => {
-      if (g === pauseGen) { paused = value; pauseKnown = true; }
-    }, (e) => {
-      if (g === pauseGen) actionError = errorText(e);
-    });
+    if (!id) {
+      return;
+    }
+    api.requestCapturePaused(id).then(
+      (value) => {
+        if (g === pauseGen) {
+          paused = value;
+          pauseKnown = true;
+        }
+      },
+      (e) => {
+        if (g === pauseGen) {
+          actionError = errorText(e);
+        }
+      }
+    );
   });
 
   function setHeaderMenu(name: "filters" | "options", open: boolean) {
-    if (open) headerMenu = name;
-    else if (headerMenu === name) headerMenu = null;
+    if (open) {
+      headerMenu = name;
+    } else if (headerMenu === name) {
+      headerMenu = null;
+    }
   }
 
   async function toggleCapture() {
-    if (!tunnelId || pauseBusy) return;
+    if (!tunnelId || pauseBusy) {
+      return;
+    }
     const id = tunnelId;
     const next = !paused;
     pauseBusy = true;
@@ -103,23 +152,35 @@
     try {
       await api.setRequestCapturePaused(id, next);
       if (id === tunnelId) {
-        const g = ++pauseGen;
+        pauseGen += 1;
+        const g = pauseGen;
         const current = await api.requestCapturePaused(id);
-        if (id !== tunnelId) return;
-        if (id === tunnelId && g === pauseGen) { paused = current; pauseKnown = true; }
+        if (id !== tunnelId) {
+          return;
+        }
+        if (id === tunnelId && g === pauseGen) {
+          paused = current;
+          pauseKnown = true;
+        }
         list?.discardPending();
-        if (headerMenu === "options") headerMenu = null;
-        if (!paused) await load();
+        if (headerMenu === "options") {
+          headerMenu = null;
+        }
+        if (!paused) {
+          await load();
+        }
       }
     } catch (e) {
-      if (id === tunnelId) actionError = errorText(e);
+      if (id === tunnelId) {
+        actionError = errorText(e);
+      }
     } finally {
       pauseBusy = false;
     }
   }
 
   // The detail load: superseded by every select(), and cancelled on tunnel change, Clear and
-  // unmount. A getRequest answer (or error) that arrives after any of those is dropped (03 R-23),
+  // unmount. A getRequest answer (or queryStatus.failure) that arrives after any of those is dropped (03 R-23),
   // and a superseded select() still resolves.
   const detailLoad = latest();
 
@@ -127,7 +188,7 @@
    *  doesn't flood IPC. */
   function select(id: string | null, delay = 100): Promise<void> {
     selected = id;
-    if (id == null) {
+    if (id === null) {
       detailLoad.cancel();
       detail = null;
       detailError = null;
@@ -141,7 +202,9 @@
           detailError = null;
         }
       } catch (e) {
-        if (current()) detailError = errorText(e);
+        if (current()) {
+          detailError = errorText(e);
+        }
       }
     }, delay);
   }
@@ -150,16 +213,20 @@
   // owns the fallback, isn't mounted to say so (02 §4.2). Clearing the filter doesn't bring the
   // old selection back: nothing is selected until the user picks a row.
   $effect(() => {
-    if (rows.length === 0 && selected != null) untrack(() => select(null));
+    if (rows.length === 0 && selected !== null) {
+      untrack(() => select(null));
+    }
   });
 
-  let loadedFor: string | null | undefined = undefined;
+  let loadedFor: string | null | undefined;
   let loadGen = 0;
   let loadKey: string | undefined;
-  let inflight: Promise<void> | null = null;
+  const queries = queryTracker(queryStatus);
   let loadEvents = new Map<string, RequestSummary>();
   function load(): Promise<void> {
-    if (clearing) return Promise.resolve();
+    if (clearing) {
+      return Promise.resolve();
+    }
     if (loadedFor !== tunnelId) {
       // Switching tunnels: don't keep showing another tunnel's request.
       select(null);
@@ -169,9 +236,11 @@
     // never lands, even after A -> B -> A. A load for the same generation while one is in flight
     // shares it, so the one selectFirst() awaits is never discarded by a concurrent twin.
     const key = JSON.stringify([tunnelId, search, statuses, methods]);
-    if (key === loadKey && inflight) return inflight;
+    if (key === loadKey && queries.active) {
+      return queries.active;
+    }
     if (key !== loadKey) {
-      loadGen++;
+      loadGen += 1;
       loadKey = key;
       list?.discardPending();
     }
@@ -183,34 +252,24 @@
     const methodFilter = [...methods];
     const events = new Map<string, RequestSummary>();
     loadEvents = events;
-    error = null;
-    const run = (async () => {
-      try {
-        const r = await api.listRequests(t, q, CAP, statusFilter, methodFilter);
-        if (current()) {
-          // Live completions arriving during the query supersede its older snapshot.
-          rows = [...events.values(), ...r.filter((x) => !events.has(x.id))]
-            .filter((x) => matchesRequestFilters(x, statusFilter, methodFilter))
-            .sort((a, b) => b.ts - a.ts).slice(0, CAP);
-        }
-      } catch (e) {
-        if (current()) error = errorText(e);
-      } finally {
-        if (current()) loading = false;
+    queryStatus.failure = null;
+    return queries.run(async () => {
+      const r = await api.listRequests(t, q, CAP, statusFilter, methodFilter);
+      if (current()) {
+        // Live completions arriving during the query supersede its older snapshot.
+        rows = [...events.values(), ...r.filter((x) => !events.has(x.id))]
+          .filter((x) => matchesRequestFilters(x, statusFilter, methodFilter))
+          .sort((a, b) => b.ts - a.ts)
+          .slice(0, CAP);
       }
-    })();
-    inflight = run;
-    run.finally(() => {
-      if (inflight === run) inflight = null;
-    });
-    return run;
+    }, current);
   }
 
   $effect(() => {
-    void tunnelId;
-    void search;
-    void statuses;
-    void methods;
+    track(tunnelId);
+    track(search);
+    track(statuses);
+    track(methods);
     const t = setTimeout(load, search ? 180 : 0);
     return () => clearTimeout(t);
   });
@@ -224,33 +283,55 @@
   export async function selectFirst(tab: "req" | "resp" = "resp") {
     side = tab;
     await load();
-    if (rows[0]) await select(rows[0].id, 0);
+    if (rows[0]) {
+      await select(rows[0].id, 0);
+    }
   }
 
   onMount(() => {
-    const unPause = listen<{ tunnel_id: string; paused: boolean }>("request-capture-paused", (e) => {
-      if (e.payload.tunnel_id !== tunnelId) return;
-      pauseGen++;
-      paused = e.payload.paused;
-      pauseKnown = true;
-      list?.discardPending();
-    });
-    const un = listen<RequestSummary>("request", (e) => {
+    const unPause = listen<{ tunnel_id: string; paused: boolean }>(
+      "request-capture-paused",
+      (e) => {
+        if (e.payload.tunnel_id !== tunnelId) {
+          return;
+        }
+        pauseGen += 1;
+        ({ paused } = e.payload);
+        pauseKnown = true;
+        list?.discardPending();
+      }
+    );
+    const un = listen<RequestSummary>("request", function receiveRequest(e) {
       const r = e.payload;
-      if (tunnelId && r.tunnel_id !== tunnelId) return;
-      if (paused || clearing || search) return;
-      if (inflight) loadEvents.set(r.id, r);
+      if (tunnelId && r.tunnel_id !== tunnelId) {
+        return;
+      }
+      if (paused || clearing || search) {
+        return;
+      }
+      if (queries.active) {
+        loadEvents.set(r.id, r);
+      }
       if (!matchesRequestFilters(r, statuses, methods)) {
         rows = rows.filter((x) => x.id !== r.id);
         return;
       }
       const i = rows.findIndex((x) => x.id === r.id);
-      if (i >= 0) rows[i] = r;
-      else if (list) list.add(r); // batched, keeps the view when scrolled down
-      else rows = [r, ...rows].slice(0, CAP);
-      if (selected === r.id) select(r.id);
+      if (i >= 0) {
+        rows[i] = r;
+      } else if (list) {
+        list.add(r); // batched, keeps the view when scrolled down
+      } else {
+        rows = [r, ...rows].slice(0, CAP);
+      }
+      if (selected === r.id) {
+        select(r.id);
+      }
     });
-    return () => { un.then((f) => f()); unPause.then((f) => f()); };
+    return () => {
+      un.then((f) => f());
+      unPause.then((f) => f());
+    };
   });
 
   onDestroy(() => detailLoad.cancel());
@@ -268,45 +349,70 @@
   function loadShare(): number {
     try {
       const v = Number(localStorage.getItem(SHARE_KEY));
-      if (v > 0 && v < 1) return v;
-    } catch {}
+      if (v > 0 && v < 1) {
+        return v;
+      }
+    } catch {
+      /* Storage is optional; defaults remain usable. */
+    }
     return SHARE;
   }
 
   function setShare(v: number, save = true) {
     const w = split?.clientWidth ?? 0;
-    share = w > 0 ? Math.min(Math.max(v, PANE_MIN / w), Math.max(PANE_MIN, w - LIST_MIN) / w) : v;
-    if (!save) return;
+    share =
+      w > 0
+        ? Math.min(
+            Math.max(v, PANE_MIN / w),
+            Math.max(PANE_MIN, w - LIST_MIN) / w
+          )
+        : v;
+    if (!save) {
+      return;
+    }
     try {
       localStorage.setItem(SHARE_KEY, String(share));
-    } catch {}
+    } catch {
+      /* Storage is optional; defaults remain usable. */
+    }
   }
 
   function ondividerdown(e: PointerEvent) {
-    if (e.button !== 0) return;
+    if (e.button !== 0) {
+      return;
+    }
     e.preventDefault();
     (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
     dragging = true;
   }
 
   function ondividermove(e: PointerEvent) {
-    if (!dragging || !split) return;
+    if (!(dragging && split)) {
+      return;
+    }
     const r = split.getBoundingClientRect();
     setShare((r.right - e.clientX) / r.width, false);
   }
 
   function ondividerup() {
-    if (!dragging) return;
+    if (!dragging) {
+      return;
+    }
     dragging = false;
     setShare(share);
   }
 
   function ondividerkey(e: KeyboardEvent) {
     const step = e.shiftKey ? 0.1 : 0.02;
-    if (e.key === "ArrowLeft") setShare(share + step);
-    else if (e.key === "ArrowRight") setShare(share - step);
-    else if (e.key === "Home") setShare(SHARE);
-    else return;
+    if (e.key === "ArrowLeft") {
+      setShare(share + step);
+    } else if (e.key === "ArrowRight") {
+      setShare(share - step);
+    } else if (e.key === "Home") {
+      setShare(SHARE);
+    } else {
+      return;
+    }
     e.preventDefault();
   }
 
@@ -321,23 +427,28 @@
     const w = node.offsetWidth;
     const inner = node.firstElementChild as HTMLElement;
     return {
+      css: (t: number) =>
+        `min-width: 0; width: ${t * w}px; opacity: ${Math.min(1, t * 2)}`,
       duration: motion(200),
       easing: cubicOut,
-      css: (t: number) => `min-width: 0; width: ${t * w}px; opacity: ${Math.min(1, t * 2)}`,
-      tick: (t: number) => (inner.style.width = t < 1 ? `${w}px` : ""),
+      tick: (t: number) => {
+        inner.style.width = t < 1 ? `${w}px` : "";
+      },
     };
   }
 
   async function clear() {
-    if (!clearTarget || clearing) return;
+    if (!clearTarget || clearing) {
+      return;
+    }
     const target = clearTarget;
     clearing = true;
     actionError = null;
     detailLoad.cancel();
     // A list load still in flight answers from before the Clear: drop it.
-    loadGen++;
+    loadGen += 1;
     loadKey = undefined;
-    inflight = null;
+    queries.cancel();
     list?.discardPending();
     try {
       await api.clearRequests(target.id);
@@ -350,160 +461,312 @@
       actionError = errorText(e);
     } finally {
       clearing = false;
-      void load();
+      load();
     }
   }
+
+  const inspectionSubtitle = $derived(getInspectionSubtitle(tunnel, paused));
+  const emptyMessage = $derived(
+    requestEmptyMessage(tunnel, matchingFiltered, paused)
+  );
+  const emptyTitle = $derived.by(() => {
+    if (matchingFiltered) {
+      return "No matching requests";
+    }
+    if (paused) {
+      return "Capture paused";
+    }
+    return "Waiting for requests";
+  });
 </script>
 
-<div class="relative flex h-full flex-col">
-  <div class="pointer-events-none absolute inset-x-0 bottom-0 top-(--toolbar-h)" bind:this={filterBoundary} aria-hidden="true"></div>
-  <Toolbar title="Requests" subtitle={paused ? "Capture paused" : tunnel ? (tunnel.inspect ? (tunnel.state.inspecting ? "Inspecting" : "Inspection on, starts with the tunnel") : "Inspection is off for this tunnel") : ""}>
-    <SearchAction label="Search requests" bind:value={search} bind:open={searchOpen} bind:this={searchAction} />
-    <RequestFilters bind:statuses bind:methods bind:tunnelId boundary={filterBoundary} bind:open={() => headerMenu === "filters", (value) => setHeaderMenu("filters", value)} />
-    <span class="mx-0.5 h-4 border-l border-border" aria-hidden="true"></span>
-    <Popover.Root bind:open={() => headerMenu === "options", (value) => setHeaderMenu("options", value)}>
-      <Popover.Trigger>
-        {#snippet child({ props })}
-          <IconAction {...props} bind:ref={optionsTrigger} label="Columns and actions"><SlidersHorizontal /></IconAction>
-        {/snippet}
-      </Popover.Trigger>
-      <Popover.Content align="end" class="w-64 gap-2 p-2.5" {...returnFocusOnClose(() => optionsTrigger)}>
-        <span id="columns-label" class="text-xs text-muted-foreground">Display columns</span>
-        <ToggleGroup.Root
-          type="multiple"
-          spacing={1}
-          aria-labelledby="columns-label"
-          class="flex-wrap"
-          bind:value={
-            () => shown.map((c) => c.id as string),
-            (v: string[]) => setHidden(COLUMNS.filter((c) => !("always" in c) && !v.includes(c.id)).map((c) => c.id as ColumnId))
-          }
-        >
-          {#each COLUMNS as c (c.id)}
-            <ToggleGroup.Item value={c.id} disabled={"always" in c} class="rounded-full text-muted-foreground data-[state=on]:text-foreground">{c.label}</ToggleGroup.Item>
-          {/each}
-        </ToggleGroup.Root>
-        <div class="-mx-2.5 mt-1 border-t border-border px-0.5 pt-1.5">
-          <Button variant="ghost" class="w-full justify-start" disabled={!tunnel?.inspect || !pauseKnown || pauseBusy} onclick={toggleCapture}>{#if paused}<Play />Resume capture{:else}<Pause />Pause capture{/if}</Button>
-          <Button variant="ghost" class="w-full justify-start" disabled={!store.tunnels.some(inspectable) || clearing} onclick={() => { clearTarget = { id: tunnelId, name: tunnel?.name ?? "all projects / tunnels" }; headerMenu = null; clearOpen = true; actionError = null; }}><Trash2 />Clear request history…</Button>
-        </div>
-      </Popover.Content>
-    </Popover.Root>
-  </Toolbar>
-
-  {#if filtered}
-  <div class="flex min-h-11 flex-none flex-wrap items-center gap-2 border-b-[0.5px] border-border px-3 py-1.5">
-    {#if tunnelId}
-      <div class="flex items-center gap-1 rounded-md border border-input bg-fill/50 pl-2 text-xs">
-        <span class="text-muted-foreground">Project / tunnel</span><span class="max-w-48 truncate">{tunnel?.name ?? tunnelId}</span>
-        <IconAction label="Remove project or tunnel filter" size="icon-sm" onclick={() => tunnelId = null}><X /></IconAction>
+{#snippet requestDetails()}
+  {#if selected !== null}
+    <div
+      class="relative max-w-[calc(100%-420px)] min-w-85 flex-none overflow-hidden border-l-[0.5px] border-border"
+      style:width="{share * 100}%"
+      in:reveal
+      out:reveal
+    >
+      <div class="flex h-full min-w-0 flex-col">
+        {#if detailError}
+          <StatePanel
+            kind="error"
+            message={detailError}
+            title="Couldn't load this request"
+            ><Button onclick={close} variant="outline"
+              >Close</Button
+            ></StatePanel
+          >
+        {:else if detail}
+          <!-- Remounted per request so its panel starts scrolled to the top; tab and view persist. -->
+          {#key detail.id}
+            <RequestDetail {detail} onclose={close} bind:mode bind:side />
+          {/key}
+        {/if}
       </div>
-    {/if}
-    {#if search && !searchOpen}
-      <div class="flex items-center gap-1 rounded-md border border-input bg-fill/50 pl-2 text-xs" title={search}>
-        <span class="text-muted-foreground">Search</span><button class="max-w-48 truncate rounded-sm kb-focus:ring-[3px] kb-focus:ring-ring/50 outline-none" onclick={() => searchAction?.focus()}>{search}</button>
-        <IconAction label="Remove search filter" size="icon-sm" onclick={() => search = ""}><X /></IconAction>
-      </div>
-    {/if}
-    {#if statuses.length}
-      <div class="flex items-center gap-1 rounded-md border border-input bg-fill/50 pl-2 text-xs" title={statuses.join(", ")}>
-        <span class="text-muted-foreground">Status</span><span class="max-w-48 truncate">{statuses.join(", ")}</span>
-        <IconAction label="Remove status filter" size="icon-sm" onclick={() => statuses = []}><X /></IconAction>
-      </div>
-    {/if}
-    {#if methods.length}
-      <div class="flex items-center gap-1 rounded-md border border-input bg-fill/50 pl-2 text-xs" title={methods.join(", ")}>
-        <span class="text-muted-foreground">Method</span><span class="max-w-48 truncate">{methods.join(", ")}</span>
-        <IconAction label="Remove method filter" size="icon-sm" onclick={() => methods = []}><X /></IconAction>
-      </div>
-    {/if}
-    <Button variant="ghost" class="ml-auto text-xs" onclick={() => { search = ""; statuses = []; methods = []; tunnelId = null; }}>Reset filters</Button>
-  </div>
+      <!-- The divider: drag, or arrow keys (Shift for bigger steps); double-click or Home resets.
+               A focusable separator is a widget (ARIA window splitter), which the lint doesn't know. -->
+      <!-- svelte-ignore a11y_no_noninteractive_tabindex, a11y_no_noninteractive_element_interactions -->
+      <!-- biome-ignore lint/a11y/useSemanticElements: A focusable ARIA separator implements the draggable window splitter. -->
+      <div
+        aria-label="Resize request details"
+        aria-orientation="vertical"
+        aria-valuemax={100}
+        aria-valuemin={0}
+        aria-valuenow={Math.round(share * 100)}
+        class={[
+          "absolute inset-y-0 left-0 z-10 w-1.5 cursor-col-resize outline-none",
+          "after:absolute after:inset-y-0 after:left-0 after:w-0.5 after:transition-colors after:duration-150 motion-reduce:after:transition-none",
+          "hover:after:bg-tint/60 kb-focus:after:bg-tint",
+          dragging && "after:bg-tint",
+        ]}
+        ondblclick={() => setShare(SHARE)}
+        onkeydown={ondividerkey}
+        onpointercancel={ondividerup}
+        onpointerdown={ondividerdown}
+        onpointermove={ondividermove}
+        onpointerup={ondividerup}
+        role="separator"
+        tabindex="0"
+      ></div>
+    </div>
   {/if}
-  {#if actionError && !clearOpen}<div role="alert" class="border-b border-border px-3 py-2 text-xs text-destructive">{actionError}</div>{/if}
+{/snippet}
 
-  {#if !store.tunnels.some(inspectable) && !store.loading}
+{#snippet requestRows()}
+  <div class="flex min-h-0 min-w-105 flex-1 flex-col">
+    <div
+      aria-hidden="true"
+      class="{columns} h-7 flex-none pr-[calc(--spacing(3)+var(--scrollbar-size))] border-b-[0.5px] border-border text-xs text-muted-foreground"
+      style:grid-template-columns={template}
+    >
+      {#each shown as c (c.id)}
+        <span class:text-right={"end" in c}>{c.label}</span>
+      {/each}
+    </div>
+    {#if queryStatus.loading && rows.length === 0}
+      <StatePanel kind="loading" title="Loading requests…" />
+    {:else if queryStatus.failure}
+      <StatePanel
+        kind="error"
+        message={queryStatus.failure}
+        title="Couldn't load requests"
+        ><Button onclick={load} variant="outline">Try again</Button></StatePanel
+      >
+    {:else if rows.length === 0}
+      <StatePanel kind="empty" message={emptyMessage} title={emptyTitle} />
+    {:else}
+      <RequestList
+        cap={CAP}
+        {now}
+        onselect={(id) => select(id)}
+        {selected}
+        {template}
+        bind:this={list}
+        bind:rows
+      />
+    {/if}
+  </div>
+{/snippet}
+
+{#snippet requestFilterSummary()}
+  {#if filtered}
+    <div
+      class="flex min-h-11 flex-none flex-wrap items-center gap-2 border-b-[0.5px] border-border px-3 py-1.5"
+    >
+      {#if tunnelId}
+        <FilterChip
+          label="Project / tunnel"
+          onremove={() => {
+            tunnelId = null;
+          }}
+          removeLabel="Remove project or tunnel filter"
+          value={tunnel?.name ?? tunnelId}
+        />
+      {/if}
+      <FilterChip
+        hidden={!search || searchOpen}
+        label="Search"
+        onfocus={() => searchAction?.focus()}
+        bind:value={search}
+      />
+      {#if statuses.length}
+        <FilterChip
+          label="Status"
+          onremove={() => {
+            statuses = [];
+          }}
+          removeLabel="Remove status filter"
+          value={statuses.join(", ")}
+        />
+      {/if}
+      {#if methods.length}
+        <FilterChip
+          label="Method"
+          onremove={() => {
+            methods = [];
+          }}
+          removeLabel="Remove method filter"
+          value={methods.join(", ")}
+        />
+      {/if}
+      <Button
+        class="ml-auto text-xs"
+        onclick={() => {
+          search = "";
+          statuses = [];
+          methods = [];
+          tunnelId = null;
+        }}
+        variant="ghost"
+        >Reset filters</Button
+      >
+    </div>
+  {/if}
+{/snippet}
+
+{#snippet requestToolbar()}
+  <Toolbar subtitle={inspectionSubtitle} title="Requests">
+    <SearchAction
+      label="Search requests"
+      bind:this={searchAction}
+      bind:open={searchOpen}
+      bind:value={search}
+    />
+    <RequestFilters
+      boundary={filterBoundary}
+      bind:methods
+      bind:open={
+        () => headerMenu === "filters",
+        (value) => setHeaderMenu("filters", value)
+      }
+      bind:statuses
+      bind:tunnelId
+    />
+    <span aria-hidden="true" class="mx-0.5 h-4 border-l border-border"></span>
+    <OptionsMenu bind:menu={headerMenu} bind:trigger={optionsTrigger}>
+      <span class="text-xs text-muted-foreground" id="columns-label"
+        >Display columns</span
+      >
+      <ToggleGroupRoot
+        aria-labelledby="columns-label"
+        class="flex-wrap"
+        spacing={1}
+        type="multiple"
+        bind:value={
+          () => shown.map((c) => c.id as string),
+          (v: string[]) =>
+    setHidden(
+      COLUMNS.filter((c) => !("always" in c || v.includes(c.id))).map(
+        (c) => c.id as ColumnId
+      )
+    )
+        }
+      >
+        {#each COLUMNS as c (c.id)}
+          <ToggleGroupItem
+            class="rounded-full text-muted-foreground data-[state=on]:text-foreground"
+            disabled={"always" in c}
+            value={c.id}
+            >{c.label}</ToggleGroupItem
+          >
+        {/each}
+      </ToggleGroupRoot>
+      <div class="-mx-2.5 mt-1 border-t border-border px-0.5 pt-1.5">
+        <Button
+          class="w-full justify-start"
+          disabled={!(tunnel?.inspect && pauseKnown) || pauseBusy}
+          onclick={toggleCapture}
+          variant="ghost"
+          >{#if paused}
+            <Play />Resume capture
+          {:else}
+            <Pause />Pause capture
+          {/if}</Button
+        >
+        <Button
+          class="w-full justify-start"
+          disabled={!store.tunnels.some(inspectable) || clearing}
+          onclick={() => {
+            clearTarget = {
+              id: tunnelId,
+              name: tunnel?.name ?? "all projects / tunnels",
+            };
+            headerMenu = null;
+            clearOpen = true;
+            actionError = null;
+          }}
+          variant="ghost"
+          ><Trash2 />Clear request history…</Button
+        >
+      </div>
+    </OptionsMenu>
+  </Toolbar>
+{/snippet}
+
+<div class="relative flex h-full flex-col">
+  <div
+    aria-hidden="true"
+    class="pointer-events-none absolute inset-x-0 bottom-0 top-(--toolbar-h)"
+    bind:this={filterBoundary}
+  ></div>
+  {@render requestToolbar()}
+
+  {@render requestFilterSummary()}
+  {#if actionError && !clearOpen}
+    <div
+      class="border-b border-border px-3 py-2 text-xs text-destructive"
+      role="alert"
+    >
+      {actionError}
+    </div>
+  {/if}
+
+  {#if !(store.tunnels.some(inspectable) || store.loading)}
     <div class="grid flex-1 place-items-center">
-      <StatePanel kind="empty" title="No tunnels to inspect" message="Add a config-file or quick tunnel, then turn on request inspection." />
+      <StatePanel
+        kind="empty"
+        message="Add a config-file or quick tunnel, then turn on request inspection."
+        title="No tunnels to inspect"
+      />
     </div>
   {:else if tunnel && !tunnel.inspect}
     <div class="grid flex-1 place-items-center">
-      <StatePanel kind="empty" title="Inspection is off" message="Turn it on to capture each request's headers and bodies through Underlane's local proxy. The tunnel restarts to apply it.">
-        <Button onclick={async () => { await api.updateTunnel(tunnel.id, { inspect: true }); await store.refresh(); }}>Turn on inspection</Button>
+      <StatePanel
+        kind="empty"
+        message="Turn it on to capture each request's headers and bodies through Underlane's local proxy. The tunnel restarts to apply it."
+        title="Inspection is off"
+      >
+        <Button
+          onclick={async () => {
+            await api.updateTunnel(tunnel.id, { inspect: true });
+            await store.refresh();
+          }}
+          >Turn on inspection</Button
+        >
       </StatePanel>
     </div>
   {:else}
-    <div class="flex min-h-0 flex-1" class:cursor-col-resize={dragging} class:select-none={dragging} bind:this={split}>
-      <div class="flex min-h-0 min-w-105 flex-1 flex-col">
-        <div class="{columns} h-7 flex-none pr-[calc(--spacing(3)+var(--scrollbar-size))] border-b-[0.5px] border-border text-xs text-muted-foreground" style:grid-template-columns={template} aria-hidden="true">
-          {#each shown as c (c.id)}<span class:text-right={"end" in c}>{c.label}</span>{/each}
-        </div>
-        {#if loading && rows.length === 0}
-          <StatePanel kind="loading" title="Loading requests…" />
-        {:else if error}
-          <StatePanel kind="error" title="Couldn't load requests" message={error}><Button variant="outline" onclick={load}>Try again</Button></StatePanel>
-        {:else if rows.length === 0}
-          <StatePanel kind="empty" title={matchingFiltered ? "No matching requests" : paused ? "Capture paused" : "Waiting for requests"} message={matchingFiltered ? "Try a different filter." : paused ? "Resume capture from Columns and actions to record new requests." : tunnel?.state.status === "connected" ? `Requests to ${tunnel.state.public_url ?? "this tunnel"} will appear here as they happen.` : "Start the tunnel, then send it some traffic."} />
-        {:else}
-          <RequestList bind:this={list} bind:rows {selected} {template} {now} cap={CAP} onselect={(id) => select(id)} />
-        {/if}
-      </div>
+    <div
+      class="flex min-h-0 flex-1"
+      bind:this={split}
+      class:cursor-col-resize={dragging}
+      class:select-none={dragging}
+    >
+      {@render requestRows()}
       <!-- Open while a request is selected. While it closes, its content stays as it was. -->
-      {#if selected != null}
-        <div
-          class="relative max-w-[calc(100%-420px)] min-w-85 flex-none overflow-hidden border-l-[0.5px] border-border"
-          style:width="{share * 100}%"
-          in:reveal
-          out:reveal
-        >
-          <div class="flex h-full min-w-0 flex-col">
-            {#if detailError}
-              <StatePanel kind="error" title="Couldn't load this request" message={detailError}><Button variant="outline" onclick={close}>Close</Button></StatePanel>
-            {:else if detail}
-              <!-- Remounted per request so its panel starts scrolled to the top; tab and view persist. -->
-              {#key detail.id}<RequestDetail {detail} bind:side bind:mode onclose={close} />{/key}
-            {/if}
-          </div>
-          <!-- The divider: drag, or arrow keys (Shift for bigger steps); double-click or Home resets.
-               A focusable separator is a widget (ARIA window splitter), which the lint doesn't know. -->
-          <!-- svelte-ignore a11y_no_noninteractive_tabindex, a11y_no_noninteractive_element_interactions -->
-          <div
-            role="separator"
-            aria-orientation="vertical"
-            aria-label="Resize request details"
-            aria-valuenow={Math.round(share * 100)}
-            aria-valuemin={0}
-            aria-valuemax={100}
-            tabindex="0"
-            class={[
-              "absolute inset-y-0 left-0 z-10 w-1.5 cursor-col-resize outline-none",
-              "after:absolute after:inset-y-0 after:left-0 after:w-0.5 after:transition-colors after:duration-150 motion-reduce:after:transition-none",
-              "hover:after:bg-tint/60 kb-focus:after:bg-tint",
-              dragging && "after:bg-tint",
-            ]}
-            onpointerdown={ondividerdown}
-            onpointermove={ondividermove}
-            onpointerup={ondividerup}
-            onpointercancel={ondividerup}
-            ondblclick={() => setShare(SHARE)}
-            onkeydown={ondividerkey}
-          ></div>
-        </div>
-      {/if}
+      {@render requestDetails()}
     </div>
   {/if}
 </div>
 
-<AlertDialog.Root bind:open={clearOpen}>
-  <AlertDialog.Content onCloseAutoFocus={returnFocusTo(() => optionsTrigger)} onEscapeKeydown={(e) => { if (clearing) e.preventDefault(); }} onInteractOutside={(e) => { if (clearing) e.preventDefault(); }}>
-    <AlertDialog.Header>
-      <AlertDialog.Title>Clear request history?</AlertDialog.Title>
-      <AlertDialog.Description>Delete all captured requests for “{clearTarget?.name}”, including requests hidden by filters. This can't be undone.</AlertDialog.Description>
-    </AlertDialog.Header>
-    {#if actionError}<p role="alert" class="text-xs text-destructive">{actionError}</p>{/if}
-    <AlertDialog.Footer>
-      <AlertDialog.Cancel disabled={clearing}>Cancel</AlertDialog.Cancel>
-      <Button variant="destructive" disabled={clearing} onclick={clear}>{clearing ? "Clearing…" : "Clear history"}</Button>
-    </AlertDialog.Footer>
-  </AlertDialog.Content>
-</AlertDialog.Root>
+<ClearHistoryDialog
+  {clearing}
+  failure={actionError}
+  kind="requests"
+  onclear={clear}
+  target={clearTarget?.name}
+  trigger={() => optionsTrigger}
+  bind:open={clearOpen}
+/>

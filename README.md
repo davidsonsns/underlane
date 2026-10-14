@@ -93,11 +93,12 @@ section. Drag Underlane's circular Lane Cut icon into the visible part.
 
 ```sh
 make dev        # Vite + cargo with hot reload (frontend) and rebuild-on-change (Rust)
-make test       # cargo test --workspace, vitest, svelte-check
+make test       # Rust tests, Vitest, script-helper tests, and svelte-check
 make e2e        # end-to-end check against a real quick tunnel (no Cloudflare account needed)
 npm run lint   # Biome lint + formatting checks with Ultracite's core and Svelte presets
 npm run fix    # Apply Biome's safe fixes and formatting
 npm run analyze # Fallow: unused code, duplication, and complexity; fails on findings
+npm run test:scripts # Local harness/browser-mock tests; no native app or tunnel needed
 ```
 
 `npm run check` still runs Svelte/TypeScript diagnostics. Biome's Svelte support is
@@ -106,8 +107,19 @@ components in `src/lib/components/ui`; Fallow still follows their imports. Fallo
 includes both window entry points, the Svelte config, and standalone verification
 scripts, and excludes Rust build output. PascalCase and kebab-case Svelte component
 filenames are supported.
-Existing lint and analysis findings are reported without a baseline or automatic
-source cleanup. These commands run locally; no CI or Git hooks are installed.
+Fallow lists standalone runners explicitly so imported harness helpers are checked
+for unused exports. Its named `ignoreExports` entries preserve intentional UI
+namespace contracts (`Root`, `Content`, `Trigger`, etc.) and widget `focus` methods:
+identical names in separate modules are not duplicate implementations. Source-level
+suppressions explain intentional sequencing, composite-widget semantics, and other
+specific analyzer limitations. No baseline hides existing findings. These commands
+run locally; no CI or Git hooks are installed.
+
+Named `health.thresholdOverrides` retain bounded UI transactions whose CRAP score
+uses estimated zero coverage for mounted component handlers. Each entry explains
+its ordering/ownership contract and caps the current score; cyclomatic and cognitive
+limits stay at their defaults. Pure list, query, grouping and navigation decisions
+have unit tests. Browser mocks can target a frozen preview with `E2E_BASE_URL`.
 
 Useful environment variables:
 

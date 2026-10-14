@@ -1,25 +1,30 @@
-export type Status = "stopped" | "starting" | "connected" | "degraded" | "crashed";
+export type Status =
+  | "stopped"
+  | "starting"
+  | "connected"
+  | "degraded"
+  | "crashed";
 type TunnelKind = "config" | "token" | "quick";
 
 export interface RouteMapping {
   hostname: string | null;
-  path: string | null;
-  service: string;
   inspected: boolean;
   note: string | null;
+  path: string | null;
+  service: string;
 }
 
 export interface HostnameRoute {
-  index: number | null;
   hostname: string;
-  service: string;
+  index: number | null;
   path: string | null;
+  service: string;
 }
 
 export interface HostnameConfig {
+  fallback_service: string;
   revision: string;
   routes: HostnameRoute[];
-  fallback_service: string;
 }
 
 export interface HostnameSaveResult {
@@ -27,61 +32,65 @@ export interface HostnameSaveResult {
 }
 
 export interface FailureExplanation {
-  cause: string;
   action: string | null;
+  cause: string;
   raw: string;
 }
 
 export interface TunnelState {
-  id: string;
-  status: Status;
-  detail: string | null;
-  hint: string | null;
-  failure: FailureExplanation | null;
   cloudflare_tunnel_id?: string | null;
-  tunnel_conflict?: { tunnel_id: string; project_id: string; project_name: string } | null;
-  public_url: string | null;
-  mappings: RouteMapping[];
-  pid: number | null;
-  metrics_addr: string | null;
-  connections: number;
-  restarts: number;
-  started_at: number | null;
-  inspecting: boolean;
-  supervised: boolean;
-  run: number;
   config_revision: number;
+  connections: number;
+  detail: string | null;
+  failure: FailureExplanation | null;
+  hint: string | null;
+  id: string;
+  inspecting: boolean;
+  mappings: RouteMapping[];
+  metrics_addr: string | null;
+  pid: number | null;
+  public_url: string | null;
+  restarts: number;
+  run: number;
+  started_at: number | null;
+  status: Status;
+  supervised: boolean;
+  tunnel_conflict?: {
+    tunnel_id: string;
+    project_id: string;
+    project_name: string;
+  } | null;
 }
 
 export interface ConfigChange {
-  run: number;
   config_revision: number;
+  message: string | null;
+  run: number;
   source_path: string;
   status: "unchanged" | "changed" | "unreadable" | "not_running";
-  message: string | null;
 }
 
 export interface Tunnel {
-  id: string;
-  group_id: string | null;
-  group_name: string;
-  name: string;
-  kind: TunnelKind;
-  config_path: string | null;
-  origin_url: string | null;
-  inspect: boolean;
   autostart: boolean;
-  loglevel: string;
-  created_at: number;
-  sort: number;
-  state: TunnelState;
-  has_token: boolean;
-  /** A config project without a Cloudflare tunnel identity yet. */
-  setup_needed?: boolean;
   /** Resolved source identity; active runs carry their pinned identity in state. */
   cloudflare_tunnel_id?: string | null;
-  separating_tunnel?: boolean;
+  config_path: string | null;
+  created_at: number;
+  group_id: string | null;
+  group_name: string;
+  has_token: boolean;
+  id: string;
+  inspect: boolean;
+  kind: TunnelKind;
+  loglevel: string;
+  name: string;
+  origin_url: string | null;
   separate_tunnel_pending?: boolean;
+  separating_tunnel?: boolean;
+  /** A config project without a Cloudflare tunnel identity yet. */
+  setup_needed?: boolean;
+  sort: number;
+  state: TunnelState;
 }
 
 interface Group {
@@ -92,80 +101,80 @@ interface Group {
 
 export interface Binary {
   path: string;
-  version: string | null;
   source: string;
+  version: string | null;
 }
 
 export interface Settings {
   cloudflared_path: string | null;
+  default_loglevel: string;
   log_ttl_days: number;
-  max_db_mb: number;
   max_body_kb: number;
+  max_db_mb: number;
   redact_headers: string[];
   redact_query: string[];
   theme: "system" | "light" | "dark";
-  default_loglevel: string;
 }
 
 export interface Overview {
-  groups: Group[];
-  tunnels: Tunnel[];
-  cloudflared: Binary | null;
-  settings: Settings;
   active_count: number;
-  dropped_captures: number;
+  cloudflared: Binary | null;
   data_dir: string;
+  dropped_captures: number;
+  groups: Group[];
   last_launch: { at: number; reason: "login_item" | "normal" } | null;
+  settings: Settings;
+  tunnels: Tunnel[];
 }
 
 export interface LogLine {
+  fields: string;
   id: number;
-  tunnel_id: string;
-  ts: number;
   level: "debug" | "info" | "warn" | "error" | "fatal";
   message: string;
-  fields: string;
+  ts: number;
+  tunnel_id: string;
 }
 
 export interface RequestSummary {
-  id: string;
-  tunnel_id: string;
-  ts: number;
   duration_ms: number | null;
+  error: string | null;
+  host: string;
+  id: string;
   kind: "http" | "websocket" | "sse";
   method: string;
-  host: string;
   path: string;
-  status: number | null;
   resp_size: number;
-  error: string | null;
+  status: number | null;
+  ts: number;
+  tunnel_id: string;
 }
 
 export interface BodyView {
+  base64: string;
+  content_type: string | null;
+  decode_partial: boolean;
+  decoded_from: string | null;
+  is_text: boolean;
   size: number;
   stored: number;
-  truncated: boolean;
-  content_type: string | null;
-  decoded_from: string | null;
-  decode_partial: boolean;
-  is_text: boolean;
   text: string | null;
-  base64: string;
+  truncated: boolean;
 }
 
 export interface RequestDetail extends Omit<RequestSummary, "resp_size"> {
-  req_headers: [string, string][];
-  resp_headers: [string, string][];
   req: BodyView;
+  req_headers: [string, string][];
   resp: BodyView;
+  resp_headers: [string, string][];
 }
 
 export interface Candidate {
-  path: string;
-  name: string;
   group: string;
   hostnames: string[];
   imported: boolean;
+  name: string;
+  path: string;
 }
 
 export interface ProjectConfigPreview {
@@ -180,23 +189,23 @@ export interface TunnelSetupProgress {
 }
 
 export interface TunnelSetupResult {
-  tunnel_id: string;
   credentials_file: string;
+  tunnel_id: string;
 }
 
 export interface SeparateTunnelPreview {
-  revision: string;
-  old_tunnel_id: string;
-  hostnames: string[];
   config_path: string;
+  hostnames: string[];
+  old_tunnel_id: string;
   resuming: boolean;
+  revision: string;
 }
 
 export interface SeparateTunnelResult {
-  tunnel_id: string;
   config_path: string;
   moved_hostnames: string[];
   start_error: string | null;
+  tunnel_id: string;
 }
 
 export interface SeparateTunnelProgress {
@@ -212,21 +221,26 @@ export interface ImportReport {
 }
 
 export interface Validation {
+  failure: FailureExplanation | null;
+  hint: string | null;
   ok: boolean;
   raw: string;
-  hint: string | null;
-  failure: FailureExplanation | null;
 }
 
 export interface LoginItem {
-  status: "enabled" | "not_registered" | "requires_approval" | "not_found" | "unsupported";
   enabled: boolean;
   message: string | null;
+  status:
+    | "enabled"
+    | "not_registered"
+    | "requires_approval"
+    | "not_found"
+    | "unsupported";
 }
 
 export interface HostnameDns {
-  status: "connected" | "missing" | "conflict" | "unknown";
-  message: string;
   can_create: boolean;
+  message: string;
   needs_dns_access: boolean;
+  status: "connected" | "missing" | "conflict" | "unknown";
 }

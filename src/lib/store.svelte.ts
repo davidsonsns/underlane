@@ -2,6 +2,7 @@
 import { listen } from "@tauri-apps/api/event";
 import { api, errorText } from "./api";
 import { applyTheme } from "./theme";
+import { preserveConfigMappings } from "./tunnel-state";
 import type { Overview, TunnelState } from "./types";
 
 class AppStore {
@@ -15,7 +16,9 @@ class AppStore {
     return this.overview?.tunnels ?? [];
   }
   get activeCount() {
-    return this.tunnels.filter((t) => t.state.status === "connected" || t.state.status === "degraded").length;
+    return this.tunnels.filter(
+      (t) => t.state.status === "connected" || t.state.status === "degraded"
+    ).length;
   }
 
   async refresh() {
@@ -39,21 +42,27 @@ class AppStore {
   }
 
   applyState(s: TunnelState) {
-    const t = this.overview?.tunnels.find((t) => t.id === s.id);
-    if (!t) return this.scheduleRefresh();
-    if (s.run < (t.state.run ?? 0)) return; // late event from a replaced run
-    // A stopped config tunnel keeps showing the routes parsed from its file.
-    if (s.mappings.length === 0 && t.state.mappings.length && t.kind === "config") s = { ...s, mappings: t.state.mappings };
-    t.state = s;
+    const tunnel = this.overview?.tunnels.find((item) => item.id === s.id);
+    if (!tunnel) {
+      return this.scheduleRefresh();
+    }
+    if (s.run < (tunnel.state.run ?? 0)) {
+      return; // late event from a replaced run
+    }
+    tunnel.state = preserveConfigMappings(tunnel, s);
   }
 
   async init() {
     // Subscribe first so nothing that happens during the initial load is missed.
-    await listen<TunnelState>("tunnel-state", (e) => this.applyState(e.payload));
+    await listen<TunnelState>("tunnel-state", (e) =>
+      this.applyState(e.payload)
+    );
     await listen("tunnels-changed", () => this.scheduleRefresh());
     await listen("settings-changed", (e) => {
       const s = e.payload as Overview["settings"];
-      if (this.overview) this.overview.settings = s;
+      if (this.overview) {
+        this.overview.settings = s;
+      }
       applyTheme(s.theme);
     });
     await listen<{ tunnel_id: string }>("request", (e) => {
