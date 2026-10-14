@@ -92,9 +92,12 @@
   const tunnelOwner = $derived(activeTunnelOwner(tunnel, store.tunnels));
   const operationBusy = $derived(busy || !!tunnel.separating_tunnel);
   const conflictName = $derived(tunnelOwner?.name ?? s.tunnel_conflict?.project_name);
+  const statusTooltip = $derived([
+    statusHint[s.status],
+    s.connections > 0 ? `${s.connections} connection${s.connections === 1 ? "" : "s"} to Cloudflare for redundancy.` : "",
+  ].filter(Boolean).join(" "));
   const headerMeta = $derived([
     s.status === "connected" && s.started_at ? formatUptime(s.started_at, now) : "",
-    s.connections > 0 ? `${s.connections} edge connection${s.connections === 1 ? "" : "s"}` : "",
     s.restarts > 0 ? `${s.restarts} restart${s.restarts === 1 ? "" : "s"}` : "",
   ].filter(Boolean).join(" · "));
   $effect(() => {
@@ -343,15 +346,15 @@
 <header class="mb-3.5 flex min-w-0 items-center gap-3">
   <div class="flex min-w-0 max-w-1/2 items-center gap-2.5">
     <!-- StatusDot carries the accessible status; the tooltip adds detail. -->
-    <Tip text={statusHint[s.status]}>
-      {#snippet children({ props })}<button {...props} type="button" aria-label={statusHint[s.status]} class="flex shrink-0 rounded-sm {kbRing}"><StatusDot status={s.status} /></button>{/snippet}
+    <Tip text={statusTooltip}>
+      {#snippet children({ props })}<button {...props} type="button" aria-label={statusTooltip} class="flex size-5 shrink-0 items-center justify-center rounded-sm {kbRing}"><StatusDot status={s.status} /></button>{/snippet}
     </Tip>
-    <EditableName name={tunnel.name} label={tunnel.kind === "config" ? "Project name" : "Tunnel name"} class="text-xl font-semibold tracking-[-0.01em]" onsave={async (name) => {
+    <EditableName name={tunnel.name} label={tunnel.kind === "config" ? "Project name" : "Tunnel name"} class="text-xl leading-none font-semibold tracking-[-0.01em]" onsave={async (name) => {
       await api.updateTunnel(tunnel.id, { name });
       await store.refresh();
     }} />
   </div>
-  <span class="min-w-0 flex-1 truncate text-callout text-muted-foreground" title={headerMeta}>{headerMeta}</span>
+  <span class="min-w-0 flex-1 truncate text-callout leading-none text-muted-foreground" title={headerMeta}>{headerMeta}</span>
   <div class="flex shrink-0 items-center gap-2">
     {#if on}
       <Button variant="outline" disabled={operationBusy} onclick={() => run(() => api.stop(tunnel.id))}><Square class="size-2.5 fill-current" /> Stop</Button>
