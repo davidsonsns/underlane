@@ -187,6 +187,8 @@ pub fn open_dashboard<R: Runtime>(app: &AppHandle<R>, view: Option<String>) {
     let builder = WebviewWindowBuilder::new(app, DASHBOARD, WebviewUrl::App(url.into()))
         .title("Underlane")
         .inner_size(1080.0, 700.0)
+        // onboarding_status enables resizing only for the completed dashboard.
+        .resizable(false)
         // 960 = sidebar (200) + the Requests split's column minimums (420 + 340).
         .min_inner_size(960.0, 560.0)
         .center()

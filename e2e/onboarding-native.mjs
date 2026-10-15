@@ -35,16 +35,16 @@ try {
   const welcome = await ctl("GET", "/ui?view=tunnels");
   assert.match(welcome.text, /Your localhost,[\s\S]*one link away/);
   assert.match(welcome.text, /Get started/);
+  assert.equal(welcome.resizable, false);
+  assert.equal((await ctl("POST", "/complete-onboarding")).ok, true);
+  assert.equal((await ctl("GET", "/ui?view=tunnels")).resizable, true);
   await stopApp(child, ctl);
 
-  execFileSync("sqlite3", [
-    join(fixture.data, "underlane.db"),
-    "INSERT INTO settings(key,value) VALUES ('onboarding_complete','1');",
-  ]);
   await launch();
   const dashboard = await ctl("GET", "/ui?view=tunnels");
   assert.doesNotMatch(dashboard.text, /Get started/);
   assert.match(dashboard.text, /Projects/);
+  assert.equal(dashboard.resizable, true);
   await ctl("POST", "/quick?origin=http%3A%2F%2Flocalhost%3A3000&name=Legacy");
   await stopApp(child, ctl);
 
@@ -56,6 +56,7 @@ try {
   const legacy = await ctl("GET", "/ui?view=tunnels");
   assert.match(legacy.text, /Legacy/);
   assert.doesNotMatch(legacy.text, /Get started/);
+  assert.equal(legacy.resizable, true);
   await stopApp(child, ctl);
   const persisted = execFileSync(
     "sqlite3",
@@ -87,6 +88,7 @@ try {
   const reset = await ctl("GET", "/ui?view=tunnels");
   assert.match(reset.text, /Your localhost,[\s\S]*one link away/);
   assert.doesNotMatch(reset.text, /Legacy/);
+  assert.equal(reset.resizable, false);
   assert.equal(child.pid, processId);
   assert.equal(
     child.exitCode,

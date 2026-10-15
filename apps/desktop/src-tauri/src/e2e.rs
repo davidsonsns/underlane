@@ -116,6 +116,15 @@ mod server {
         let id = q.get("id").cloned().unwrap_or_default();
         match (req.method().as_str(), req.uri().path()) {
             ("GET", "/health") => reply(200, json!({"ok": true})),
+            ("POST", "/complete-onboarding") => {
+                let Some(window) = app.get_webview_window(tray::DASHBOARD) else {
+                    return reply(404, json!({"error": "no dashboard window"}));
+                };
+                match crate::onboarding::complete_onboarding(window, app.state()).await {
+                    Ok(()) => reply(200, json!({"ok": true})),
+                    Err(error) => reply(400, json!({"error": error})),
+                }
+            }
             ("GET", "/hostnames") => {
                 match tokio::task::spawn_blocking(move || crate::hostnames::load(&core, &id)).await {
                     Ok(Ok(config)) => reply(200, json!(config)),
@@ -228,7 +237,10 @@ mod server {
                     json!({"nonce": nonce, "view": view, "select": q.get("select"), "tab": q.get("tab")}),
                 );
                 match tokio::time::timeout(Duration::from_secs(10), rx).await {
-                    Ok(Ok(text)) => reply(200, json!({"text": text})),
+                    Ok(Ok(text)) => {
+                        let resizable = app.get_webview_window(tray::DASHBOARD).and_then(|window| window.is_resizable().ok());
+                        reply(200, json!({"text": text, "resizable": resizable}))
+                    }
                     _ => reply(504, json!({"error": "the dashboard did not answer"})),
                 }
             }

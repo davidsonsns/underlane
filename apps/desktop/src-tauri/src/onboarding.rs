@@ -43,26 +43,29 @@ fn mark_complete(db: &underlane_core::db::Db) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub async fn onboarding_status(core: State<'_, Arc<Core>>) -> Result<OnboardingStatus, String> {
+pub async fn onboarding_status(window: tauri::WebviewWindow, core: State<'_, Arc<Core>>) -> Result<OnboardingStatus, String> {
     let core = core.inner().clone();
-    tokio::task::spawn_blocking(move || {
-        Ok(OnboardingStatus {
+    let status = tokio::task::spawn_blocking(move || {
+        Ok::<_, String>(OnboardingStatus {
             complete: is_complete(&core.db)?,
             account_connected: certificate_account(&home_dir().join(".cloudflared/cert.pem"))
                 .is_ok(),
         })
     })
     .await
-    .map_err(|e| redact_text(&e.to_string()))?
+    .map_err(|e| redact_text(&e.to_string()))??;
+    window.set_resizable(status.complete).map_err(|e| e.to_string())?;
+    Ok(status)
 }
 
 #[tauri::command]
-pub async fn complete_onboarding(core: State<'_, Arc<Core>>) -> Result<(), String> {
+pub async fn complete_onboarding(window: tauri::WebviewWindow, core: State<'_, Arc<Core>>) -> Result<(), String> {
     let _operation = core.operations.try_read().map_err(|_| "App reset is in progress. Try again when setup opens.")?;
     let core = core.inner().clone();
     tokio::task::spawn_blocking(move || mark_complete(&core.db))
         .await
-        .map_err(|e| redact_text(&e.to_string()))?
+        .map_err(|e| redact_text(&e.to_string()))??;
+    window.set_resizable(true).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
