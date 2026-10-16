@@ -65,7 +65,7 @@ no Go toolchain here; fewer reference tray apps).
 - Trade-off accepted: tunnels are down while the app isn't running. A user who needs
   24/7 tunnels independent of a GUI should use `cloudflared service install`, and the README says so.
 
-## 4. Body capture: an app-owned inspecting reverse proxy, opt-in per tunnel
+## 4. Body capture: an app-owned inspecting reverse proxy, configurable per tunnel
 
 - Design is in research.md §3. There's one loopback listener per inspected ingress rule, and the
   derived config lives in `<data>/derived/`. Inspection never writes the user's YAML. Imported
@@ -84,8 +84,9 @@ no Go toolchain here; fewer reference tray apps).
   relative paths resolve against the CWD. Derived configs get absolute paths resolved the same way.
 - If a proxy listener can't be (re)bound, the tunnel is restarted **fail-open** with its original
   config and a warning, putting traffic before capture.
-- Body capture is off by default. When on, each body is capped at 1 MB (configurable) and marked
-  truncated past the cap.
+- Body capture is on by default for newly created and imported projects. Existing preferences
+  are preserved, and quick tunnels remain opt-in. When on, each body is capped at 1 MB
+  (configurable) and marked truncated past the cap.
 - Redaction happens before storage:
   - Headers: `Authorization`, `Proxy-Authorization`, `Cookie`, `Set-Cookie`,
     `Cf-Access-Jwt-Assertion`, `Cf-Access-Client-Secret`, `X-Api-Key` and `X-Auth-Token`, plus

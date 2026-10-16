@@ -104,7 +104,7 @@
   }
 </script>
 {#snippet tunnelToolbar()}
-  <Toolbar title="Tunnels">
+  <Toolbar title="Projects">
     {#if store.tunnels.length}
       {#if anyOn}
         <Tip text="Restart every running tunnel">
@@ -188,14 +188,14 @@
 
   {#if store.loading}
     <div class="grid flex-1 place-items-center">
-      <StatePanel kind="loading" title="Loading tunnels…" />
+      <StatePanel kind="loading" title="Loading projects…" />
     </div>
   {:else if store.error}
     <div class="grid flex-1 place-items-center">
       <StatePanel
         kind="error"
         message={store.error}
-        title="Couldn't load tunnels"
+        title="Couldn't load projects"
       >
         <Button onclick={() => store.refresh()} variant="outline"
           >Try again</Button
@@ -218,13 +218,16 @@
       <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
       <!-- biome-ignore lint/a11y/noNoninteractiveElementInteractions: The navigation handles arrow keys for its focusable tunnel buttons. -->
       <nav
-        aria-label="Tunnels"
+        aria-label="Projects"
         class="flex flex-col gap-2 overflow-y-auto border-e-[0.5px] border-border bg-sidebar/40 p-3"
         onkeydown={onListKey}
         bind:this={list}
       >
         {#each groups as g (g.id)}
-          <div class="min-w-0" animate:flip={{ duration: motion(200) }}>
+          <div
+            class="flex min-w-0 flex-col gap-1"
+            animate:flip={{ duration: motion(200) }}
+          >
             {#if g.id !== null}
               <GroupName id={g.id} name={g.name} />
             {/if}

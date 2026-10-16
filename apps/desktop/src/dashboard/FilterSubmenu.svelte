@@ -3,6 +3,7 @@
   import { DropdownMenu } from "bits-ui";
   import type { Snippet } from "svelte";
   import { menuContent, menuItem } from "$lib/components/ui/mac";
+  import { cn } from "$lib/utils";
 
   let {
     label,
@@ -11,6 +12,7 @@
     boundary = null,
     width,
     icon,
+    search,
     onOpenAutoFocus,
     onOpenChange,
     children,
@@ -21,6 +23,7 @@
     boundary?: HTMLElement | null;
     width: string;
     icon: Snippet;
+    search?: Snippet;
     onOpenAutoFocus?: (event: Event) => void;
     onOpenChange?: (value: boolean) => void;
     children: Snippet;
@@ -37,13 +40,25 @@
   ><DropdownMenu.Portal
     ><DropdownMenu.SubContent
       aria-label={ariaLabel}
-      class="{menuContent} max-h-[min(520px,var(--bits-floating-available-height,520px))] {width}"
+      class={cn(
+        menuContent,
+        "flex max-h-[min(520px,var(--bits-floating-available-height,520px))] flex-col overflow-y-hidden",
+        width
+      )}
       collisionBoundary={boundary ?? []}
       collisionPadding={8}
       {onOpenAutoFocus}
       sideOffset={6}
       sticky="always"
-      >{@render children()}</DropdownMenu.SubContent
+      >{#if search}
+        {@render search()}
+        <DropdownMenu.Separator
+          class="-mx-[5px] mb-1 h-px shrink-0 bg-border"
+        />
+      {/if}
+      <div class="min-h-0 overflow-x-hidden overflow-y-auto">
+        {@render children()}
+      </div></DropdownMenu.SubContent
     ></DropdownMenu.Portal
   ></DropdownMenu.Sub
 >

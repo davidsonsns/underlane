@@ -49,7 +49,7 @@
   function reveal(_node: HTMLElement) {
     return {
       css: (t: number) =>
-        `width: ${t * 228}px; opacity: ${t}; overflow: hidden`,
+        `width: ${28 + t * 200}px; opacity: ${t}; overflow: hidden`,
       duration: motion(220),
       easing: cubicOut,
     };
@@ -58,19 +58,23 @@
 
 <svelte:document onpointerdown={outside} />
 
-<div class="flex items-center" bind:this={box}>
+<div class="relative flex h-7 min-w-7 items-center" bind:this={box}>
   <IconAction
     aria-controls={open ? id : undefined}
     aria-expanded={open}
-    class={open ? "hidden" : ""}
+    aria-hidden={open}
+    class="absolute right-0 transition-opacity duration-100 motion-reduce:transition-none {open
+      ? "pointer-events-none opacity-0"
+      : "delay-150 opacity-100"}"
     {label}
     onclick={focus}
+    tabindex={open ? -1 : 0}
     bind:ref={trigger}
     ><SearchIcon /></IconAction
   >
   {#if open}
     <div transition:reveal>
-      <InputGroupRoot class="w-57">
+      <InputGroupRoot class="w-57 border-0">
         <InputGroupInput
           aria-label={label}
           autocapitalize="off"

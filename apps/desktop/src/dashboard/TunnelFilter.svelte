@@ -79,14 +79,16 @@
   {#snippet icon()}
     <Waypoints />
   {/snippet}
-  <Input
-    aria-label="Search projects and tunnels"
-    class="mb-1"
-    onkeydown={filterSearchKeys}
-    placeholder="Filter projects / tunnels…"
-    bind:ref={tunnelInput}
-    bind:value={tunnelSearch}
-  />
+  {#snippet search()}
+    <Input
+      aria-label="Search projects and tunnels"
+      class="mb-1 shrink-0 border-0 bg-fill"
+      onkeydown={filterSearchKeys}
+      placeholder="Filter projects / tunnels…"
+      bind:ref={tunnelInput}
+      bind:value={tunnelSearch}
+    />
+  {/snippet}
   <DropdownMenu.RadioGroup
     onValueChange={(value) => {
       tunnelId = value === "*" ? null : value;

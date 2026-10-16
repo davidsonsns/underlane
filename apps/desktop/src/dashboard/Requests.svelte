@@ -598,7 +598,7 @@
             statuses = [];
           }}
           removeLabel="Remove status filter"
-          value={statuses.join(", ")}
+          values={statuses}
         />
       {/if}
       {#if methods.length}
@@ -608,7 +608,7 @@
             methods = [];
           }}
           removeLabel="Remove method filter"
-          value={methods.join(", ")}
+          values={methods}
         />
       {/if}
       <Button

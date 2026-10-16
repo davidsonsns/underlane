@@ -26,12 +26,15 @@ fn imports_files_and_folders_once() {
     assert_eq!(r.added.len(), 1, "{r:?}");
     assert_eq!(r.failed.len(), 1);
     assert!(r.failed[0].1.contains("not valid YAML"));
-    let t = &db.tunnels().unwrap()[0];
+    let mut t = db.tunnels().unwrap().remove(0);
     assert_eq!(t.name, "shop");
-    assert!(!t.inspect, "inspection is off by default");
+    assert!(t.inspect, "inspection is on by default for imported projects");
     assert_eq!(db.groups().unwrap()[0].name, "shop");
 
+    t.inspect = false;
+    db.upsert_tunnel(&t).unwrap();
     let again = import_configs(&db, &[shop], "info");
     assert!(again.added.is_empty());
     assert_eq!(again.existing.len(), 1);
+    assert_eq!(db.tunnel(&t.id).unwrap(), Some(t));
 }

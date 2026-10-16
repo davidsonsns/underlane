@@ -86,7 +86,7 @@ pub fn import_configs(db: &Db, paths: &[PathBuf], default_loglevel: &str) -> Imp
                 kind: TunnelKind::Config,
                 config_path: Some(key.clone()),
                 origin_url: None,
-                inspect: false,
+                inspect: true,
                 autostart: false,
                 loglevel: default_loglevel.to_string(),
                 created_at: now_ms(),

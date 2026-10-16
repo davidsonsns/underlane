@@ -3,6 +3,7 @@
   import { openUrl } from "@tauri-apps/plugin-opener";
   import { DropdownMenu } from "bits-ui";
   import { type Snippet, untrack } from "svelte";
+  import Tip from "$lib/components/app/Tip.svelte";
   import { Badge } from "$lib/components/ui/badge/index.js";
   import { Button } from "$lib/components/ui/button/index.js";
   import {
@@ -15,7 +16,7 @@
   } from "$lib/components/ui/dialog/index.js";
   import { Input } from "$lib/components/ui/input/index.js";
   import { Label } from "$lib/components/ui/label/index.js";
-  import { menuContent, menuItem } from "$lib/components/ui/mac";
+  import { kbRing, menuContent, menuItem } from "$lib/components/ui/mac";
   import { Spinner } from "$lib/components/ui/spinner/index.js";
   import {
     DNS_CHECK_INTERVAL_MS,
@@ -194,6 +195,18 @@
     missing: "DNS missing",
     unknown: "DNS target unverified",
   };
+  const label = $derived.by(() => {
+    if (busy === "creating") {
+      return "Creating DNS record…";
+    }
+    if (busy === "connecting") {
+      return "Connecting DNS…";
+    }
+    return result ? labels[result.status] : "DNS";
+  });
+  const explanation = $derived(
+    result?.message || "Checking this hostname’s DNS record…"
+  );
 </script>
 
 {#snippet dnsTokenDialog()}
@@ -283,18 +296,43 @@
     class="inline-flex items-center"
     role="status"
   >
-    <Badge variant={result ? variants[result.status] : "default"}>
-      {#if busy === "creating"}
-        Creating DNS record…
-      {:else if busy === "connecting"}
-        Connecting DNS…
-      {:else}
-        {result ? labels[result.status] : "DNS"}
-      {/if}
-      {#if busy !== null || !result}
-        <Spinner aria-hidden="true" class="text-current" role="presentation" />
-      {/if}
-    </Badge>
+    <Tip side="top" text={explanation}>
+      {#snippet children({
+        props,
+      })}
+        <button
+          {...props}
+          aria-label="{label} for {hostname}"
+          class="inline-flex cursor-help rounded-[4px] {kbRing}"
+          type="button"
+        >
+          <Badge variant={result ? variants[result.status] : "default"}>
+            {label}
+            {#if busy !== null || !result}
+              <Spinner
+                aria-hidden="true"
+                class="text-current"
+                role="presentation"
+              />
+            {/if}
+          </Badge>
+        </button>
+      {/snippet}
+      {#snippet content()}
+        <div
+          class="grid max-w-72 gap-2 p-2 text-xs leading-relaxed wrap-anywhere"
+        >
+          <div>
+            <p class="font-medium">{label}</p>
+            <p class="text-2xs text-muted-foreground">{hostname}</p>
+          </div>
+          <p>{explanation}</p>
+          <p class="border-t border-border pt-2 text-2xs text-muted-foreground">
+            Use “Check DNS” in the ⋯ menu to refresh.
+          </p>
+        </div>
+      {/snippet}
+    </Tip>
   </span>
   {@render service()}
   <DropdownMenu.Root>

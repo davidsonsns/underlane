@@ -73,6 +73,7 @@ fn previews_routes_without_secrets_and_preserves_existing_source() {
     let directory = tempfile::tempdir().unwrap();
     let path = source(directory.path());
     let preview = preview(&path).unwrap();
+    assert_eq!(preview.name, "source");
     assert_eq!(preview.path, path.to_string_lossy());
     assert_eq!(preview.routes.len(), 2);
     assert_eq!(preview.routes[0].hostname.as_deref(), Some("app.example.com"));
@@ -81,12 +82,13 @@ fn previews_routes_without_secrets_and_preserves_existing_source() {
     let project = create(&db, "  My  project  ", "", Some(&path), None, "info").unwrap();
     assert_eq!(project.name, "My project");
     assert_eq!(project.group_id, None);
-    assert!(!project.autostart && !project.inspect);
+    assert!(!project.autostart);
+    assert!(project.inspect);
     assert_eq!(std::fs::read_to_string(&path).unwrap(), SOURCE);
     let config = underlane_core::config::TunnelConfig::load(&path).unwrap();
     assert_eq!(config.credentials_file.unwrap(), directory.path().join("./credentials.json"));
     assert!(db.groups().unwrap().is_empty());
-    assert!(db.tunnel(&project.id).unwrap().is_some());
+    assert_eq!(db.tunnel(&project.id).unwrap(), Some(project));
 }
 
 #[test]
@@ -158,6 +160,7 @@ fn group_membership_and_projects_persist_after_reload() {
     let database = directory.path().join("test.db");
     let db = Db::open(&database).unwrap();
     let first = create(&db, "First", "  Client  work ", None, Some(directory.path()), "debug").unwrap();
+    assert!(first.inspect);
     let second = create(&db, "Second", "client work", None, Some(directory.path()), "info").unwrap();
     let third = create(&db, "Third", "  ", None, Some(directory.path()), "info").unwrap();
     assert_eq!(first.group_id, second.group_id);

@@ -358,8 +358,8 @@ impl Db {
         tunnel.sort = tx.query_row("SELECT COALESCE(MAX(sort), -1) + 1 FROM tunnels", [], |r| r.get(0))?;
         tx.execute(
             "INSERT INTO tunnels(id, group_id, name, kind, config_path, origin_url, inspect, autostart, loglevel, created_at, sort)
-             VALUES (?1, ?2, ?3, 'config', ?4, NULL, 0, 0, ?5, ?6, ?7)",
-            params![tunnel.id, tunnel.group_id, tunnel.name, tunnel.config_path, tunnel.loglevel, tunnel.created_at, tunnel.sort],
+             VALUES (?1, ?2, ?3, 'config', ?4, NULL, ?5, 0, ?6, ?7, ?8)",
+            params![tunnel.id, tunnel.group_id, tunnel.name, tunnel.config_path, tunnel.inspect, tunnel.loglevel, tunnel.created_at, tunnel.sort],
         )?;
         tx.commit()?;
         Ok(tunnel)

@@ -79,14 +79,16 @@
     {#snippet icon()}
       <Braces />
     {/snippet}
-    <Input
-      aria-label="Search method options"
-      class="mb-1"
-      onkeydown={filterSearchKeys}
-      placeholder="Filter method…"
-      bind:ref={methodInput}
-      bind:value={methodSearch}
-    />
+    {#snippet search()}
+      <Input
+        aria-label="Search method options"
+        class="mb-1 shrink-0 border-0 bg-fill"
+        onkeydown={filterSearchKeys}
+        placeholder="Filter method…"
+        bind:ref={methodInput}
+        bind:value={methodSearch}
+      />
+    {/snippet}
     {#each methodGroups as group (group.label)}
       {#if group.values.length}
         <DropdownMenu.Group>
@@ -135,14 +137,16 @@
     {#snippet icon()}
       <CircleDot />
     {/snippet}
-    <Input
-      aria-label="Search status options"
-      class="mb-1"
-      onkeydown={filterSearchKeys}
-      placeholder="Filter status…"
-      bind:ref={statusInput}
-      bind:value={statusSearch}
-    />
+    {#snippet search()}
+      <Input
+        aria-label="Search status options"
+        class="mb-1 shrink-0 border-0 bg-fill"
+        onkeydown={filterSearchKeys}
+        placeholder="Filter status…"
+        bind:ref={statusInput}
+        bind:value={statusSearch}
+      />
+    {/snippet}
     {#each statusGroups as group (group.code)}
       {@const options = statusOptions.filter(
         ([code]) => Math.floor(code / 100) === group.code

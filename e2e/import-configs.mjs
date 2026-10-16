@@ -24,6 +24,11 @@ try {
         return [
           { imported: m.imported ?? false, name: "Available", path },
           {
+            imported: m.imported ?? false,
+            name: "newlycitizen",
+            path: "/synthetic/.cloudflared/underlane/newlycitizen.yml",
+          },
+          {
             imported: true,
             name: "Used",
             path: "/synthetic/.cloudflared/used.yml",
@@ -31,7 +36,13 @@ try {
         ];
       }
       if (cmd === "preview_project_config") {
+        const names = {
+          [path]: "Available",
+          "/synthetic/.cloudflared/underlane/newlycitizen.yml": "newlycitizen",
+          "/synthetic/custom.yml": "custom",
+        };
         return {
+          name: names[args.path],
           path: args.path,
           routes: [
             {
@@ -67,6 +78,25 @@ try {
     "Available"
   );
   await picker.click();
+  await page
+    .getByRole("option", { name: "underlane/newlycitizen.yml" })
+    .click();
+  await page.waitForFunction(
+    () =>
+      !document.querySelector('[role="dialog"] [data-slot="select-trigger"]')
+        .disabled
+  );
+  assert.equal(
+    await dialog
+      .getByRole("textbox", { exact: true, name: "Name" })
+      .inputValue(),
+    "newlycitizen",
+    "Changing configuration updates the project name"
+  );
+  await picker.click();
+  await option.click();
+  await dialog.getByText("app.example.com", { exact: true }).waitFor();
+  await picker.click();
   await page.getByRole("option", { name: "Browse files…" }).click();
   await page.waitForFunction(
     () =>
@@ -76,6 +106,13 @@ try {
   assert.equal(
     await picker.textContent().then((text) => text.trim()),
     "available.yaml"
+  );
+  assert.equal(
+    await dialog
+      .getByRole("textbox", { exact: true, name: "Name" })
+      .inputValue(),
+    "Available",
+    "Reselecting restores the config name and cancelling Browse preserves it"
   );
   await picker.click();
   await page
@@ -122,9 +159,16 @@ try {
   await page.getByRole("option", { name: "Browse files…" }).click();
   await dialog.getByText("app.example.com", { exact: true }).waitFor();
   assert.equal((await picker.textContent()).trim(), "custom.yml");
+  assert.equal(
+    await dialog
+      .getByRole("textbox", { exact: true, name: "Name" })
+      .inputValue(),
+    "custom",
+    "Browsing for a configuration fills the project name"
+  );
   assert.deepEqual(errors, []);
   console.log(
-    "Config chooser UI passed: unused selection, preview, cancellation, reset/reselect, create, no-candidates menu, and browse."
+    "Config chooser UI passed: unused selection, name updates, preview, cancellation, reset/reselect, create, no-candidates menu, and browse."
   );
 } finally {
   await browser.close();

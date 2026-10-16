@@ -40,6 +40,7 @@
     shortcut,
     side = "bottom",
     disabled = false,
+    content,
     children,
   }: {
     text: string;
@@ -47,6 +48,8 @@
     shortcut?: string;
     side?: "top" | "right" | "bottom" | "left";
     disabled?: boolean;
+    /** Rich detail in place of the plain text label. */
+    content?: Snippet;
     children: Snippet<[{ props: Record<string, unknown> }]>;
   } = $props();
 
@@ -90,7 +93,11 @@
   {#if Content}
     <!-- 8px keeps tooltips inside the 360x500 popover window. -->
     <Content collisionPadding={8} {side}>
-      {text}
+      {#if content}
+        {@render content()}
+      {:else}
+        {text}
+      {/if}
       {#if shortcut}
         <Kbd class="ms-2">{shortcut}</Kbd>
       {/if}

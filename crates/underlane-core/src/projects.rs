@@ -30,6 +30,7 @@ pub struct ProjectRoute {
 
 #[derive(Debug, Serialize, PartialEq)]
 pub struct ProjectConfigPreview {
+    pub name: String,
     pub path: String,
     pub routes: Vec<ProjectRoute>,
 }
@@ -81,6 +82,7 @@ fn load(path: &Path) -> anyhow::Result<TunnelConfig> {
 pub fn preview(path: &Path) -> anyhow::Result<ProjectConfigPreview> {
     let config = load(path)?;
     Ok(ProjectConfigPreview {
+        name: config.display_name(),
         path: config.source.to_string_lossy().into_owned(),
         routes: config.ingress.into_iter().map(|rule| ProjectRoute {
             hostname: rule.hostname.map(|s| crate::secret::redact_text(&s)),
@@ -194,7 +196,7 @@ pub fn create(db: &Db, name: &str, group: &str, config_path: Option<&Path>, dire
     let tunnel = Tunnel {
         id: uuid::Uuid::new_v4().to_string(), group_id: None, name, kind: TunnelKind::Config,
         config_path: Some(path.to_string_lossy().into_owned()), origin_url: None,
-        inspect: false, autostart: false, loglevel: loglevel.into(),
+        inspect: true, autostart: false, loglevel: loglevel.into(),
         created_at: crate::proxy::now_ms(), sort: 0,
     };
     let result = db.register_project(tunnel, group.as_deref());

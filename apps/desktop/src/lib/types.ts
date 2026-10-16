@@ -183,6 +183,7 @@ export interface Candidate {
 }
 
 export interface ProjectConfigPreview {
+  name: string;
   path: string;
   routes: { hostname: string | null; path: string | null; service: string }[];
 }

@@ -276,7 +276,7 @@
             levels = [];
           }}
           removeLabel="Remove level filter"
-          value={levels.join(", ")}
+          values={levels}
         />
       {/if}
       <FilterChip

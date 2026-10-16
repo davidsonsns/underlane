@@ -138,10 +138,7 @@
         if (alive) {
           preview = result;
           chosenPath = result.path;
-          if (!project.name.trim()) {
-            project.name =
-              candidates.find((file) => file.path === path)?.name ?? "";
-          }
+          project.name = result.name;
         }
       } catch (e) {
         if (alive) {
