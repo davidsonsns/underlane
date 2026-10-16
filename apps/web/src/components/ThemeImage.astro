@@ -1,0 +1,40 @@
+---
+import { Image } from "astro:assets";
+import type { ImageMetadata } from "astro";
+
+interface Props {
+  light: ImageMetadata;
+  dark: ImageMetadata;
+  alt: string;
+  eager?: boolean;
+  class?: string;
+  sizes?: string;
+}
+
+const { light, dark, alt, eager = false, sizes = "(max-width: 768px) 100vw, 1120px" } = Astro.props;
+---
+
+<div class:list={["theme-image", Astro.props.class]}>
+  <Image
+    class="light-image"
+    src={light}
+    alt={alt}
+    format="webp"
+    quality={88}
+    widths={[480, 800, 1200, 2400].filter((width) => width <= light.width)}
+    sizes={sizes}
+    loading={eager ? "eager" : "lazy"}
+    fetchpriority={eager ? "high" : "auto"}
+  />
+  <Image
+    class="dark-image"
+    src={dark}
+    alt={alt}
+    format="webp"
+    quality={88}
+    widths={[480, 800, 1200, 2400].filter((width) => width <= dark.width)}
+    sizes={sizes}
+    loading={eager ? "eager" : "lazy"}
+    fetchpriority={eager ? "high" : "auto"}
+  />
+</div>

@@ -9,6 +9,8 @@
   "files": {
     "includes": [
       "apps/desktop/src/**",
+      "apps/web/src/styles/**",
+      "apps/web/scripts/**",
       "e2e/**",
       "scripts/**",
       "*.{ts,js,json,jsonc,html}",

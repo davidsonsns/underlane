@@ -5,8 +5,11 @@
   "scripts": {
     "analyze": "fallow --fail-on-issues",
     "build": "pnpm --filter underlane build",
+    "build:web": "pnpm --filter @underlane/web build",
     "check": "pnpm --filter underlane check",
+    "check:web": "pnpm --filter @underlane/web check",
     "dev": "pnpm --filter underlane dev",
+    "dev:web": "pnpm --filter @underlane/web dev",
     "fix": "ultracite fix",
     "lint": "ultracite check",
     "tauri": "pnpm --filter underlane tauri",

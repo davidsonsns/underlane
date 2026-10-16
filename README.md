@@ -118,6 +118,7 @@ section. Drag Underlane's circular Lane Cut icon into the visible part.
 
 ```text
 apps/desktop/          Svelte frontend, app configuration, and src-tauri shell
+apps/web/              Astro landing page and product screenshot fixtures
 crates/underlane-core/ Shared Rust core
 scripts/               Native build and verification helpers
 e2e/                   Desktop end-to-end checks
@@ -128,6 +129,23 @@ Run the documented commands from the repository root. The pnpm workspace owns
 The Cargo workspace shares its lockfile and root `target/` directory across
 `crates/underlane-core` and `apps/desktop/src-tauri`. Frontend output lives in
 `apps/desktop/dist`; app bundles still land in `target/`.
+
+### Landing page
+
+The Astro site in `apps/web` uses Node.js 22.22 or later. From the repository root:
+
+```sh
+pnpm dev:web       # Local landing page at http://127.0.0.1:4321
+pnpm check:web     # Astro and TypeScript diagnostics
+pnpm build:web     # Static output in apps/web/dist
+```
+
+`pnpm --filter @underlane/web screenshots` refreshes the light and dark product
+images by launching the real Svelte UI with synthetic Tauri data. It uses the
+workspace's Playwright Chromium installation (`pnpm exec playwright install chromium`
+if needed), starts a temporary Vite server, and captures four sample projects,
+requests, logs, and the menu bar panel. It does not connect to Cloudflare or use
+your app data. Browser captures omit native macOS window controls.
 
 ## Dev loop
 

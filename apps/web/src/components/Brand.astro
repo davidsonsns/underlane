@@ -1,0 +1,12 @@
+---
+import mark from "../../../desktop/src-tauri/icons/logo.svg?raw";
+
+interface Props {
+  class?: string;
+}
+---
+
+<span class:list={["brand", Astro.props.class]}>
+  <span class="brand-mark" aria-hidden="true" set:html={mark} />
+  <span>Underlane</span>
+</span>
