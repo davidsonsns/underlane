@@ -138,6 +138,7 @@ The Astro site in `apps/web` uses Node.js 22.22 or later. From the repository ro
 pnpm dev:web       # Local landing page at http://127.0.0.1:4321
 pnpm check:web     # Astro and TypeScript diagnostics
 pnpm build:web     # Static output in apps/web/dist
+pnpm --filter @underlane/web test # Motion, slideshow, reduced-motion, and no-JavaScript checks
 ```
 
 `pnpm --filter @underlane/web screenshots` refreshes the light and dark product

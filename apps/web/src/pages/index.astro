@@ -18,12 +18,13 @@ import "../styles/global.css";
 const repository = "https://github.com/davidsonsns/underlane";
 const installCommand = `git clone ${repository}.git\ncd underlane\nmake install`;
 const previews = [
+  { id: "requests", title: "Request inspector", icon: Braces, light: requestsLight, dark: requestsDark, alt: "Underlane request inspector showing a sample API request and its JSON response", caption: "Request and response headers, bodies, status, and timing. Right where you're building." },
   { id: "projects", title: "Projects", icon: Folder, light: projectsLight, dark: projectsDark, alt: "Underlane projects dashboard with sample local apps and their tunnel status", caption: "A home for every project. A clear view of every tunnel." },
-  { id: "requests", title: "Request inspector", icon: Braces, light: requestsLight, dark: requestsDark, alt: "Underlane request inspector showing a sample API request and its JSON response", caption: "Follow a request from headers to response, without leaving the app." },
   { id: "logs", title: "Live logs", icon: Radio, light: logsLight, dark: logsDark, alt: "Underlane live logs showing sample tunnel connections and activity", caption: "See what your tunnels are doing. Find what needs your attention." },
 ];
 const questions = [
   { question: "What is Underlane?", answer: "Underlane is a macOS menu bar app for Cloudflare Tunnels. It manages the cloudflared connector so you can start and stop tunnels, share local apps, and see their activity from one place." },
+  { question: "Is Underlane free?", answer: "Yes. Underlane is 100% free and open source, including request inspection. There are no paid tiers or subscriptions for the app. You can browse the source code on GitHub." },
   { question: "Do I need a Cloudflare account?", answer: "You can start a quick tunnel without an account. It gives your local service a temporary public URL that changes when the tunnel restarts. To use your own domain, connect your Cloudflare account and set up a project tunnel." },
   { question: "Can I use my existing tunnels?", answer: "Yes. Load an existing cloudflared YAML config or use a tunnel token. Config files stay in their original location. You can manage supported hostname rules in the app, with a backup created when you save changes." },
   { question: "What can I inspect?", answer: "Turn on inspection for quick tunnels or supported HTTP and HTTPS services in locally managed config tunnels. View request and response headers, JSON, raw bodies, and timing, or copy a request as curl. Token tunnels and some advanced config rules do not support inspection." },
@@ -36,10 +37,10 @@ const questions = [
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="description" content="Your Cloudflare tunnels, under control. Underlane is a macOS menu bar app to share local apps, manage tunnels, and inspect requests." />
+    <meta name="description" content="Request logs for your Cloudflare tunnels. Inspect headers, bodies, responses, and timing with Underlane, a 100% free and open source macOS app." />
     <meta name="theme-color" content="#fafafa" />
     <meta property="og:title" content="Underlane. Your tunnels, under control." />
-    <meta property="og:description" content="A little macOS app for the work between localhost and live. Manage Cloudflare tunnels from your menu bar." />
+    <meta property="og:description" content="See what came through your Cloudflare tunnel. Request and response inspection, tunnel management, and live logs. 100% free and open source for macOS." />
     <meta property="og:type" content="website" />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <title>Underlane. Your tunnels, under control.</title>
@@ -82,23 +83,24 @@ const questions = [
     <main id="main">
       <section class="hero container" aria-labelledby="hero-title">
         <div class="hero-copy">
+          <a class="hero-source" href={repository}>100% free and open source</a>
           <h1 id="hero-title">Your tunnels.<br /><span>Under control.</span></h1>
-          <p>Your Cloudflare tunnels, managed from the menu bar. Share local apps, inspect requests, and keep your terminal for building.</p>
+          <p>Request logs for your Cloudflare tunnels. Inspect headers, bodies, and responses, all from one macOS app.</p>
           <div class="hero-actions">
             <a class="button" href="#download">Get Underlane <ArrowDownToLine size={16} stroke-width={1.7} /></a>
             <a class="text-link" href="#product">Explore the app <ArrowDown size={16} stroke-width={1.6} /></a>
           </div>
         </div>
 
-        <div class="product-preview" id="product">
+        <div class="product-preview" id="product" role="group" aria-roledescription="carousel" aria-label="Underlane app previews">
           <div class="preview-tabs" role="tablist" aria-label="Explore Underlane">
-            {previews.map(({ id, title, caption, icon: Icon }, index) => (
-              <button id={`tab-${id}`} class="preview-tab" role="tab" aria-selected={index === 0 ? "true" : "false"} aria-controls={`panel-${id}`} data-caption={caption} tabindex={index === 0 ? 0 : -1} type="button"><Icon size={15} stroke-width={1.6} />{title}</button>
-            ))}
+              {previews.map(({ id, title, caption, icon: Icon }, index) => (
+                <button id={`tab-${id}`} class="preview-tab" role="tab" aria-selected={index === 0 ? "true" : "false"} aria-controls={`panel-${id}`} data-caption={caption} tabindex={index === 0 ? 0 : -1} type="button"><Icon size={15} stroke-width={1.6} />{title}<span class="preview-progress" aria-hidden="true"></span></button>
+              ))}
           </div>
           <div class="preview-stage">
             {previews.map(({ id, light, dark, alt }, index) => (
-              <div class="preview-panel" id={`panel-${id}`} role="tabpanel" aria-labelledby={`tab-${id}`} tabindex="0" hidden={index !== 0}>
+              <div class:list={["preview-panel", { "is-active": index === 0 }]} id={`panel-${id}`} role="tabpanel" aria-labelledby={`tab-${id}`} tabindex="0" hidden={index !== 0} inert={index !== 0} aria-hidden={index === 0 ? undefined : "true"}>
                 <ThemeImage light={light} dark={dark} alt={alt} eager={index === 0} />
               </div>
             ))}
@@ -110,7 +112,17 @@ const questions = [
         </div>
       </section>
 
-      <section class="menubar-section section container" aria-labelledby="menubar-title">
+      <section class="details-section container" aria-label="See requests and responses through your tunnel" data-reveal>
+        <div class="details-intro"><h2>Your tunnel is up.<br /><span>See what came through.</span></h2><p class="section-description">Check a webhook payload, inspect an API call, or track down an unexpected response. See what hit your app and what it sent back.</p></div>
+        <div class="detail-grid">
+          <article><Braces size={22} stroke-width={1.4} /><h3>Request logs, with the details.</h3><p>Inspect request and response headers, bodies, status, and timing. Read formatted JSON or copy a request as curl.</p><button class="inline-link" type="button" data-open-preview="requests">Explore the request inspector <ArrowRight size={15} /></button></article>
+          <article><Radio size={22} stroke-width={1.4} /><h3>Tunnel logs, in one place.</h3><p>Follow connections and errors as they happen. Filter by level, search the output, and see when a tunnel needs attention.</p><button class="inline-link" type="button" data-open-preview="logs">See live logs <ArrowRight size={15} /></button></article>
+          <article><Folder size={22} stroke-width={1.4} /><h3>Every project in its place.</h3><p>Group your tunnels, use your existing configs, and manage public hostnames without hunting through YAML files.</p></article>
+          <article><Check size={22} stroke-width={1.4} /><h3>Your setup comes with you.</h3><p>Load configs where they already live. Check DNS, spot external config changes, and keep control of when to restart.</p></article>
+        </div>
+      </section>
+
+      <section class="menubar-section section container" aria-labelledby="menubar-title" data-reveal>
         <div class="menubar-copy">
           <p class="eyebrow">Less tunnel management. More building.</p>
           <h2 id="menubar-title">A little app.<br /><span>A lot off your mind.</span></h2>
@@ -127,17 +139,7 @@ const questions = [
         </figure>
       </section>
 
-      <section class="details-section container" aria-label="Built for your development workflow">
-        <div class="details-intro"><h2>All the useful parts.<br /><span>None of the juggling.</span></h2><p class="section-description">A clear view of what's connected, what's coming through, and what needs a second look.</p></div>
-        <div class="detail-grid">
-          <article><Folder size={22} stroke-width={1.4} /><h3>Every project in its place.</h3><p>Group your tunnels, use your existing configs, and manage public hostnames without hunting through YAML files.</p></article>
-          <article><Braces size={22} stroke-width={1.4} /><h3>See the whole request.</h3><p>Inspect headers, read formatted JSON, and copy as curl. A built-in companion for debugging webhooks and local APIs.</p><button class="inline-link" type="button" data-open-preview="requests">Take a look <ArrowRight size={15} /></button></article>
-          <article><Radio size={22} stroke-width={1.4} /><h3>Know what's happening.</h3><p>Live logs, clear connection states, and useful failure messages. Crashed tunnels restart with backoff.</p><button class="inline-link" type="button" data-open-preview="logs">See live logs <ArrowRight size={15} /></button></article>
-          <article><Check size={22} stroke-width={1.4} /><h3>Your setup comes with you.</h3><p>Load configs where they already live. Check DNS, spot external config changes, and keep control of when to restart.</p></article>
-        </div>
-      </section>
-
-      <section class="workflow section container" id="workflow" aria-labelledby="workflow-title">
+      <section class="workflow section container" id="workflow" aria-labelledby="workflow-title" data-reveal>
         <h2 id="workflow-title">From localhost to a link.<br /><span>With fewer things in between.</span></h2>
         <ol class="workflow-steps">
           <li><span class="step-marker"><ArrowDownToLine size={18} stroke-width={1.6} /></span><h3>Make yourself at home.</h3><p>Open Underlane. The guided setup finds cloudflared or helps you install a verified copy.</p></li>
@@ -146,17 +148,17 @@ const questions = [
         </ol>
       </section>
 
-      <section class="faq-section section container" id="faq" aria-labelledby="faq-title">
+      <section class="faq-section section container" id="faq" aria-labelledby="faq-title" data-reveal>
         <div><h2 id="faq-title">A few good<br /> <span>questions.</span></h2><a class="text-link" href={`${repository}#readme`}>Read the documentation <ArrowUpRight size={15} /></a></div>
         <div class="questions">
-          {questions.map(({ question, answer }) => <details class="question"><summary>{question}<ChevronDown size={17} stroke-width={1.6} /></summary><p>{answer}</p></details>)}
+          {questions.map(({ question, answer }) => <details class="question" name="underlane-faq"><summary>{question}<ChevronDown size={17} stroke-width={1.6} /></summary><div class="question-answer"><p>{answer}</p></div></details>)}
         </div>
       </section>
 
-      <section class="download-section container" id="download" aria-labelledby="download-title">
+      <section class="download-section container" id="download" aria-labelledby="download-title" data-reveal>
         <Image class="app-icon" src={appIcon} alt="Underlane app icon" width={80} height={80} format="webp" />
         <h2 id="download-title">Let your tunnels<br /><span>take the background.</span></h2>
-        <p>Bring a little order to your local development.</p>
+        <p>100% free and open source. Request inspection included.</p>
         <a class="button" href={`${repository}#setup`}>Build Underlane for macOS <ArrowUpRight size={16} /></a>
         <p class="availability">Available from source. Requires macOS 13.3 or later.</p>
         <details class="source-install">
@@ -170,11 +172,38 @@ const questions = [
 
     <footer class="site-footer container">
       <div class="footer-main"><a class="home-link" href="#" aria-label="Underlane home"><Brand /></a><div><a href={repository}>GitHub <ArrowUpRight size={13} /></a><a href={`${repository}#readme`}>Documentation <ArrowUpRight size={13} /></a><a href={`${repository}/issues`}>Feedback <ArrowUpRight size={13} /></a></div></div>
-      <div class="footer-bottom"><p>A little app for the work between localhost and live.</p><p>Independent software. Not affiliated with Cloudflare.</p></div>
+      <div class="footer-bottom"><p>100% free and open source. Built for macOS.</p><p>Independent software. Not affiliated with Cloudflare.</p></div>
     </footer>
 
     <script>
       const root = document.documentElement;
+      const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)");
+      const reveals = [...document.querySelectorAll<HTMLElement>("[data-reveal]")];
+      let revealObserver: IntersectionObserver | undefined;
+      let previewTransition: Animation | undefined;
+
+      if (!reducedMotion.matches && "IntersectionObserver" in window) {
+        revealObserver = new IntersectionObserver((entries) => {
+          for (const entry of entries) {
+            if (!entry.isIntersecting) continue;
+            entry.target.classList.remove("reveal-pending");
+            revealObserver?.unobserve(entry.target);
+          }
+        }, { rootMargin: "0px 0px -24px 0px" });
+        for (const section of reveals) {
+          // Keep restored scroll positions and direct section links visible on arrival.
+          if (section.getBoundingClientRect().top < innerHeight) continue;
+          section.classList.add("reveal-pending");
+          revealObserver.observe(section);
+        }
+      }
+      reducedMotion.addEventListener("change", () => {
+        if (!reducedMotion.matches) return;
+        revealObserver?.disconnect();
+        for (const section of reveals) section.classList.remove("reveal-pending");
+        previewTransition?.finish();
+      });
+
       const themeButton = document.querySelector<HTMLButtonElement>(".theme-toggle");
       const syncThemeLabel = () => {
         const label = `Switch to ${root.dataset.theme === "dark" ? "light" : "dark"} theme`;
@@ -199,17 +228,84 @@ const questions = [
 
       const tabs = [...document.querySelectorAll<HTMLButtonElement>(".preview-tab")];
       const panels = [...document.querySelectorAll<HTMLElement>(".preview-panel")];
+      const rotationDuration = 6000;
+      let rotationTimer: ReturnType<typeof setTimeout> | undefined;
+      let rotationClock: Animation | undefined;
+      let displayedPanel = panels.find((panel) => !panel.hidden);
+
+      const resetRotation = () => {
+        clearTimeout(rotationTimer);
+        rotationClock?.cancel();
+        rotationClock = undefined;
+        const progress = document.querySelector<HTMLElement>('.preview-tab[aria-selected="true"] .preview-progress');
+        if (progress && !reducedMotion.matches) {
+          rotationClock = progress.animate([{ transform: "scaleX(0)" }, { transform: "scaleX(1)" }], {
+            duration: rotationDuration,
+            easing: "linear",
+            fill: "forwards",
+          });
+        }
+        rotationTimer = setTimeout(() => {
+          const current = tabs.findIndex((tab) => tab.getAttribute("aria-selected") === "true");
+          selectTab(tabs[(current + 1) % tabs.length]);
+        }, rotationDuration);
+      };
       const selectTab = (tab: HTMLButtonElement) => {
+        const next = panels.find((panel) => panel.id === tab.getAttribute("aria-controls"));
+        if (!next) return;
+        if (next.classList.contains("is-active")) {
+          resetRotation();
+          return;
+        }
+        const previous = displayedPanel;
+        previewTransition?.cancel();
+        previewTransition = undefined;
+        const shouldAnimate = !reducedMotion.matches && previous !== undefined && previous !== next;
         for (const item of tabs) {
           item.setAttribute("aria-selected", String(item === tab));
           item.tabIndex = item === tab ? 0 : -1;
         }
-        for (const panel of panels) panel.hidden = panel.id !== tab.getAttribute("aria-controls");
+        for (const panel of panels) {
+          const selected = panel === next;
+          panel.classList.toggle("is-active", selected);
+          panel.hidden = !selected && !(shouldAnimate && panel === previous);
+          panel.inert = !selected;
+          if (selected) panel.removeAttribute("aria-hidden");
+          else panel.setAttribute("aria-hidden", "true");
+        }
         const caption = document.querySelector("#preview-caption");
         if (caption) caption.textContent = tab.dataset.caption ?? "";
+        if (!shouldAnimate) {
+          displayedPanel = next;
+          resetRotation();
+          return;
+        }
+        const animation = next.animate([{ opacity: 0 }, { opacity: 1 }], {
+          duration: 280,
+          easing: "ease-out",
+        });
+        animation.pause();
+        previewTransition = animation;
+        resetRotation();
+        // Hold the old screenshot underneath until the selected theme image is ready.
+        const images = [...next.querySelectorAll<HTMLImageElement>("img")].filter((image) => image.getClientRects().length > 0);
+        Promise.all(images.map((image) => image.decode().catch(() => {}))).then(() => {
+          if (previewTransition === animation) animation.play();
+        });
+        animation.finished.then(() => {
+          if (previewTransition !== animation) return;
+          previous.hidden = true;
+          displayedPanel = next;
+          previewTransition = undefined;
+        }, () => { /* A newer tab selection cancels this transition. */ });
       };
+      reducedMotion.addEventListener("change", resetRotation);
+      resetRotation();
+
       for (const tab of tabs) {
-        tab.addEventListener("click", () => selectTab(tab));
+        tab.addEventListener("click", () => {
+          selectTab(tab);
+        });
         tab.addEventListener("keydown", (event) => {
           const current = tabs.indexOf(tab);
           const index = event.key === "ArrowRight" ? (current + 1) % tabs.length : event.key === "ArrowLeft" ? (current - 1 + tabs.length) % tabs.length : event.key === "Home" ? 0 : event.key === "End" ? tabs.length - 1 : -1;
@@ -224,7 +320,7 @@ const questions = [
           const tab = document.querySelector<HTMLButtonElement>(`#tab-${button.dataset.openPreview}`);
           if (!tab) return;
           selectTab(tab);
-          document.querySelector("#product")?.scrollIntoView({ behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "instant" : "smooth", block: "start" });
+          document.querySelector("#product")?.scrollIntoView({ behavior: reducedMotion.matches ? "instant" : "smooth", block: "start" });
           tab.focus({ preventScroll: true });
         });
       }
