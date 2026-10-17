@@ -7,7 +7,7 @@
 A free, open source macOS menu bar app for Cloudflare Tunnels, with a request inspector
 for your local apps.
 
-[Website and screenshots](https://underlane.app) · [Changelog](CHANGELOG.md) · [Architecture](ARCHITECTURE.md) · [Development](docs/development.md)
+[Website and screenshots](https://underlane.app) · [Changelog](CHANGELOG.md) · [Troubleshooting](TROUBLESHOOTING.md) · [Architecture](ARCHITECTURE.md) · [Development](docs/development.md)
 
 ## Motivation
 
@@ -37,9 +37,10 @@ Requires macOS 13.3 or later. Download a published DMG from
 Underlane into Applications. Each DMG supports Apple Silicon and Intel Macs.
 If no release is listed yet, build from source below.
 
-Downloaded builds are **ad-hoc signed and not notarized**. After trying to open the
-app, approve it in **System Settings → Privacy & Security → Open Anyway**, then confirm.
-See [Apple's instructions](https://support.apple.com/en-us/102445).
+Downloaded builds are **ad-hoc signed and not notarized**. If macOS shows
+**“Underlane” Not Opened**, follow the
+[first-launch troubleshooting steps](TROUBLESHOOTING.md#macos-blocks-underlane-on-first-launch)
+to approve the app.
 
 ### Build from source
 

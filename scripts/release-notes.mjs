@@ -53,6 +53,8 @@ Open the DMG and drag Underlane into Applications.
 This build is **ad-hoc signed and not notarized**. After trying to open it,
 go to **System Settings → Privacy & Security → Open Anyway**, then confirm.
 See [Apple's instructions](https://support.apple.com/en-us/102445).
+For the warning dialog and a missing Open Anyway button, see
+[first-launch troubleshooting](https://github.com/davidsonsns/underlane/blob/main/TROUBLESHOOTING.md#macos-blocks-underlane-on-first-launch).
 `;
 }
 

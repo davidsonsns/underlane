@@ -61,7 +61,8 @@ DMG, then publish the draft when ready.
 
 The notes explain that builds are ad-hoc signed and not notarized. After the first
 blocked launch, users can approve Underlane in **System Settings → Privacy & Security →
-Open Anyway**. See [Apple's instructions](https://support.apple.com/en-us/102445).
+Open Anyway**. The [first-launch troubleshooting guide](../TROUBLESHOOTING.md#macos-blocks-underlane-on-first-launch)
+walks through the warning and approval steps.
 Users install future releases manually by replacing the app; Underlane has no auto-updater.
 
 For a failed build, rerun the failed job from Actions. If a draft was already created
