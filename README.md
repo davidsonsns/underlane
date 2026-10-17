@@ -7,7 +7,7 @@
 A free, open source macOS menu bar app for Cloudflare Tunnels, with a request inspector
 for your local apps.
 
-[Website and screenshots](https://underlane.app) · [Architecture](ARCHITECTURE.md) · [Development](docs/development.md)
+[Website and screenshots](https://underlane.app) · [Changelog](CHANGELOG.md) · [Architecture](ARCHITECTURE.md) · [Development](docs/development.md)
 
 ## Motivation
 
@@ -32,7 +32,18 @@ features came from everyday use.
 
 ## Setup
 
-Underlane is available from source. You need macOS 13.3 or later, Xcode command-line
+Requires macOS 13.3 or later. Download a published DMG from
+[GitHub Releases](https://github.com/davidsonsns/underlane/releases), open it, and drag
+Underlane into Applications. Each DMG supports Apple Silicon and Intel Macs.
+If no release is listed yet, build from source below.
+
+Downloaded builds are **ad-hoc signed and not notarized**. After trying to open the
+app, approve it in **System Settings → Privacy & Security → Open Anyway**, then confirm.
+See [Apple's instructions](https://support.apple.com/en-us/102445).
+
+### Build from source
+
+You need macOS 13.3 or later, Xcode command-line
 tools, Node.js 22.22+, pnpm 10.27.0, and [Rust](https://rustup.rs).
 
 Enable the pinned pnpm version with Corepack (install Corepack first if your Node
@@ -50,6 +61,8 @@ open ~/Applications/Underlane.app
 `make install` builds the app and copies it to `~/Applications`, where launch at login
 can use it. To build without installing, run `make build`; the bundle lands in
 `target/release/bundle/macos/Underlane.app`.
+
+### First launch
 
 On first launch, Underlane finds your existing `cloudflared` or offers **Install for
 Underlane**, which downloads a verified official release for Apple Silicon or Intel

@@ -1,0 +1,73 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Universal macOS DMG
+    runs-on: macos-latest
+    timeout-minutes: 60
+    permissions:
+      contents: write
+    env:
+      APPLE_SIGNING_IDENTITY: "-"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "22"
+          cache: pnpm
+
+      - name: Install Rust targets
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+          rustup target add aarch64-apple-darwin x86_64-apple-darwin
+
+      - name: Validate version and prepare release notes
+        run: node scripts/release-notes.mjs "$GITHUB_REF_NAME" > "$RUNNER_TEMP/release-notes.md"
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Test and check frontend
+        run: |
+          pnpm test
+          pnpm run check
+
+      - name: Build DMG
+        run: pnpm tauri build --target universal-apple-darwin --bundles app,dmg --ci -- --locked
+
+      - name: Verify app bundle
+        run: |
+          app=target/universal-apple-darwin/release/bundle/macos/Underlane.app
+          architectures=" $(lipo -archs "$app/Contents/MacOS/Underlane") "
+          [[ "$architectures" == *" arm64 "* && "$architectures" == *" x86_64 "* ]]
+          codesign --verify --deep --strict --verbose=2 "$app"
+
+      - name: Create draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          assets=(target/universal-apple-darwin/release/bundle/dmg/*.dmg)
+          test "${#assets[@]}" -eq 1 && test -f "${assets[0]}"
+          gh release create "$GITHUB_REF_NAME" "${assets[0]}" \
+            --repo "$GITHUB_REPOSITORY" \
+            --verify-tag --draft \
+            --title "Underlane $GITHUB_REF_NAME" \
+            --notes-file "$RUNNER_TEMP/release-notes.md"

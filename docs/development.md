@@ -35,6 +35,7 @@ pnpm run test:scripts  # Harness and browser-mock tests without a native app
 `make install` replaces `~/Applications/Underlane.app`. Use that installed copy for
 launch at login. Build output is `target/release/bundle/macos/Underlane.app`.
 The release build uses ad-hoc signing; rebuilding can trigger another Keychain access prompt.
+For universal DMGs, GitHub Releases, and changelog maintenance, see [Releases](releases.md).
 
 Keep `pnpm run check` alongside linting because Biome's Svelte support is experimental.
 Biome skips generated components in `apps/desktop/src/lib/components/ui`; Fallow follows

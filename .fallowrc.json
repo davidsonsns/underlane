@@ -13,9 +13,11 @@
     "e2e/separate-tunnel.mjs",
     "scripts/login-item-check.mjs",
     "scripts/release-check.mjs",
+    "scripts/release-notes.mjs",
     "scripts/screenshots.mjs",
     "scripts/ui-shots.mjs",
     "scripts/lib/harness.test.mjs",
+    "scripts/lib/release-notes.test.mjs",
     "e2e/lib/browser.test.mjs"
   ],
   "ignorePatterns": ["target/**", "apps/desktop/src-tauri/gen/**", "output/**"],
