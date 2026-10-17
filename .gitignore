@@ -8,5 +8,4 @@ target/
 .scratch/
 .claude/worktrees/
 /apps/desktop/src-tauri/gen/schemas/
-/docs/screenshots/session-notes.txt
-/output/logo-proposals/*/app-icons/
+/output/

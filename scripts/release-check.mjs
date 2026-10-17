@@ -2,7 +2,7 @@
 // Manual-verification pass against the INSTALLED RELEASE build (no control server):
 // login-item registration, a login-style launch through LaunchServices, auto-start of a
 // tunnel, a public curl through it, then popover + dashboard + theme switching driven by real
-// clicks. Screenshots go to docs/screenshots/18-*.. and the system is restored afterwards.
+// clicks. Screenshots go to e2e/out/screenshots/18-*.. and the system is restored afterwards.
 //
 // usage: node scripts/release-check.mjs
 import { execFile, execFileSync, spawn } from "node:child_process";
@@ -18,6 +18,7 @@ import {
   click,
   openDashboard,
   revealMenuItem,
+  SHOTS,
   sh,
   toggleHiddenBar,
 } from "./lib/native.mjs";
@@ -29,7 +30,6 @@ const DB = join(
   homedir(),
   "Library/Application Support/com.davidsonsns.underlane/underlane.db"
 );
-const OUT = "docs/screenshots";
 const log = (m) => console.log(`[release-check] ${m}`);
 const sql = (q) => sh("sqlite3", ["-cmd", ".timeout 5000", DB, q]);
 const theme = () =>
@@ -187,7 +187,7 @@ try {
   if (!item || item.x < 0) {
     throw new Error("Underlane menu bar item is unavailable");
   }
-  captureMenuStrip(item, join(OUT, "18-release-menu-bar.png"));
+  captureMenuStrip(item, join(SHOTS, "18-release-menu-bar.png"));
   click(item.x + item.w / 2, 12);
   await sleep(1500);
   capture("19-release-popover.png", 300, 420);

@@ -1,8 +1,11 @@
 import { execFileSync } from "node:child_process";
+import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { captureWindow, sleep } from "./harness.mjs";
 
 const EXTRA = /^(\d+) x=(-?\d+) w=(\d+)/;
+export const SHOTS = "e2e/out/screenshots";
+mkdirSync(SHOTS, { recursive: true });
 export const sh = (command, args) =>
   execFileSync(command, args).toString().trim();
 export const windows = () =>
@@ -24,7 +27,7 @@ export const click = (x, y) =>
     String(Math.round(y)),
   ]);
 export const capture = (name, min = 300, max = 4000) =>
-  captureWindow(join("docs/screenshots", name), min, max);
+  captureWindow(join(SHOTS, name), min, max);
 function safeExtras(application) {
   try {
     return extras(application);

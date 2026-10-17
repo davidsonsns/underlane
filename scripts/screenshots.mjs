@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Drives the real app (debug build with the e2e control server) through the manual
-// verification scenarios and captures window-only screenshots into docs/screenshots/.
+// verification scenarios and captures window-only screenshots into e2e/out/screenshots/.
 //
 // usage: node scripts/screenshots.mjs target/debug/bundle/macos/Underlane.app
 import { execFileSync, spawn } from "node:child_process";
@@ -29,7 +29,7 @@ const app = resolve(
   process.argv[2] ?? "target/debug/bundle/macos/Underlane.app"
 );
 const bin = join(app, "Contents/MacOS/Underlane");
-const out = resolve("docs/screenshots");
+const out = resolve("e2e/out/screenshots");
 mkdirSync(out, { recursive: true });
 const CONTROL = 48_100 + Math.floor(Math.random() * 500);
 const dataDir = mkdtempSync(join(tmpdir(), "underlane-shots-"));

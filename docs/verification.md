@@ -2,8 +2,7 @@
 
 > Recorded before the app was renamed from Burrow to Underlane (2026-10-11). Paths, bundle ids and
 > log lines below are as they were at the time: `Burrow.app` is now `Underlane.app`, and
-> `com.davidsonsns.burrow` is now `com.davidsonsns.underlane`. These historical screenshots also
-> predate the Lane Cut logo selected on 2026-10-12 and show the original arch icon.
+> `com.davidsonsns.burrow` is now `com.davidsonsns.underlane`.
 
 Checks were done on this Mac on 2026-10-10: macOS 27.0.1, Apple Silicon, a 2560×1080 display,
 cloudflared 2026.9.1. Two builds were used:
@@ -12,10 +11,6 @@ cloudflared 2026.9.1. Two builds were used:
   end-to-end check and to drive the screenshot session (`scripts/screenshots.mjs`).
 - `make build`: the release build, installed to `~/Applications/Burrow.app`. Used for launch at
   login, auto-start and crash checks.
-
-Screenshots are window-only captures (`scripts/capture-window.swift`) or menu bar strips around
-Burrow's status item. The menu bar on this Mac is managed by Hidden Bar, which collapses new items.
-The scripts expand it for the capture and collapse it again afterwards.
 
 ## 1. End-to-end check (no Cloudflare account)
 
@@ -91,10 +86,6 @@ Notes on what the checks read:
 hostnames, and after import the tunnel shows every hostname → service mapping, parsed from its
 ingress rules.
 
-| Add sheet | Imported tunnel |
-| --- | --- |
-| ![](screenshots/01-import-sheet.png) | ![](screenshots/02-imported-config.png) |
-
 `example.yml` was **imported but never started**. That tunnel is already running on this Mac under the
 owner's own script (`cloudflared tunnel --config ~/.cloudflared/example.yml … run`, pid 48763). Burrow
 detects that case and refuses to start a second connector (decisions.md §3). The file's
@@ -105,35 +96,16 @@ modification time and contents were unchanged after import.
 Three quick tunnels ran at once, one with inspection on, plus traffic through the inspected one.
 The menu bar count read 3.
 
-| Menu bar | Popover |
-| --- | --- |
-| ![](screenshots/03-menu-bar-count.png) | ![](screenshots/04-popover-three-tunnels.png) |
-
-![Dashboard, dark](screenshots/05-dashboard-dark.png)
-![Requests, dark](screenshots/06-requests-dark.png)
-![Logs, dark](screenshots/07-logs-dark.png)
-
 ## 4. Theme switching, light and dark dashboards
 
 The theme was switched from Dark to Light through the Appearance setting. The native window
 appearance follows the theme too, so the sidebar and popover vibrancy match.
-
-| Dark | Light |
-| --- | --- |
-| ![](screenshots/08-settings-dark.png) | ![](screenshots/09-settings-light.png) |
-| ![](screenshots/05-dashboard-dark.png) | ![](screenshots/10-dashboard-light.png) |
-| ![](screenshots/06-requests-dark.png) | ![](screenshots/11-requests-light.png) |
-| ![](screenshots/04-popover-three-tunnels.png) | ![](screenshots/12-popover-light.png) |
 
 ## 5. Auto-starting tunnels
 
 `web` and `api` were marked **Start automatically**, and Burrow was quit. All cloudflared processes
 stopped with it ("after quit: 0 cloudflared processes left"). Burrow was then relaunched with no
 further input. `web` and `api` came up on their own, `docs` stayed stopped, and the menu bar read 2.
-
-| Popover after relaunch | Menu bar after relaunch |
-| --- | --- |
-| ![](screenshots/13-autostart-after-relaunch.png) | ![](screenshots/14-menu-bar-after-autostart.png) |
 
 This check found a real bug: starting tunnels from app setup panicked, because setup runs outside
 the Tokio runtime. It's fixed, and a regression test is in
@@ -150,9 +122,7 @@ used instead, as follows:
    automatically** on.
 2. `~/Applications/Burrow.app/Contents/MacOS/Burrow --login-item enable` registered the app via
    `SMAppService.mainApp`. Its status went from `not_found` to `enabled`. System Settings → General
-   → Login Items lists Burrow under **Open at Login** (and under Background App Activity):
-
-   ![](screenshots/15-login-items.png)
+   → Login Items lists Burrow under **Open at Login** (and under Background App Activity).
 
 3. With Burrow not running, it was started the way a login item is: through LaunchServices,
    with no arguments and detached from any terminal (`open -g ~/Applications/Burrow.app`). The
@@ -166,15 +136,11 @@ used instead, as follows:
    ```
 
    The auto-start tunnel came up by itself. Clicking the real status item showed it connected,
-   with a count of 1:
-
-   | Menu bar | Popover (opened by clicking the status item) |
-   | --- | --- |
-   | ![](screenshots/16-login-launch-menu-bar.png) | ![](screenshots/17-login-launch-popover.png) |
+   with a count of 1.
 
 ## 6b. Release-build pass (`node scripts/release-check.mjs`)
 
-To make sure the screenshots don't only come from the debug build, the **installed release build**
+To check more than the debug build, the **installed release build**
 (`~/Applications/Burrow.app`, which has no control server) was driven with real clicks:
 
 ```
@@ -198,19 +164,11 @@ To make sure the screenshots don't only come from the debug build, the **install
 The 404 is Python `http.server` (the origin) answering for a file it doesn't have. It shows the
 request went through the public URL, cloudflared, Burrow's proxy and the origin, and back.
 
-| Menu bar after login launch | Popover (auto-started tunnel) | Dashboard |
-| --- | --- | --- |
-| ![](screenshots/18-release-menu-bar.png) | ![](screenshots/19-release-popover.png) | ![](screenshots/20-release-dashboard.png) |
-
-| Settings: Light clicked | Dashboard, light | Settings: Dark clicked |
-| --- | --- | --- |
-| ![](screenshots/21-release-settings-light.png) | ![](screenshots/22-release-dashboard-light.png) | ![](screenshots/23-release-settings-dark.png) |
-
 ## 6c. The simulated login launch uses the same mechanism as a real login
 
 Apps that macOS opened at this Mac's last real login run as LaunchServices launchd jobs,
 `application.<bundle-id>.<n>`, with `/sbin/launchd` as their parent. Raycast and Warp are both in
-**Open at Login** (screenshot 15). Burrow, registered through `SMAppService` and launched the
+**Open at Login**. Burrow, registered through `SMAppService` and launched the
 login-item way, runs as exactly the same kind of job:
 
 ```
@@ -249,10 +207,6 @@ event. Run against the installed release build:
 [login-item-check] unregister: {"status":"not_registered","enabled":false,"message":null}
 ```
 
-| Menu bar | Popover: tunnel auto-started at login | Settings: "Opened by macOS at login" |
-| --- | --- | --- |
-| ![](screenshots/24-login-item-menu-bar.png) | ![](screenshots/25-login-item-popover.png) | ![](screenshots/26-login-item-settings.png) |
-
 ## 7. Crash safety and quitting
 
 - **App SIGKILLed:** `kill -9` on the app made the watchdog shim stop cloudflared within 1 s
@@ -273,42 +227,19 @@ Terminals were only used to *trigger* steps (the build, `open`, the `--login-ite
 and to inspect process trees.
 
 The screenshot session ran after a night of testing, and trycloudflare.com rate-limited new quick
-tunnels (`429`, error code 1015). The `web` tunnel in screenshots 05 and 10 shows "6 restarts".
+tunnels (`429`, error code 1015). The `web` tunnel showed "6 restarts".
 That is the crash backoff (1 s, 2 s, 4 s … 32 s) retrying until provisioning succeeded, which shows
 the restart-with-backoff behaviour working.
 
 ## 9. UI migration (Tailwind v4 + shadcn-svelte)
 
 The UI moved from per-component scoped CSS to Tailwind v4 and shadcn-svelte (Luma, tuned to macOS),
-one screen at a time (decisions.md §17). Both sets were taken the same way, by
+one screen at a time (decisions.md §17). Before and after screenshot sets were taken the same way, by
 `node scripts/ui-shots.mjs target/debug/bundle/macos/Burrow.app --label <name>` on the e2e debug
 build: two quick tunnels to local echo servers (one inspected), three requests, every view in each
 theme. Before is `72c52ce` (pre-migration), after is the end of Phase 3 (base.css deleted). The
 hostnames, ports and times differ between runs; the `system-*` shots follow the OS appearance
 (Dark for both sets).
-
-- Before: [`screenshots/ui-migration/baseline/`](screenshots/ui-migration/baseline/)
-- After: [`screenshots/ui-migration/final/`](screenshots/ui-migration/final/)
-
-| Before (light) | After (light) |
-| --- | --- |
-| ![](screenshots/ui-migration/baseline/light-tunnels.png) | ![](screenshots/ui-migration/final/light-tunnels.png) |
-| ![](screenshots/ui-migration/baseline/light-requests.png) | ![](screenshots/ui-migration/final/light-requests.png) |
-| ![](screenshots/ui-migration/baseline/light-logs.png) | ![](screenshots/ui-migration/final/light-logs.png) |
-| ![](screenshots/ui-migration/baseline/light-settings.png) | ![](screenshots/ui-migration/final/light-settings.png) |
-| ![](screenshots/ui-migration/baseline/light-add.png) | ![](screenshots/ui-migration/final/light-add.png) |
-| ![](screenshots/ui-migration/baseline/light-popover.png) | ![](screenshots/ui-migration/final/light-popover.png) |
-
-| Before (dark) | After (dark) |
-| --- | --- |
-| ![](screenshots/ui-migration/baseline/dark-tunnels.png) | ![](screenshots/ui-migration/final/dark-tunnels.png) |
-| ![](screenshots/ui-migration/baseline/dark-requests.png) | ![](screenshots/ui-migration/final/dark-requests.png) |
-| ![](screenshots/ui-migration/baseline/dark-logs.png) | ![](screenshots/ui-migration/final/dark-logs.png) |
-| ![](screenshots/ui-migration/baseline/dark-settings.png) | ![](screenshots/ui-migration/final/dark-settings.png) |
-| ![](screenshots/ui-migration/baseline/dark-add.png) | ![](screenshots/ui-migration/final/dark-add.png) |
-| ![](screenshots/ui-migration/baseline/dark-popover.png) | ![](screenshots/ui-migration/final/dark-popover.png) |
-
-Rows, top to bottom: Tunnels, Requests (a request selected), Logs, Settings, Add tunnel sheet, Menu bar popover.
 
 Checked on the final build: `npm run check` 0/0, `npm test`, `make test`, `make e2e` (`E2E PASSED`),
 and the keyboard paths (Tab through the sidebar and toolbar, the Add sheet's tabs and Escape, the
@@ -437,14 +368,6 @@ source aside produced an unreadable warning while the child remained connected; 
 actions produced visible missing-file errors. The fixture was restored, and the connector was
 stopped and the QA app exited after verification. Normal installed app settings were untouched.
 
-| Before P1 | After an external edit (light) |
-| --- | --- |
-| ![Before badge](screenshots/phase1-config-badge/before-light.png) | ![Changed config badge](screenshots/phase1-config-badge/after-light.jpg) |
-
-| After an external edit (dark) | Source actions (dark) |
-| --- | --- |
-| ![Dark badge](screenshots/phase1-config-badge/after-dark.jpg) | ![Editor and Finder](screenshots/phase1-config-badge/source-actions-dark.jpg) |
-
 Real offline binary: `/opt/homebrew/Cellar/cloudflared/2026.9.1/bin/cloudflared`, **2026.9.1**,
 built **2026-09-10T20:52:23Z**. Cleared environment, isolated HOME/config/cwd, five-second bounds.
 Exact argv from this run (binary above precedes each array):
@@ -516,12 +439,6 @@ next action, exit status 7 and redacted raw output while Try again now/backoff r
 A disposable imported config's Validate action showed the catch-all fix; after externally fixing
 the file, successful validation replaced it with “The config is valid” and removed the old raw
 disclosure. Both fixture tunnels were stopped and the QA app exited. Normal app data was untouched.
-
-| Before P3 | Expanded known diagnostic (light) |
-| --- | --- |
-| ![Previous raw notice](screenshots/phase1-failure-explainers/before.jpg) | ![Cause, action and keyboard disclosure](screenshots/phase1-failure-explainers/expanded-light.jpg) |
-
-![Unknown redacted diagnostic and retry feedback in dark theme](screenshots/phase1-failure-explainers/unknown-dark.jpg)
 
 Real offline binary: `/opt/homebrew/Cellar/cloudflared/2026.9.1/bin/cloudflared`, **2026.9.1**,
 built **2026-09-10T20:52:23Z**. The applicable validation regressions ran with a cleared

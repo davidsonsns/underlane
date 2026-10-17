@@ -16,6 +16,7 @@ import {
   click,
   openDashboard,
   revealMenuItem,
+  SHOTS,
   sh,
   toggleHiddenBar,
   windows,
@@ -144,7 +145,7 @@ try {
   if (!item || item.x < 0) {
     throw new Error("Underlane menu bar item is unavailable");
   }
-  captureMenuStrip(item, "docs/screenshots/24-login-item-menu-bar.png");
+  captureMenuStrip(item, join(SHOTS, "24-login-item-menu-bar.png"));
   click(item.x + item.w / 2, 12);
   await sleep(1500);
   capture("25-login-item-popover.png", 300, 420);

@@ -182,7 +182,7 @@ mapping.
   does) and record that here.
 - Verification without logging out: register, confirm with `sfltool dumpbtm`/System Settings, quit
   the app, then launch it the way the login session does (`open -g`, no arguments) and check that
-  auto-start tunnels come up. The steps are recorded in docs/screenshots. Logging out would end the
+  auto-start tunnels come up. The steps are recorded in verification.md §6. Logging out would end the
   session running the build agent.
 
 ## 10a. Tokens
@@ -300,21 +300,21 @@ How the simulation was made faithful, rather than just "the app was opened":
 
 1. The installed release build registered itself through `SMAppService.mainApp`, the same call
    the Settings toggle makes. macOS reported `enabled`, and the app appeared in System Settings →
-   Login Items → Open at Login (screenshot 15).
+   Login Items → Open at Login.
 2. It was launched the way the system opens login items: through LaunchServices, with no arguments
    and no terminal.
 3. Evidence that this is the same mechanism (verification.md §6c): apps started by this Mac's real
    login (Raycast, Warp) run as LaunchServices jobs `application.<bundle-id>.<n>`, parented by
    `/sbin/launchd`. Underlane's simulated launch produced the identical job type
    (`application.com.davidsonsns.underlane.198522606.198522611`, parent `/sbin/launchd`, no TTY).
-4. Tunnels marked **Start automatically** came up with no start command (screenshots 18–19). They
+4. Tunnels marked **Start automatically** came up with no start command (verification.md §6b). They
    logged `Registered tunnel connection` and served a public `curl`.
 
 5. The launch carried the same Apple event macOS sends when it opens login items
    (`keyAELaunchedAsLogInItem`), and Underlane itself recognised it as a login launch (Settings: "This
    launch: Opened by macOS at login"). A plain `open` was recorded as a normal launch, as the
    control. On the login launch Underlane opened no window, and its "start automatically" tunnel
-   connected (verification.md §6d, screenshots 24–26). A real log-out would also have quit every
+   connected (verification.md §6d). A real log-out would also have quit every
    other app in the owner's session and left the Mac at the login window unattended, so it was
    deliberately not done.
 

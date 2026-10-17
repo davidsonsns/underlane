@@ -7,7 +7,7 @@
 A macOS menu bar app that runs your `cloudflared` tunnels for you. Set them up once, then stop
 thinking about them: no terminal windows, no juggling `config.yml` files.
 
-![Underlane dashboard with the Lane Cut logo](docs/screenshots/lane-cut-dashboard-dark.png)
+![Underlane dashboard with the Lane Cut logo](apps/web/src/assets/screenshots/projects-dark.png)
 
 - **Create a project or load what you already have.** Choose **New → Project**, enter a name
   and optional group, then load an existing cloudflared config or create a draft in
@@ -288,7 +288,7 @@ Tokens for token tunnels live in the macOS Keychain.
 
 Why it's built this way (stack, process model, capture design, trade-offs):
 [`docs/research.md`](docs/research.md) and [`docs/decisions.md`](docs/decisions.md). The manual
-verification log with screenshots is in [`docs/verification.md`](docs/verification.md).
+verification log is in [`docs/verification.md`](docs/verification.md).
 
 ## Limitations (v1)
 
