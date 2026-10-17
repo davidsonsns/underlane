@@ -164,6 +164,7 @@ fn unknown(message: String, can_create: bool) -> HostnameDns {
     }
 }
 
+// Keep the service name stable so bundle ID changes do not orphan saved tokens.
 const DNS_KEYCHAIN_SERVICE: &str = "com.davidsonsns.underlane.dns-read-token";
 
 fn dns_key(cert: &CertificateIdentity) -> String {

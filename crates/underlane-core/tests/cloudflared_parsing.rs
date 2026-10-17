@@ -76,10 +76,10 @@ fn detects_cloudflared_running_outside_underlane() {
     let ps = "\
   48752 node /Users/me/.cloudflared/example-tunnels.mjs
   48763 cloudflared tunnel --config /Users/me/.cloudflared/example.yml --loglevel debug --output json run
-  50001 /opt/homebrew/bin/cloudflared tunnel --config /Users/me/Library/Application Support/com.davidsonsns.underlane/derived/x.yml run
+  50001 /opt/homebrew/bin/cloudflared tunnel --config /Users/me/Library/Application Support/app.underlane/derived/x.yml run
   50002 /opt/homebrew/bin/cloudflared tunnel run 00000000-0000-4000-8000-000000000101
 ";
-    let marker = "/Users/me/Library/Application Support/com.davidsonsns.underlane";
+    let marker = "/Users/me/Library/Application Support/app.underlane";
     let id = TunnelIdentity {
         config_path: Some("/Users/me/.cloudflared/example.yml".into()),
         tunnel: Some("00000000-0000-4000-8000-000000000101".into()),

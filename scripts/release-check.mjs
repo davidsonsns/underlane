@@ -28,7 +28,7 @@ const APP = join(homedir(), "Applications/Underlane.app");
 const BIN = join(APP, "Contents/MacOS/Underlane");
 const DB = join(
   homedir(),
-  "Library/Application Support/com.davidsonsns.underlane/underlane.db"
+  "Library/Application Support/app.underlane/underlane.db"
 );
 const log = (m) => console.log(`[release-check] ${m}`);
 const sql = (q) => sh("sqlite3", ["-cmd", ".timeout 5000", DB, q]);
@@ -235,7 +235,7 @@ try {
     execFileSync("osascript", ["-e", 'quit app "Underlane"']);
     await sleep(5000);
     log(
-      `after quit, Underlane/cloudflared processes left: ${execFileSync("sh", ["-c", "ps -axo command | grep -cE '[B]urrow.app/Contents/MacOS|[c]om.davidsonsns.underlane/neutral' || true"]).toString().trim()}`
+      `after quit, Underlane/cloudflared processes left: ${execFileSync("sh", ["-c", "ps -axo command | grep -cE '[B]urrow.app/Contents/MacOS|[a]pp.underlane/neutral' || true"]).toString().trim()}`
     );
   });
   await step("stop the origin server", () => {

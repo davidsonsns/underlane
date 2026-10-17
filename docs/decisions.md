@@ -8,7 +8,7 @@ Each entry gives the decision, why it was made, and the alternatives. Evidence i
 The name is short, suggests tunnels, and doesn't use "Cloudflare" in the product name or icon. The
 icon is Lane Cut: a circular mark split by a route dipping beneath the surface, representing a
 tunnel running under everything else. The monochrome design was selected on 2026-10-12.
-Bundle id: `com.davidsonsns.underlane`.
+Bundle id: `app.underlane`, the reverse-domain form of `underlane.app`.
 
 The app was first called Burrow. It was renamed on 2026-10-11 because an open-source Mac app with
 that name already exists (caezium/Burrow), as do linkedin/Burrow and hyperledger/burrow. The
@@ -126,7 +126,7 @@ no Go toolchain here; fewer reference tray apps).
 
 ## 7. Storage
 
-- SQLite at `~/Library/Application Support/com.davidsonsns.underlane/underlane.db` (Tauri's
+- SQLite at `~/Library/Application Support/app.underlane/underlane.db` (Tauri's
   `app_data_dir`), using `rusqlite` with the `bundled` feature and WAL mode.
 - Tables: `settings`, `groups`, `tunnels`, `logs`, `requests`.
 - Schema v2 renames `projects` to `groups` and `tunnels.project_id` to `group_id`.

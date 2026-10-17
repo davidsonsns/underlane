@@ -3,7 +3,7 @@
   "productName": "Underlane",
   "mainBinaryName": "Underlane",
   "version": "0.1.0",
-  "identifier": "com.davidsonsns.underlane",
+  "identifier": "app.underlane",
   "build": {
     "beforeDevCommand": "pnpm run dev",
     "devUrl": "http://localhost:1420",

@@ -2,6 +2,7 @@
 
 use underlane_core::secret::Secret;
 
+// Keep the service name stable so bundle ID changes do not orphan saved tokens.
 const SERVICE: &str = "com.davidsonsns.underlane.tunnel-token";
 
 fn entry(id: &str) -> Option<keyring::Entry> {

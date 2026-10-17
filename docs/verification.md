@@ -2,7 +2,8 @@
 
 > Recorded before the app was renamed from Burrow to Underlane (2026-10-11). Paths, bundle ids and
 > log lines below are as they were at the time: `Burrow.app` is now `Underlane.app`, and
-> `com.davidsonsns.burrow` is now `com.davidsonsns.underlane`.
+> The current bundle ID is `app.underlane` (previously `com.davidsonsns.underlane` and
+> `com.davidsonsns.burrow`).
 
 Checks were done on this Mac on 2026-10-10: macOS 27.0.1, Apple Silicon, a 2560×1080 display,
 cloudflared 2026.9.1. Two builds were used:

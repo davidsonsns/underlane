@@ -38,7 +38,7 @@ mod imp {
         defaults.setBool_forKey(true, &NSString::from_str("ApplePersistenceIgnoreState"));
         defaults.setBool_forKey(false, &NSString::from_str("NSQuitAlwaysKeepsWindows"));
         if let Some(home) = std::env::var_os("HOME") {
-            let saved = std::path::Path::new(&home).join("Library/Saved Application State/com.davidsonsns.underlane.savedState");
+            let saved = std::path::Path::new(&home).join("Library/Saved Application State/app.underlane.savedState");
             let _ = std::fs::remove_dir_all(saved);
         }
     }

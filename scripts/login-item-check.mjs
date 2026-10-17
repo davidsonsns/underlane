@@ -26,7 +26,7 @@ const APP = join(homedir(), "Applications/Underlane.app");
 const BIN = join(APP, "Contents/MacOS/Underlane");
 const DB = join(
   homedir(),
-  "Library/Application Support/com.davidsonsns.underlane/underlane.db"
+  "Library/Application Support/app.underlane/underlane.db"
 );
 const sql = (q) => sh("sqlite3", [DB, q]);
 const log = (m) => console.log(`[login-item-check] ${m}`);
@@ -106,7 +106,7 @@ try {
     `pid ${p}, parent ${sh("sh", ["-c", `ps -o comm= -p $(ps -o ppid= -p ${p})`])}, tty ${sh("ps", ["-o", "tty=", "-p", p])}`
   );
   log(
-    `launchd job: ${sh("sh", ["-c", "launchctl list | grep application.com.davidsonsns.underlane || true"])}`
+    `launchd job: ${sh("sh", ["-c", "launchctl list | grep application.app.underlane || true"])}`
   );
   await sleep(1500);
   log(
@@ -156,7 +156,7 @@ try {
 } finally {
   await quit();
   log(
-    `after quit: ${execFileSync("sh", ["-c", "ps -axo command | grep -cE '[c]om.davidsonsns.underlane/neutral' || true"]).toString().trim()} cloudflared left`
+    `after quit: ${execFileSync("sh", ["-c", "ps -axo command | grep -cE '[a]pp.underlane/neutral' || true"]).toString().trim()} cloudflared left`
   );
   log(`unregister: ${sh(BIN, ["--login-item", "disable"])}`);
   sql(

@@ -98,8 +98,9 @@ when storage falls behind, captures are dropped and counted so traffic can conti
 
 ## Local data and secrets
 
-On macOS, app data lives in `~/Library/Application Support/com.davidsonsns.underlane/`.
+On macOS, app data lives in `~/Library/Application Support/app.underlane/`.
 `UNDERLANE_DATA_DIR` overrides it for tests and experiments.
+Data from the previous `com.davidsonsns.underlane` bundle ID is not automatically moved.
 
 | Path | Contents |
 | --- | --- |
