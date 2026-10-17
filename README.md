@@ -78,6 +78,11 @@ For your own domain, choose **Connect Cloudflare** during welcome, or **New → 
 from the dashboard. Create a project, choose **Set up tunnel**, then configure its
 hostnames and DNS before starting it. **New → Project** can also load an existing config.
 
+macOS may ask to let Underlane find devices on your local network. Allow access if
+your tunnel targets a service on another device, such as `192.168.1.20:3000`.
+See [local network permissions](TROUBLESHOOTING.md#macos-asks-for-local-network-access)
+for details and how to change your choice.
+
 ## Before you use it
 
 - Quitting Underlane stops its tunnels. Launch at login and **Start automatically**
