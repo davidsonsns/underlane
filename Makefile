@@ -26,7 +26,7 @@ test:
 
 ## Scan every local branch and tag for secrets (brew install gitleaks)
 security:
-	gitleaks git --log-opts="--all --full-history" --redact=100 --no-banner
+	gitleaks git --log-opts="--all --full-history -m" --redact=100 --no-banner
 
 ## Enable this checkout's staged-file and pre-push secret checks
 hooks:
