@@ -27,6 +27,23 @@ fn redacts_query_secrets_in_structured_fields() {
 }
 
 #[test]
+fn redacts_custom_fragment_secrets_in_nested_structured_fields() {
+    let options = CaptureOptions { redact_query: vec!["session_id".into()], ..Default::default() };
+    let line = serde_json::json!({
+        "level": "error", "message": "Request failed",
+        "dest": "https://example.invalid/#session_id=synthetic-secret&state=ok",
+        "nested": { "urls": ["//synthetic-user:synthetic-password@example.invalid/#Session%5fId=synthetic-secret"] },
+        "plain": "ordinary diagnostic text"
+    }).to_string();
+    let parsed = parse_log_line_with(&line, &options.redaction_set(), Some(&options.query_redaction_set())).unwrap();
+    assert!(!parsed.fields.contains("synthetic-"), "{}", parsed.fields);
+    let fields: serde_json::Value = serde_json::from_str(&parsed.fields).unwrap();
+    assert_eq!(fields["dest"], "https://example.invalid/#session_id=[redacted]&state=ok");
+    assert_eq!(fields["nested"]["urls"][0], "//[redacted]@example.invalid/#Session%5fId=[redacted]");
+    assert_eq!(fields["plain"], "ordinary diagnostic text");
+}
+
+#[test]
 fn falls_back_to_plain_text_lines() {
     let p = parse_log_line("2026-10-10T06:01:19Z ERR something broke", &HashSet::new()).unwrap();
     assert_eq!(p.level, "error");

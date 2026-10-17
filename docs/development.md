@@ -30,7 +30,19 @@ pnpm run lint          # Biome formatting and lint checks through Ultracite
 pnpm run fix           # Apply safe fixes and formatting
 pnpm run analyze       # Fallow: unused code, duplication, and complexity
 pnpm run test:scripts  # Harness and browser-mock tests without a native app
+make security          # Gitleaks across all local branches and tags
 ```
+
+Install `gitleaks` (`brew install gitleaks` on macOS), then run `make hooks` once per
+checkout. The hooks scan staged content before commits and complete local history before
+pushes, with detected values redacted from output. CI repeats the full-history scan using
+a pinned, checksum-verified Gitleaks release. The only scanner exception is the exact
+public WebSocket nonce from RFC 6455 in the handshake test fixture.
+
+Keep credentials and captured databases outside Git. Local environment files, private
+key/certificate files, `.cloudflared/`, and SQLite files are ignored; explicitly synthetic
+`.env.example` files may be committed. Product screenshots must use synthetic data from
+`apps/web/scripts/capture-app.mjs`. Keep native verification evidence in ignored `e2e/out/`.
 
 `make install` replaces `~/Applications/Underlane.app`. Use that installed copy for
 launch at login. Build output is `target/release/bundle/macos/Underlane.app`.

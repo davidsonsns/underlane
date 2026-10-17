@@ -51,7 +51,9 @@ describe("shared Cloudflare tunnels", () => {
   it("matches resolved identities even when project names and config paths differ", () => {
     const example = project("example");
     const citizen = project("newlycitizen");
-    expect(sharedTunnelProjects(citizen, [example, citizen])).toEqual([example]);
+    expect(sharedTunnelProjects(citizen, [example, citizen])).toEqual([
+      example,
+    ]);
     expect(activeTunnelOwner(citizen, [example, citizen])).toBeUndefined();
   });
 
@@ -64,7 +66,10 @@ describe("shared Cloudflare tunnels", () => {
   );
 
   it("keeps ownership through a supervised crash backoff", () => {
-    const owner = project("example", uuid, { status: "crashed", supervised: true });
+    const owner = project("example", uuid, {
+      status: "crashed",
+      supervised: true,
+    });
     expect(activeTunnelOwner(project("citizen"), [owner])).toBe(owner);
     owner.state.supervised = false;
     expect(activeTunnelOwner(project("citizen"), [owner])).toBeUndefined();

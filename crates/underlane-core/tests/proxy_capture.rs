@@ -287,6 +287,29 @@ async fn redacts_query_strings_inside_url_headers() {
     assert_eq!(header(&x.req_headers, "referer"), Some("https://app.example.com/callback?code=[redacted]&state=ok"));
 }
 
+#[test]
+fn redacts_credentials_and_oauth_fragments_in_url_headers() {
+    let redactor = CaptureOptions { redact_query: vec!["session_id".into()], ..Default::default() }.redactor();
+    let cases = [
+        ("https://user:synthetic-password@example.com/path", "https://[redacted]@example.com/path"),
+        ("//user:synthetic-password@example.com/path", "//[redacted]@example.com/path"),
+        ("https://example.com/callback#access_token=synthetic-token&state=ok", "https://example.com/callback#access_token=[redacted]&state=ok"),
+        ("/callback?code=synthetic-code#Access%5fToken=synthetic-token&SESSION_ID=synthetic-session&state=ok", "/callback?code=[redacted]#Access%5fToken=[redacted]&SESSION_ID=[redacted]&state=ok"),
+        ("/callback#/route?access_token=synthetic-token&state=ok", "/callback#/route?access_token=[redacted]&state=ok"),
+        ("0; url=\"https://user:synthetic-password@example.com/callback#access_token=synthetic-token\"", "0; url=\"https://[redacted]@example.com/callback#access_token=[redacted]\""),
+        ("https://example.com/path?visible=a%2Fb#section", "https://example.com/path?visible=a%2Fb#section"),
+    ];
+    for name in ["location", "referer", "content-location", "refresh"] {
+        for (raw, expected) in cases {
+            let mut headers = hyper::HeaderMap::new();
+            headers.insert(name, raw.parse().unwrap());
+            let captured = capture::redact_headers(&headers, &redactor);
+            assert_eq!(header(&captured, name), Some(expected), "{name}: {raw}");
+            assert_eq!(headers[name], raw, "capture must not modify forwarded headers");
+        }
+    }
+}
+
 #[tokio::test]
 async fn tls_timeout_is_a_separate_handshake_deadline() {
     // An "HTTPS origin" that accepts TCP immediately but never speaks TLS.

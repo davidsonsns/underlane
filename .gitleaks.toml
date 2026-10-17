@@ -1,0 +1,12 @@
+title = "Underlane secret scanning"
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "RFC 6455 example WebSocket nonce in the handshake fixture"
+targetRules = ["generic-api-key"]
+condition = "AND"
+paths = ['''^crates/(burrow|underlane)-core/tests/proxy_capture\.rs$''']
+regexTarget = "match"
+regexes = ['''^nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\\r$''']

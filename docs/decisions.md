@@ -57,7 +57,7 @@ no Go toolchain here; fewer reference tray apps).
   cloudflared processes that reference the same config path or tunnel UUID and aren't its own. If
   it finds one, it refuses to start and shows "already running outside Underlane (pid N)". A second
   connector would split traffic, so captures would miss requests and Stop wouldn't really stop the
-  tunnel. (The owner's `example.yml` is running like this through a script right now.)
+  tunnel. (An example config can already be running through an external script.)
 - Shutdown: Underlane passes `--grace-period 4s`, and on quit it SIGTERMs every tunnel and waits for
   them synchronously before exiting.
 - App Nap: while any tunnel runs, Underlane holds an `NSProcessInfo` activity (user-initiated, idle

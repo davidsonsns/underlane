@@ -123,19 +123,19 @@ pub fn redact_query(url: &str, names: &HashSet<String>) -> String {
         Some((q, f)) => (q, Some(f)),
         None => (rest, None),
     };
-    let redacted: Vec<String> = query
-        .split('&')
-        .map(|pair| match pair.split_once('=') {
-            Some((k, _)) if names.contains(&percent_decode_lower(k)) => format!("{k}={REDACTED}"),
-            _ => pair.to_string(),
-        })
-        .collect();
-    let mut out = format!("{base}?{}", redacted.join("&"));
+    let mut out = format!("{base}?{}", redact_parameters(query, names));
     if let Some(f) = fragment {
         out.push('#');
         out.push_str(f);
     }
     out
+}
+
+fn redact_parameters(parameters: &str, names: &HashSet<String>) -> String {
+    parameters.split('&').map(|pair| match pair.split_once('=') {
+        Some((key, _)) if names.contains(&percent_decode_lower(key)) => format!("{key}={REDACTED}"),
+        _ => pair.to_string(),
+    }).collect::<Vec<_>>().join("&")
 }
 
 fn percent_decode_lower(s: &str) -> String {
@@ -169,16 +169,30 @@ fn percent_decode_lower(s: &str) -> String {
     String::from_utf8_lossy(&out).to_ascii_lowercase()
 }
 
-/// Redact query parameters in every URL-looking token of free text (cloudflared debug
-/// messages contain full request URLs).
+/// Redact URL credentials, query parameters and form-style fragments in headers and logs.
 pub fn redact_query_in_text(text: &str, names: &HashSet<String>) -> String {
-    if !text.contains('?') {
-        return text.to_string();
-    }
-    text.split(' ')
-        .map(|tok| if tok.contains('?') && tok.contains('=') { redact_query(tok, names) } else { tok.to_string() })
-        .collect::<Vec<_>>()
-        .join(" ")
+    text.split_inclusive(char::is_whitespace).map(|part| {
+        // Refresh headers can quote their URL; keep the closing quote and whitespace intact.
+        let url = part.trim_end_matches(|c: char| c.is_whitespace() || matches!(c, '\'' | '"'));
+        let mut safe = match url.split_once('#') {
+            Some((base, fragment)) => format!("{}#{}", redact_query(base, names),
+                redact_parameters(&redact_query(fragment, names), names)),
+            None => redact_query(url, names),
+        };
+        if let Some(slash) = safe.find("//") {
+            let prefix = &safe[..slash];
+            if prefix.is_empty() || prefix.ends_with([':', '=', '\'', '"']) {
+                let start = slash + 2;
+                let end = safe[start..].find(['/', '?', '#', '\'', '"'])
+                    .map(|offset| start + offset).unwrap_or(safe.len());
+                if let Some(at) = safe[start..end].rfind('@') {
+                    safe.replace_range(start..start + at, REDACTED);
+                }
+            }
+        }
+        safe.push_str(&part[url.len()..]);
+        safe
+    }).collect()
 }
 
 pub type SharedOptions = Arc<RwLock<CaptureOptions>>;
@@ -257,7 +271,7 @@ pub struct CapturedExchange {
 }
 
 /// Header list with sensitive values replaced. Names keep their wire spelling. URL-valued
-/// headers (Location, Referer, ...) get their query parameters redacted.
+/// headers (Location, Referer, ...) also redact URL credentials and sensitive fragments.
 pub fn redact_headers(headers: &HeaderMap, r: &Redactor) -> Vec<(String, String)> {
     headers
         .iter()

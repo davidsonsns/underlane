@@ -149,6 +149,7 @@ impl Db {
             "PRAGMA auto_vacuum = INCREMENTAL;
              PRAGMA journal_mode = WAL;
              PRAGMA synchronous = NORMAL;
+             PRAGMA secure_delete = ON;
              PRAGMA foreign_keys = ON;
              PRAGMA busy_timeout = 5000;",
         )?;
@@ -168,13 +169,16 @@ impl Db {
 
     // ---- settings ----
 
-    /// Clear app records atomically while keeping the live SQLite connection valid.
+    /// Clear app records atomically, then scrub the active SQLite files.
+    /// A cleanup error can occur after the records have already been deleted; retry is safe.
     pub fn reset(&self) -> anyhow::Result<()> {
         let mut conn = self.conn.lock().unwrap();
         let tx = conn.transaction()?;
         tx.execute_batch("DELETE FROM requests; DELETE FROM logs; DELETE FROM tunnels; DELETE FROM groups; DELETE FROM settings; DELETE FROM sqlite_sequence;")?;
         tx.commit()?;
-        Ok(())
+        // Rebuild also removes remnants left by deletions made before secure_delete was enabled.
+        conn.execute_batch("VACUUM")?;
+        truncate_wal(&conn)
     }
 
     pub fn settings(&self) -> anyhow::Result<Settings> {
@@ -371,12 +375,14 @@ impl Db {
     }
 
     pub fn delete_tunnel(&self, id: &str) -> anyhow::Result<()> {
-        self.with(|c| {
-            c.execute("DELETE FROM tunnels WHERE id = ?1", [id])?;
-            c.execute("DELETE FROM logs WHERE tunnel_id = ?1", [id])?;
-            c.execute("DELETE FROM requests WHERE tunnel_id = ?1", [id])
-        })?;
-        self.prune_empty_groups()
+        let mut conn = self.conn.lock().unwrap();
+        let tx = conn.transaction()?;
+        tx.execute("DELETE FROM tunnels WHERE id = ?1", [id])?;
+        tx.execute("DELETE FROM logs WHERE tunnel_id = ?1", [id])?;
+        tx.execute("DELETE FROM requests WHERE tunnel_id = ?1", [id])?;
+        tx.execute("DELETE FROM groups WHERE id NOT IN (SELECT group_id FROM tunnels WHERE group_id IS NOT NULL)", [])?;
+        tx.commit()?;
+        truncate_wal(&conn)
     }
 
     // ---- logs ----
@@ -444,11 +450,12 @@ impl Db {
     }
 
     pub fn clear_logs(&self, tunnel_id: Option<&str>) -> anyhow::Result<()> {
-        self.with(|c| match tunnel_id {
-            Some(t) => c.execute("DELETE FROM logs WHERE tunnel_id = ?1", [t]),
-            None => c.execute("DELETE FROM logs", []),
-        })?;
-        Ok(())
+        let conn = self.conn.lock().unwrap();
+        match tunnel_id {
+            Some(t) => conn.execute("DELETE FROM logs WHERE tunnel_id = ?1", [t]),
+            None => conn.execute("DELETE FROM logs", []),
+        }?;
+        truncate_wal(&conn)
     }
 
     // ---- requests ----
@@ -594,11 +601,12 @@ impl Db {
     }
 
     pub fn clear_requests(&self, tunnel_id: Option<&str>) -> anyhow::Result<()> {
-        self.with(|c| match tunnel_id {
-            Some(t) => c.execute("DELETE FROM requests WHERE tunnel_id = ?1", [t]),
-            None => c.execute("DELETE FROM requests", []),
-        })?;
-        Ok(())
+        let conn = self.conn.lock().unwrap();
+        match tunnel_id {
+            Some(t) => conn.execute("DELETE FROM requests WHERE tunnel_id = ?1", [t]),
+            None => conn.execute("DELETE FROM requests", []),
+        }?;
+        truncate_wal(&conn)
     }
 
     // ---- expiry ----
@@ -654,7 +662,9 @@ impl Db {
                 break;
             }
         }
-        self.with(|c| c.execute_batch("PRAGMA incremental_vacuum; PRAGMA wal_checkpoint(TRUNCATE);"))?;
+        let conn = self.conn.lock().unwrap();
+        conn.execute_batch("PRAGMA incremental_vacuum")?;
+        truncate_wal(&conn)?;
         Ok(stats)
     }
 
@@ -669,6 +679,20 @@ impl Db {
         stats.requests_capped += n;
         Ok(n)
     }
+}
+
+fn truncate_wal(conn: &Connection) -> anyhow::Result<()> {
+    // execute_batch ignores the busy result row, even when SQLite could not truncate the WAL.
+    let (busy, frames, checkpointed): (i64, i64, i64) = conn.query_row(
+        "PRAGMA wal_checkpoint(TRUNCATE)",
+        [],
+        |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+    )?;
+    anyhow::ensure!(
+        busy == 0 && frames == checkpointed,
+        "Records were deleted, but SQLite cleanup could not finish because the database is busy. Close other database readers and retry."
+    );
+    Ok(())
 }
 
 fn escape_like(s: &str) -> String {

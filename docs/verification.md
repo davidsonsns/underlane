@@ -1,5 +1,7 @@
 # Verification log
 
+Personal hostnames, config filenames, and local paths in this historical log have been anonymized with synthetic examples.
+
 > Recorded before the app was renamed from Burrow to Underlane (2026-10-11). Paths, bundle ids and
 > log lines below are as they were at the time: `Burrow.app` is now `Underlane.app`, and
 > The current bundle ID is `app.underlane` (previously `com.davidsonsns.underlane` and
@@ -87,8 +89,8 @@ Notes on what the checks read:
 hostnames, and after import the tunnel shows every hostname → service mapping, parsed from its
 ingress rules.
 
-`example.yml` was **imported but never started**. That tunnel is already running on this Mac under the
-owner's own script (`cloudflared tunnel --config ~/.cloudflared/example.yml … run`, pid 48763). Burrow
+`example.yml` was **imported but never started**. That tunnel is already running on this Mac under
+an external script (`cloudflared tunnel --config ~/.cloudflared/example.yml … run`, pid 48763). Burrow
 detects that case and refuses to start a second connector (decisions.md §3). The file's
 modification time and contents were unchanged after import.
 
@@ -133,7 +135,7 @@ used instead, as follows:
    29700     1 ~/Applications/Burrow.app/Contents/MacOS/Burrow                         ← parent: /sbin/launchd
    29714 29700 ~/Applications/Burrow.app/Contents/MacOS/Burrow --cloudflared-shim /opt/homebrew/bin/cloudflared tunnel --config …/com.davidsonsns.burrow/neutral.yml …
    29715 29714 /opt/homebrew/bin/cloudflared tunnel --config …/com.davidsonsns.burrow/neutral.yml … --url http://localhost:8787
-   48763 48752 cloudflared tunnel --config ~/.cloudflared/example.yml … run                  ← the owner's own process, untouched
+   48763 48752 cloudflared tunnel --config ~/.cloudflared/example.yml … run                  ← the external process, untouched
    ```
 
    The auto-start tunnel came up by itself. Clicking the real status item showed it connected,
@@ -254,7 +256,7 @@ popover's arrow keys) with a visible focus ring on each.
   `not_registered`), to leave this Mac as it was. Turn it back on in Settings → General → Launch
   at login.
 - `~/Applications/Burrow.app` is the latest release build.
-- The owner's own `example.yml` cloudflared process (pid 48763) was never touched.
+- The external `example.yml` cloudflared process (pid 48763) was never touched.
 
 ## Phase 0 foundations — 2026-10-12
 
@@ -554,7 +556,7 @@ not exercised; account and CLI behavior used synthetic fixtures.
 
 - Live read-only verification used the existing default cert.pem with the production Rust
   certificate parser, zone/account validation, and DNS-record classifier. All four hostnames
-  in example.yml (app, api, sdk, checkout under example.com) returned Connected against the
+  in example.yml (app, api, docs, checkout under example.com) returned Connected against the
   configured tunnel ID. No additional API token, keychain write, DNS mutation, or tunnel
   restart was performed. The temporary verification example was removed afterward.
 - Existing login is now tried automatically for checks and DNS-creation preflight; stored

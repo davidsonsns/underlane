@@ -188,3 +188,163 @@ fn settings_groups_and_tunnels_persist() {
     db.delete_tunnel("t1").unwrap();
     assert!(db.groups().unwrap().is_empty(), "empty groups are pruned");
 }
+
+fn marked_exchange(id: &str, tunnel: &str, marker: &str) -> CapturedExchange {
+    let mut x = exchange(id, 1, 0);
+    x.tunnel_id = tunnel.into();
+    // Exercise overflow pages as well as the row's inline body bytes.
+    let bytes = marker.repeat(400).into_bytes();
+    x.req_body = BodyCapture { size: bytes.len() as u64, bytes: bytes.clone(), truncated: false };
+    x.resp_body = BodyCapture { size: bytes.len() as u64, bytes, truncated: false };
+    x
+}
+
+fn contains_marker(path: &std::path::Path, marker: &str) -> bool {
+    let bytes = match std::fs::read(path) {
+        Ok(bytes) => bytes,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return false,
+        Err(error) => panic!("reading {}: {error}", path.display()),
+    };
+    bytes.windows(marker.len()).any(|window| window == marker.as_bytes())
+}
+
+fn wal_path(path: &std::path::Path) -> std::path::PathBuf {
+    let mut wal = path.as_os_str().to_owned();
+    wal.push("-wal");
+    wal.into()
+}
+
+fn assert_erased(path: &std::path::Path, marker: &str) {
+    for file in [path.to_owned(), wal_path(path)] {
+        assert!(!contains_marker(&file, marker), "deleted marker remains in {}", file.display());
+    }
+    assert_eq!(std::fs::metadata(wal_path(path)).map(|m| m.len()).unwrap_or(0), 0);
+}
+
+fn checkpoint_without_truncating(path: &std::path::Path) {
+    let conn = rusqlite::Connection::open(path).unwrap();
+    let busy: i64 = conn.query_row("PRAGMA wal_checkpoint(FULL)", [], |row| row.get(0)).unwrap();
+    assert_eq!(busy, 0);
+}
+
+#[test]
+fn clear_requests_scrubs_database_and_wal_while_retaining_other_tunnels() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("requests.db");
+    let db = Db::open(&path).unwrap();
+    let removed = "synthetic-request-body-to-delete-6d305c";
+    let retained = marked_exchange("keep", "t2", "synthetic-retained-request-c8cd66");
+    db.upsert_request(&marked_exchange("remove", "t1", removed)).unwrap();
+    db.upsert_request(&retained).unwrap();
+    checkpoint_without_truncating(&path);
+    assert!(contains_marker(&path, removed));
+    assert!(contains_marker(&wal_path(&path), removed));
+
+    db.clear_requests(Some("t1")).unwrap();
+    assert!(db.get_request("remove").unwrap().is_none());
+    assert_eq!(db.get_request("keep").unwrap(), Some(retained.clone()));
+    assert_erased(&path, removed);
+
+    db.clear_requests(None).unwrap();
+    assert!(db.list_requests(None, None, 100).unwrap().is_empty());
+    assert_erased(&path, "synthetic-retained-request-c8cd66");
+    db.upsert_request(&retained).unwrap();
+    assert_eq!(db.get_request("keep").unwrap(), Some(retained));
+}
+
+#[test]
+fn clear_logs_scrubs_database_and_wal_while_retaining_other_tunnels() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("logs.db");
+    let db = Db::open(&path).unwrap();
+    let removed = "synthetic-log-to-delete-971c8e";
+    let kept = "synthetic-log-to-retain-e596b9";
+    db.insert_logs(&[log("t1", 1, "info", removed), log("t2", 2, "info", kept)]).unwrap();
+    checkpoint_without_truncating(&path);
+    assert!(contains_marker(&path, removed));
+    assert!(contains_marker(&wal_path(&path), removed));
+
+    db.clear_logs(Some("t1")).unwrap();
+    let rows = db.query_logs(&LogQuery { limit: 100, ..Default::default() }).unwrap();
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].message, kept);
+    assert_erased(&path, removed);
+    db.clear_logs(None).unwrap();
+    assert_erased(&path, kept);
+}
+
+#[test]
+fn reset_scrubs_active_files_and_legacy_deleted_content_and_stays_usable() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("reset.db");
+    let db = Db::open(&path).unwrap();
+    let request = "synthetic-reset-body-9cb2dd";
+    let token = "synthetic-reset-token-d7fcb7";
+    let message = "synthetic-reset-log-28a7ab";
+    let legacy = "synthetic-legacy-deletion-857f0d";
+    db.upsert_request(&marked_exchange("remove", "t1", request)).unwrap();
+    db.kv_set("token", token).unwrap();
+    db.kv_set("legacy", legacy).unwrap();
+    db.insert_logs(&[log("t1", 1, "info", message)]).unwrap();
+    {
+        // Model an older application version that did not scrub deleted page contents.
+        let conn = rusqlite::Connection::open(&path).unwrap();
+        conn.execute_batch("PRAGMA secure_delete = OFF; DELETE FROM settings WHERE key = 'legacy';").unwrap();
+    }
+    checkpoint_without_truncating(&path);
+    for marker in [request, token, message, legacy] {
+        assert!(contains_marker(&path, marker), "fixture must contain {marker}");
+    }
+
+    db.reset().unwrap();
+    for marker in [request, token, message, legacy] {
+        assert_erased(&path, marker);
+    }
+    assert!(db.list_requests(None, None, 100).unwrap().is_empty());
+    assert!(db.query_logs(&LogQuery { limit: 100, ..Default::default() }).unwrap().is_empty());
+    assert!(db.kv_get("token").unwrap().is_none());
+    db.kv_set("fresh", "usable").unwrap();
+    assert_eq!(db.kv_get("fresh").unwrap().as_deref(), Some("usable"));
+}
+
+#[test]
+fn clear_reports_blocked_wal_cleanup_and_retry_finishes_it() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("busy.db");
+    let db = Db::open(&path).unwrap();
+    let marker = "synthetic-busy-request-094161";
+    db.upsert_request(&marked_exchange("remove", "t1", marker)).unwrap();
+    let reader = rusqlite::Connection::open(&path).unwrap();
+    reader.execute_batch("BEGIN").unwrap();
+    let count: i64 = reader.query_row("SELECT count(*) FROM requests", [], |row| row.get(0)).unwrap();
+    assert_eq!(count, 1);
+
+    let error = db.clear_requests(None).unwrap_err();
+    assert!(error.to_string().contains("Records were deleted, but SQLite cleanup could not finish"), "{error}");
+    assert!(contains_marker(&wal_path(&path), marker), "reader keeps the old WAL snapshot alive");
+    reader.execute_batch("ROLLBACK").unwrap();
+    db.clear_requests(None).unwrap();
+    assert_erased(&path, marker);
+}
+
+#[test]
+fn retention_and_tunnel_deletion_scrub_removed_payloads() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("retention.db");
+    let db = Db::open(&path).unwrap();
+    let expired = "synthetic-expired-request-c6bc53";
+    let deleted = "synthetic-deleted-tunnel-906d20";
+    let retained = marked_exchange("keep", "t2", "synthetic-retained-tunnel-cc47d4");
+    db.upsert_request(&marked_exchange("expired", "t1", expired)).unwrap();
+    checkpoint_without_truncating(&path);
+    db.sweep(10 * DAY, DAY, u64::MAX).unwrap();
+    assert_erased(&path, expired);
+
+    db.upsert_request(&marked_exchange("remove", "t1", deleted)).unwrap();
+    db.upsert_request(&retained).unwrap();
+    db.insert_logs(&[log("t1", 1, "info", deleted)]).unwrap();
+    checkpoint_without_truncating(&path);
+    db.delete_tunnel("t1").unwrap();
+    assert_erased(&path, deleted);
+    assert_eq!(db.get_request("keep").unwrap(), Some(retained));
+}

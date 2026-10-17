@@ -499,15 +499,17 @@
               <AlertHeader>
                 <AlertTitle>Reset Underlane?</AlertTitle>
                 <AlertDescription>
-                  Underlane will stop all running tunnels. This permanently
-                  deletes local projects, saved tunnel tokens, logs, captured
-                  requests, settings, and the app-managed cloudflared download.
-                  Launch at login will be turned off.
+                  Underlane will stop all running tunnels. This deletes local
+                  projects, saved tunnel tokens, logs, captured requests,
+                  settings, and the app-managed cloudflared download from active
+                  app storage. Launch at login will be turned off.
                 </AlertDescription>
                 <AlertDescription>
                   Project config files, shared Cloudflare authorization and
                   credentials, and remote Cloudflare tunnels and DNS records are
-                  kept. You’ll return to onboarding. This can’t be undone.
+                  kept. Backups and filesystem snapshots may retain copies.
+                  You’ll return to onboarding. This can’t be undone in
+                  Underlane.
                 </AlertDescription>
               </AlertHeader>
               {#if resetFailure}

@@ -163,7 +163,7 @@ try {
     waitUntil: "domcontentloaded",
   });
   await page
-    .getByText("Cannot start while hw is running", { exact: true })
+    .getByText("Cannot start while example is running", { exact: true })
     .waitFor();
   await assert.equal(
     await page.getByRole("button", { exact: true, name: "Start" }).isDisabled(),
@@ -228,7 +228,7 @@ try {
   await page.getByRole("button", { exact: true, name: "Stop" }).waitFor();
   assert.equal(
     await page
-      .getByText("Cannot start while hw is running", { exact: true })
+      .getByText("Cannot start while example is running", { exact: true })
       .count(),
     0
   );

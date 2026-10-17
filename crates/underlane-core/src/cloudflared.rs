@@ -350,15 +350,11 @@ pub fn parse_log_line(line: &str, redact: &HashSet<String>) -> Option<ParsedLog>
     parse_log_line_with(line, redact, None)
 }
 
-/// Redact sensitive query parameters in every string inside a JSON value (cloudflared puts
+/// Redact URL credentials and sensitive parameters in every JSON string (cloudflared puts
 /// full URLs in fields such as `dest`, `url` and `error`).
 fn redact_query_in_json(v: &mut serde_json::Value, q: &HashSet<String>) {
     match v {
-        serde_json::Value::String(s) => {
-            if s.contains('?') {
-                *s = redact_diagnostic_urls(s, q);
-            }
-        }
+        serde_json::Value::String(s) => *s = redact_diagnostic_urls(s, q),
         serde_json::Value::Array(a) => a.iter_mut().for_each(|x| redact_query_in_json(x, q)),
         serde_json::Value::Object(o) => o.values_mut().for_each(|x| redact_query_in_json(x, q)),
         _ => {}

@@ -4,6 +4,11 @@ Notable changes to Underlane, with the newest version first.
 
 ## [Unreleased]
 
+### Security
+
+- Redact credentials in captured redirect URL fragments and URL username/password fields.
+- Remove deleted captures and logs from active database files when clearing history or resetting the app.
+
 ## [0.2.0] - 2026-10-16
 
 ### Added

@@ -4,8 +4,8 @@
 //
 // usage: node scripts/screenshots.mjs target/debug/bundle/macos/Underlane.app
 import { execFileSync, spawn } from "node:child_process";
-import { mkdirSync, mkdtempSync } from "node:fs";
-import { homedir, tmpdir } from "node:os";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import {
   captureWindow,
@@ -78,16 +78,29 @@ try {
   );
   await ctl("POST", "/settings?theme=dark");
 
-  // 1. Import an existing config.yml from ~/.cloudflared (read-only; not started).
-  await ctl("POST", "/navigate?view=add");
-  await sleep(1500);
-  capture("01-import-sheet.png");
-  const cfg = join(homedir(), ".cloudflared/example.yml");
+  // 1. Import a synthetic config without reading the developer's Cloudflare files.
+  const cfg = join(dataDir, "example.yml");
+  writeFileSync(
+    cfg,
+    [
+      "tunnel: 00000000-0000-4000-8000-000000000001",
+      "ingress:",
+      "  - hostname: app.example.com",
+      "    service: http://localhost:3000",
+      "  - hostname: api.example.com",
+      "    service: http://localhost:4000",
+      "  - service: http_status:404",
+      "",
+    ].join("\n")
+  );
   const imported = await ctl("POST", `/import?path=${encodeURIComponent(cfg)}`);
   note(`import ${cfg}: ${JSON.stringify(imported)}`);
   const ov = await ctl("GET", "/overview");
   const example = ov.tunnels.find((t) => t.config_path === cfg);
-  await ctl("POST", `/navigate?view=${encodeURIComponent(`tunnels:${example.id}`)}`);
+  await ctl(
+    "POST",
+    `/navigate?view=${encodeURIComponent(`tunnels:${example.id}`)}`
+  );
   await sleep(1500);
   capture("02-imported-config.png");
 

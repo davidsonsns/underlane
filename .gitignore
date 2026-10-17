@@ -9,3 +9,21 @@ target/
 .claude/worktrees/
 /apps/desktop/src-tauri/gen/schemas/
 /output/
+
+# Local credentials and captured traffic. Keep explicitly synthetic examples shareable.
+.env
+.env.*
+!.env.example
+!.env.*.example
+*.key
+*.pem
+*.p12
+*.pfx
+.cloudflared/
+credentials.json
+*.db
+*.db-*
+*.sqlite
+*.sqlite-*
+*.sqlite3
+*.sqlite3-*

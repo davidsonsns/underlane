@@ -5,7 +5,7 @@ export PATH := $(dir $(CARGO)):$(PATH)
 APP_RELEASE := target/release/bundle/macos/Underlane.app
 APP_E2E := target/debug/bundle/macos/Underlane.app
 
-.PHONY: build dev test e2e install icons clean
+.PHONY: build dev test e2e install icons clean security hooks
 
 ## Build the release app bundle from a clean checkout -> target/release/bundle/macos/Underlane.app
 build:
@@ -23,6 +23,15 @@ test:
 	$(CARGO) test --workspace
 	pnpm test
 	pnpm run check
+
+## Scan every local branch and tag for secrets (brew install gitleaks)
+security:
+	gitleaks git --log-opts="--all --full-history" --redact=100 --no-banner
+
+## Enable this checkout's staged-file and pre-push secret checks
+hooks:
+	@command -v gitleaks >/dev/null || { echo "Install Gitleaks first: brew install gitleaks"; exit 1; }
+	git config --local core.hooksPath .githooks
 
 ## End-to-end check: real app (debug build with the e2e control server) + a real quick tunnel
 e2e:
