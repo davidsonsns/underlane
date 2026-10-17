@@ -1,9 +1,12 @@
 # Releases
 
-Pushing a tag such as `v0.1.0` starts the [release workflow](../.github/workflows/release.yml).
+Release directly from `main`: update the versions and changelog, run checks, commit,
+and push a version tag. No release PR or manual draft-publishing step is needed.
+
+Pushing a tag such as `v0.4.0` starts the [release workflow](../.github/workflows/release.yml).
 It builds a universal DMG and signed updater archive for Apple Silicon and Intel,
-verifies the app's signature and architectures, and creates a **draft** GitHub Release
-using that version's changelog entries. Publishing the draft is a separate manual step.
+verifies the app's signature and architectures, and publishes the latest GitHub Release
+using that version's changelog entries. The version tag identifies the released commit.
 
 Builds use ad-hoc signing. No Apple Developer ID, certificate, account, or notarization
 credentials are needed. Updater signing uses a separate Tauri key, described below.
@@ -42,12 +45,9 @@ when behavior changes. Use `Added`, `Changed`, `Fixed`, `Removed`, or `Security`
 as needed; omit empty categories. Describe the result for users instead of copying
 commit messages or listing internal refactors.
 
-For the first release, the `0.1.0` section is already prepared. Update its date if
-shipping after the date shown.
+## Release
 
-## Prepare a release
-
-1. Choose the next version: patch for fixes (`0.1.1`), minor for features (`0.2.0`).
+1. Choose the next version: patch for fixes (`0.3.1`), minor for features (`0.4.0`).
    Use tags in the form `vMAJOR.MINOR.PATCH`; prerelease suffixes are not supported
    by this workflow.
 2. Set the same version in `Cargo.toml` (`workspace.package.version`),
@@ -60,30 +60,31 @@ shipping after the date shown.
 4. Check the exact release notes, then run the normal checks:
 
    ```sh
-   node scripts/release-notes.mjs v0.1.0
+   node scripts/release-notes.mjs v0.4.0
    make test
    pnpm run lint
    pnpm run analyze
    ```
 
-5. Commit and push the release preparation. From that commit, create and push the
-   version tag:
+5. Commit the version and changelog changes directly on `main`, push the commit,
+   then create and push the version tag:
 
    ```sh
-   git tag -a v0.1.0 -m "Underlane 0.1.0"
-   git push origin v0.1.0
+   git push origin main
+   git tag -a v0.4.0 -m "Underlane 0.4.0"
+   git push origin v0.4.0
    ```
 
-Replace `0.1.0` in these commands with the version being released. The workflow
+Replace `0.4.0` in these commands with the version being released. The workflow
 rejects mismatched package versions or missing/empty dated changelog sections before
 building. No release is created if validation or the build fails.
 
-## Review and publish
+## Verify the published release
 
 Wait for [Release in GitHub Actions](https://github.com/davidsonsns/underlane/actions/workflows/release.yml)
-to finish, then open the draft under [GitHub Releases](https://github.com/davidsonsns/underlane/releases).
-Download its DMG and test first launch on a Mac. Check the release notes and all four
-attached assets before publishing the draft:
+to finish. The release is published automatically under
+[GitHub Releases](https://github.com/davidsonsns/underlane/releases).
+Check its release notes and four assets:
 
 - One universal `.dmg` for manual installation.
 - `Underlane.app.tar.gz`, the universal updater archive.
@@ -91,11 +92,9 @@ attached assets before publishing the draft:
 - `latest.json`, with the release version, notes, publication date, and matching
   archive URL/signature for both `darwin-aarch64` and `darwin-x86_64`.
 
-Publish these together as the latest stable GitHub Release. The updater endpoint
-follows GitHub's latest release, so do not mark a newer update as a prerelease or
-leave it excluded from latest. Test checking for and installing the update inside
-an older Underlane build that contains the same updater public key. Draft assets
-are unavailable to that public endpoint until publication. The manifest date is
+Download the DMG and test first launch on a Mac. Test checking for and installing
+the update inside an older Underlane build that contains the same updater public key.
+The updater endpoint follows the latest release automatically. The manifest date is
 the workflow generation time in ISO 8601 UTC.
 
 The notes explain that builds are ad-hoc signed and not notarized. After the first
@@ -104,16 +103,10 @@ Open Anyway**. The [first-launch troubleshooting guide](../TROUBLESHOOTING.md#ma
 walks through the warning and approval steps.
 Users can install future releases inside Underlane or replace the app from the DMG.
 
-For a failed build, rerun the failed job from Actions. If a draft was already created
-but its upload failed, finish uploading all four assets to that draft; `gh release create`
-will not overwrite an existing release. Never move a published version tag or replace
-its assets; make a new patch release for corrections. A manually repaired draft must
-keep the tag, package versions, manifest version, archive URL, and signature consistent.
-Regenerate `latest.json` from that draft's actual archive signature and release notes:
-
-```sh
-node scripts/updater-manifest.mjs v0.1.0 davidsonsns/underlane release-notes.md Underlane.app.tar.gz.sig > latest.json
-```
+For a failed build, rerun the failed job from Actions. If publication failed, check
+GitHub Releases before rerunning; `gh release create` will not overwrite an existing
+release. Never move a published version tag or replace its assets; make a new patch
+release for corrections.
 
 ## Build a release DMG locally
 

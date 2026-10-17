@@ -76,7 +76,7 @@ jobs:
             target/universal-apple-darwin/release/bundle/macos/Underlane.app.tar.gz.sig \
             > "$RUNNER_TEMP/latest.json"
 
-      - name: Create draft release
+      - name: Publish latest release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -95,6 +95,6 @@ jobs:
           done
           gh release create "$GITHUB_REF_NAME" "${assets[@]}" \
             --repo "$GITHUB_REPOSITORY" \
-            --verify-tag --draft \
+            --verify-tag --latest \
             --title "Underlane $GITHUB_REF_NAME" \
             --notes-file "$RUNNER_TEMP/release-notes.md"
