@@ -1,6 +1,7 @@
 ---
 import "@fontsource-variable/geist";
 import { ArrowDown, ArrowDownToLine, ArrowRight, ArrowUpRight, Braces, Check, ChevronDown, Code, Copy, Folder, Menu, Moon, Radio, Sun, X, Zap } from "@lucide/astro";
+import Analytics from "@vercel/analytics/astro";
 import Brand from "../components/Brand.astro";
 import ThemeImage from "../components/ThemeImage.astro";
 import projectsLight from "../assets/screenshots/projects-light.png";
@@ -44,6 +45,7 @@ const questions = [
     <meta property="og:type" content="website" />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <title>Underlane. Your tunnels, under control.</title>
+    <Analytics />
     <script is:inline>
       try {
         const preference = localStorage.getItem("underlane-theme");
