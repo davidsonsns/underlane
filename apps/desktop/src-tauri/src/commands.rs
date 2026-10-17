@@ -622,6 +622,17 @@ pub fn quit(app: AppHandle) {
     app.exit(0);
 }
 
+#[tauri::command]
+pub fn restart_app(app: AppHandle, core: CoreState<'_>) -> Res<()> {
+    let _operation = core.operations.try_read().map_err(|_| "App reset is in progress. Try again when setup opens.")?;
+    let running: std::collections::HashSet<_> = core.sup.restart_session_ids().into_iter().collect();
+    crate::restart::save(&core.db, |id| running.contains(id))
+        .map_err(|e| format!("Could not save running tunnels before restarting: {e}"))?;
+    // Request an exit so RunEvent::Exit stops tunnels before the new app launches.
+    app.request_restart();
+    Ok(())
+}
+
 /// The e2e harness asks the dashboard for its rendered text; the page answers here.
 #[tauri::command]
 pub fn e2e_report(nonce: String, text: String) {

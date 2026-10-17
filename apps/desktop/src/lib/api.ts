@@ -115,6 +115,7 @@ export const api = {
   resetApp: () => invoke<void>("reset_app"),
   restart: (id: string) => invoke<void>("restart_tunnel", { id }),
   restartAll: () => invoke<void>("restart_all"),
+  restartApp: () => invoke<void>("restart_app"),
   saveHostnames: (
     id: string,
     revision: string,

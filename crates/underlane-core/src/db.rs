@@ -211,6 +211,11 @@ impl Db {
         Ok(())
     }
 
+    /// Read and remove a one-shot value in the same SQLite statement.
+    pub fn kv_take(&self, key: &str) -> anyhow::Result<Option<String>> {
+        self.with(|c| c.query_row("DELETE FROM settings WHERE key = ?1 RETURNING value", [key], |r| r.get(0)).optional())
+    }
+
     // ---- groups & tunnels ----
 
     pub fn groups(&self) -> anyhow::Result<Vec<Group>> {
@@ -688,6 +693,36 @@ fn group_by_name(conn: &Connection, name: &str, exclude_id: Option<&str>) -> rus
         }
     }
     Ok(None)
+}
+
+#[cfg(test)]
+mod kv_tests {
+    use super::*;
+
+    #[test]
+    fn one_shot_value_is_returned_to_only_one_reader() {
+        let db = std::sync::Arc::new(Db::open_in_memory().unwrap());
+        db.kv_set("session", "[]").unwrap();
+        db.kv_set("keep", "unchanged").unwrap();
+        let readers: Vec<_> = (0..8).map(|_| {
+            let db = db.clone();
+            std::thread::spawn(move || db.kv_take("session").unwrap())
+        }).collect();
+        let values: Vec<_> = readers.into_iter().filter_map(|reader| reader.join().unwrap()).collect();
+        assert_eq!(values, ["[]"]);
+        assert_eq!(db.kv_get("keep").unwrap().as_deref(), Some("unchanged"));
+    }
+
+    #[test]
+    fn failed_take_preserves_pending_value() {
+        let db = Db::open_in_memory().unwrap();
+        db.kv_set("session", "[]").unwrap();
+        db.conn.lock().unwrap().execute_batch(
+            "CREATE TRIGGER reject_delete BEFORE DELETE ON settings BEGIN SELECT RAISE(ABORT, 'write failed'); END;"
+        ).unwrap();
+        assert!(db.kv_take("session").is_err());
+        assert_eq!(db.kv_get("session").unwrap().as_deref(), Some("[]"));
+    }
 }
 
 #[cfg(test)]

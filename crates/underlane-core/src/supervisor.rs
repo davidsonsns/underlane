@@ -310,6 +310,12 @@ impl Supervisor {
         self.runs.lock().unwrap().handles.iter().filter(|(_, r)| r.live()).map(|(id, _)| id.clone()).collect()
     }
 
+    /// One snapshot of runs to restore after an app restart, including starts and retries.
+    /// A user Stop already in progress must not be undone by restoring the session.
+    pub fn restart_session_ids(&self) -> Vec<String> {
+        self.runs.lock().unwrap().handles.iter().filter(|(_, r)| r.live() && !r.stopping).map(|(id, _)| id.clone()).collect()
+    }
+
     /// Authoritative state for comparisons, before the application's queued state events.
     pub fn config_state(&self, id: &str) -> Option<TunnelState> {
         let runs = self.runs.lock().unwrap();

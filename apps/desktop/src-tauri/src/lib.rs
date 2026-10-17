@@ -4,6 +4,7 @@ mod commands;
 mod installer;
 mod onboarding;
 mod reset;
+mod restart;
 mod e2e;
 mod hostnames;
 mod setup;
@@ -68,6 +69,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         // The dashboard is destroyed on close; this brings back its size and position next time.
         .plugin(
             tauri_plugin_window_state::Builder::default()
@@ -127,6 +129,7 @@ pub fn run() {
             commands::open_dashboard,
             commands::hide_popover,
             commands::quit,
+            commands::restart_app,
             commands::e2e_report,
         ])
         .setup(|app| {
@@ -145,7 +148,10 @@ pub fn run() {
             tracing::info!("launched {}", if at_login { "as a login item" } else { "normally" });
             tray::create(&handle)?;
             tray::set_count(&handle, 0);
-            core.start_autostart_tunnels();
+            let update_restart = core.start_startup_tunnels();
+            if update_restart {
+                tray::open_dashboard(&handle, None);
+            }
 
             #[cfg(all(feature = "e2e", debug_assertions))]
             if let Some(port) = std::env::var("UNDERLANE_E2E_PORT").ok().and_then(|p| p.parse().ok()) {

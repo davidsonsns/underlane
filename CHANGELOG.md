@@ -4,6 +4,10 @@ Notable changes to Underlane, with the newest version first.
 
 ## [Unreleased]
 
+### Added
+
+- An “Update available” sidebar button to download verified app updates and restart when ready, restoring which projects were running.
+
 ## [0.1.0] - 2026-10-16
 
 ### Added

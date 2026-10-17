@@ -120,7 +120,10 @@ command-line arguments. Account certificates and tunnel credential files remain 
 redacted diagnostics. App reset removes local app state and saved tunnel tokens while preserving
 shared source configs, cloudflared authorization, and optional DNS API tokens.
 
-The app currently targets macOS. Remote tunnel/DNS deletion, automatic app updates, and
+The app currently targets macOS. Its sidebar checks published GitHub Releases for updates;
+Tauri verifies signed update archives before users install and restart. Update restarts
+restore the running projects from a one-shot session snapshot, leaving stopped projects
+stopped regardless of autostart settings. Remote tunnel/DNS deletion and
 Windows/Linux builds are outside its current scope.
 
 For design rationale, see [decisions](docs/decisions.md) and [research](docs/research.md).

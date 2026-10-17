@@ -33,5 +33,13 @@
       "minimumSystemVersion": "13.3",
       "signingIdentity": "-"
     }
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDlBMzJBRUI3OEZFOEY1NTgKUldSWTllaVB0NjR5bXBPODJrUnJXdHB0RXhESUZ6MldxTEswYmhkZ0ltK3pIeVlyZmRncnVES3gK",
+      "endpoints": [
+        "https://github.com/davidsonsns/underlane/releases/latest/download/latest.json"
+      ]
+    }
   }
 }

@@ -14,11 +14,15 @@ test("serialized browser bridge dispatches fixture commands and preserves event 
       },
     },
     installHostnameMock,
-    { delay: 0, mockName: "__projectMock" }
+    { delay: 0, mockName: "__projectMock" },
+    ({ mockName }) => {
+      window[mockName].extended = true;
+    }
   );
   const window = {};
   vm.runInNewContext(source, { console, setTimeout, structuredClone, window });
   const bridge = window.__TAURI_INTERNALS__;
+  assert.equal(window.__projectMock.extended, true);
   const overview = await bridge.invoke("overview");
   assert.equal(overview.tunnels[0].name, "example");
   overview.tunnels[0].name = "mutated copy";

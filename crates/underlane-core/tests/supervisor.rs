@@ -321,6 +321,49 @@ async fn token_file_edits_during_validation_do_not_change_reserved_launch_identi
 }
 
 #[tokio::test]
+async fn restart_session_snapshot_excludes_stopping_and_keeps_starting_running_and_retrying() {
+    let f = fake("ignore-term");
+    let (sup, states, _) = supervisor(&f, |cfg| {
+        cfg.grace_period = Duration::from_millis(10);
+        cfg.backoff_base = Duration::from_secs(10);
+        cfg.backoff_max = Duration::from_secs(10);
+    });
+    let spec = |id: &str| {
+        let mut t = tunnel(TunnelKind::Quick);
+        t.id = id.into();
+        RunSpec { tunnel: t, token: None }
+    };
+    sup.start(spec("stopping"));
+    wait_project(&states, "stopping", |s| s.pid.is_some()).await;
+    for _ in 0..200 {
+        if f.root.join("bin/pids.json").exists() { break; }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    assert!(f.root.join("bin/pids.json").exists(), "fake installed its slow-stop handler");
+    std::fs::write(f.root.join("bin/mode"), "ok").unwrap();
+    sup.start(spec("running"));
+    wait_project(&states, "running", |s| s.status == Status::Connected).await;
+    std::fs::write(f.root.join("bin/mode"), "crash").unwrap();
+    sup.start(spec("retrying"));
+    wait_project(&states, "retrying", |s| s.status == Status::Crashed && s.detail.as_deref().is_some_and(|d| d.starts_with("Restarting in"))).await;
+
+    let stopping = sup.clone();
+    let stop = tokio::spawn(async move { stopping.stop("stopping").await });
+    tokio::time::timeout(Duration::from_secs(2), async {
+        while sup.config_state("stopping").is_some() { tokio::task::yield_now().await; }
+    }).await.unwrap();
+    assert!(!stop.is_finished(), "snapshot is taken while Stop is still in flight");
+    assert!(sup.is_running("stopping"), "process lifetime semantics remain unchanged");
+    sup.start(spec("starting"));
+    let mut ids = sup.restart_session_ids();
+    ids.sort();
+    assert_eq!(ids, ["retrying", "running", "starting"]);
+    assert!(sup.running_ids().contains(&"stopping".into()), "shutdown must still wait for stopping processes");
+    stop.await.unwrap();
+    sup.stop_all().await;
+}
+
+#[tokio::test]
 async fn applying_edits_never_starts_a_stopped_or_stopping_tunnel() {
     let f = fake("ignore-term");
     let (sup, states, _) = supervisor(&f, |cfg| cfg.grace_period = Duration::from_millis(10));

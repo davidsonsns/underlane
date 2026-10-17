@@ -6,6 +6,9 @@
   "permissions": [
     "core:default",
     "core:window:allow-start-dragging",
+    "updater:allow-check",
+    "updater:allow-download",
+    "updater:allow-install",
     "opener:default",
     "clipboard-manager:allow-write-text",
     "dialog:allow-open"

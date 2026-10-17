@@ -21,6 +21,8 @@ jobs:
       contents: write
     env:
       APPLE_SIGNING_IDENTITY: "-"
+      TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+      TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -42,6 +44,13 @@ jobs:
       - name: Validate version and prepare release notes
         run: node scripts/release-notes.mjs "$GITHUB_REF_NAME" > "$RUNNER_TEMP/release-notes.md"
 
+      - name: Verify updater signing key
+        run: |
+          if [[ -z "$TAURI_SIGNING_PRIVATE_KEY" ]]; then
+            echo "::error::Set the TAURI_SIGNING_PRIVATE_KEY repository secret before releasing. See docs/releases.md."
+            exit 1
+          fi
+
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
@@ -50,8 +59,8 @@ jobs:
           pnpm test
           pnpm run check
 
-      - name: Build DMG
-        run: pnpm tauri build --target universal-apple-darwin --bundles app,dmg --ci -- --locked
+      - name: Build DMG and signed updater
+        run: pnpm tauri build --target universal-apple-darwin --bundles app,dmg --config '{"bundle":{"createUpdaterArtifacts":true}}' --ci -- --locked
 
       - name: Verify app bundle
         run: |
@@ -60,13 +69,31 @@ jobs:
           [[ "$architectures" == *" arm64 "* && "$architectures" == *" x86_64 "* ]]
           codesign --verify --deep --strict --verbose=2 "$app"
 
+      - name: Generate updater manifest
+        run: |
+          node scripts/updater-manifest.mjs "$GITHUB_REF_NAME" "$GITHUB_REPOSITORY" \
+            "$RUNNER_TEMP/release-notes.md" \
+            target/universal-apple-darwin/release/bundle/macos/Underlane.app.tar.gz.sig \
+            > "$RUNNER_TEMP/latest.json"
+
       - name: Create draft release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           assets=(target/universal-apple-darwin/release/bundle/dmg/*.dmg)
-          test "${#assets[@]}" -eq 1 && test -f "${assets[0]}"
-          gh release create "$GITHUB_REF_NAME" "${assets[0]}" \
+          test "${#assets[@]}" -eq 1
+          assets+=(
+            target/universal-apple-darwin/release/bundle/macos/Underlane.app.tar.gz
+            target/universal-apple-darwin/release/bundle/macos/Underlane.app.tar.gz.sig
+            "$RUNNER_TEMP/latest.json"
+          )
+          for asset in "${assets[@]}"; do
+            if [[ ! -s "$asset" ]]; then
+              echo "::error::Missing or empty release asset: $asset"
+              exit 1
+            fi
+          done
+          gh release create "$GITHUB_REF_NAME" "${assets[@]}" \
             --repo "$GITHUB_REPOSITORY" \
             --verify-tag --draft \
             --title "Underlane $GITHUB_REF_NAME" \

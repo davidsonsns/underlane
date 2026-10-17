@@ -589,14 +589,21 @@ impl Core {
         self.sup.stop(id).await;
     }
 
-    pub fn start_autostart_tunnels(&self) {
-        if let Ok(tunnels) = self.db.tunnels() {
-            for t in tunnels.into_iter().filter(|t| t.autostart) {
-                if let Err(e) = self.start(&t.id) {
-                    tracing::warn!("autostart {}: {e}", t.name);
-                }
+    pub fn start_startup_tunnels(&self) -> bool {
+        let (update_restart, ids) = match crate::restart::startup(&self.db) {
+            Ok(session) => session,
+            Err(e) => {
+                // A failed session read must not start tunnels via the autostart fallback.
+                tracing::warn!("could not restore startup tunnels: {e}");
+                return true;
+            }
+        };
+        for id in ids {
+            if let Err(e) = self.start(&id) {
+                tracing::warn!("startup tunnel {id}: {e}");
             }
         }
+        update_restart
     }
 
     pub fn apply_settings(&self, s: Settings) -> anyhow::Result<()> {

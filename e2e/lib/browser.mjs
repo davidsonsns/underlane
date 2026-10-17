@@ -213,8 +213,9 @@ function installTauriBridge() {
     },
   };
 }
-export function installPageMock(page, initializer, options) {
+export function installPageMock(page, initializer, options, extend) {
+  const input = JSON.stringify(options);
   return page.addInitScript({
-    content: `(${installTauriBridge})(); (${initializer})(${JSON.stringify(options)});`,
+    content: `(${installTauriBridge})(); (${initializer})(${input}); ${extend ? `(${extend})(${input});` : ""}`,
   });
 }

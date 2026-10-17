@@ -26,6 +26,7 @@
   import { track } from "./reactivity";
   import Settings from "./Settings.svelte";
   import Tunnels from "./Tunnels.svelte";
+  import UpdateButton from "./UpdateButton.svelte";
 
   type View = "tunnels" | "requests" | "logs" | "settings";
   let view = $state<View>("tunnels");
@@ -280,7 +281,7 @@
 {/snippet}
 
 {#snippet cloudflaredStatus()}
-  <div class="mt-auto px-2 text-xs">
+  <div class="px-2 text-xs">
     {#if store.overview?.cloudflared}
       <span class="text-muted-foreground"
         >cloudflared {store.overview.cloudflared.version ?? ""}</span
@@ -343,7 +344,10 @@
           <span>Underlane</span>
         </div>
         {@render sidebarNavigation()}
-        {@render cloudflaredStatus()}
+        <div class="mt-auto flex flex-col gap-3 pt-4">
+          <UpdateButton />
+          {@render cloudflaredStatus()}
+        </div>
       </aside>
 
       <main
