@@ -62,7 +62,12 @@ try {
     };
   });
   await page.goto(`${baseUrl}/#tunnels:synthetic`);
-  await page.getByRole("button", { exact: true, name: "New" }).click();
+  await page
+    .getByRole("button", { exact: true, name: "New project or group" })
+    .click();
+  await page
+    .getByRole("menuitem", { exact: true, name: "New project" })
+    .click();
   const dialog = page.getByRole("dialog");
   const picker = dialog.getByLabel("Configuration", { exact: true });
   await picker.click();
@@ -135,7 +140,12 @@ try {
     group: "",
     name: "Available",
   });
-  await page.getByRole("button", { exact: true, name: "New" }).click();
+  await page
+    .getByRole("button", { exact: true, name: "New project or group" })
+    .click();
+  await page
+    .getByRole("menuitem", { exact: true, name: "New project" })
+    .click();
   await picker.click();
   await page.getByRole("option", { name: "Browse files…" }).waitFor();
   assert.equal(await page.getByRole("option").count(), 2);

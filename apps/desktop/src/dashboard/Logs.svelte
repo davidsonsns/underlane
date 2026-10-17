@@ -30,10 +30,19 @@
   import OptionsMenu from "./OptionsMenu.svelte";
   import { track } from "./reactivity";
 
-  let { focusId = null }: { focusId?: string | null } = $props();
-  let tunnelId = $state<string | null>(null);
+  let {
+    focusId = null,
+    scopeId = null,
+    embedded = false,
+  }: {
+    focusId?: string | null;
+    scopeId?: string | null;
+    embedded?: boolean;
+  } = $props();
+  let filterTunnelId = $state<string | null>(null);
+  const tunnelId = $derived(scopeId ?? filterTunnelId);
   $effect(() => {
-    tunnelId = focusId;
+    filterTunnelId = focusId;
   });
   const LEVELS = ["debug", "info", "warn", "error", "fatal"];
   let levels = $state<string[]>([]);
@@ -57,7 +66,9 @@
   let list = $state<LogList>();
   const MAX = 3000;
   const activeLevels = $derived(logLevels(levels));
-  const filtered = $derived(Boolean(tunnelId || levels.length || search));
+  const filtered = $derived(
+    Boolean((scopeId === null && tunnelId) || levels.length || search)
+  );
   const names = $derived(
     Object.fromEntries(store.tunnels.map((t) => [t.id, t.name]))
   );
@@ -259,11 +270,11 @@
     <div
       class="flex min-h-11 flex-none flex-wrap items-center gap-2 border-b-[0.5px] border-border px-3 py-1.5"
     >
-      {#if tunnelId}
+      {#if scopeId === null && tunnelId}
         <FilterChip
           label="Project / tunnel"
           onremove={() => {
-            tunnelId = null;
+            filterTunnelId = null;
           }}
           removeLabel="Remove project or tunnel filter"
           value={names[tunnelId] ?? tunnelId}
@@ -290,7 +301,7 @@
         onclick={() => {
           search = "";
           levels = [];
-          tunnelId = null;
+          filterTunnelId = null;
         }}
         variant="ghost"
         >Reset filters</Button
@@ -300,7 +311,10 @@
 {/snippet}
 
 {#snippet logToolbar()}
-  <Toolbar subtitle={paused ? "Live updates paused" : ""} title="Logs">
+  <Toolbar
+    subtitle={paused ? "Live updates paused" : ""}
+    title={embedded ? "" : "Logs"}
+  >
     <SearchAction
       label="Search logs"
       bind:this={searchAction}
@@ -309,12 +323,13 @@
     />
     <LogFilters
       boundary={filterBoundary}
+      tunnelLocked={scopeId !== null}
       bind:levels
       bind:open={
         () => headerMenu === "filters",
         (value) => setHeaderMenu("filters", value)
       }
-      bind:tunnelId
+      bind:tunnelId={filterTunnelId}
     />
     <span aria-hidden="true" class="mx-0.5 h-4 border-l border-border"></span>
     <OptionsMenu bind:menu={headerMenu} bind:trigger={optionsTrigger}>

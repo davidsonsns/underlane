@@ -14,11 +14,13 @@
   let {
     open = $bindable(false),
     tab = "project",
+    group = "",
     returnFocus,
     onadded,
   }: {
     open?: boolean;
     tab?: AddTab;
+    group?: string;
     /** Where focus goes when the sheet closes (02 R7: WebKit doesn't focus a clicked button). */
     returnFocus: () => HTMLElement | null | undefined;
     onadded: (id: string) => void | Promise<void>;
@@ -31,6 +33,7 @@
   let busy = $state(false);
   $effect.pre(() => {
     track(tab);
+    track(group);
     if (open) {
       untrack(() => {
         opens += 1;
@@ -57,6 +60,7 @@
   >
     {#key `${opens}:${tab}`}
       <AddSheetBody
+        initialGroup={group}
         initialTab={tab}
         {onadded}
         onclose={() => {

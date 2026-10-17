@@ -185,8 +185,9 @@ fn settings_groups_and_tunnels_persist() {
     assert_eq!(db.settings().unwrap().theme, "dark");
     let t = db.tunnel("t1").unwrap().unwrap();
     assert!(t.inspect && t.autostart);
+    let groups = db.groups().unwrap();
     db.delete_tunnel("t1").unwrap();
-    assert!(db.groups().unwrap().is_empty(), "empty groups are pruned");
+    assert_eq!(db.groups().unwrap(), groups, "groups persist when their last project is deleted");
 }
 
 fn marked_exchange(id: &str, tunnel: &str, marker: &str) -> CapturedExchange {

@@ -1,4 +1,4 @@
-// Inline project renaming regression. Run with Vite on port 1420.
+// Group dialog and inline project renaming regression. Run with Vite on port 1420.
 // PLAYWRIGHT_MODULE can point to an installed Playwright module; BROWSER=webkit checks WebKit.
 import assert from "node:assert/strict";
 import {
@@ -16,164 +16,185 @@ await installPageMock(page, installHostnameMock, {
 });
 await page.goto(`${baseUrl}/#tunnels:synthetic`);
 
-const project = () =>
-  page.getByRole("textbox", { exact: true, name: "Group name" });
+const trigger = page.locator('[data-group-menu="group"]');
+const dialog = page.getByRole("dialog", { exact: true, name: "Rename group" });
+const field = () =>
+  dialog.getByRole("textbox", { exact: true, name: "Group name" });
 const saved = (name) =>
   page.waitForFunction(
     (expected) => window.__projectMock.overview.groups[0].name === expected,
     name
   );
-const field = () =>
-  page.getByRole("textbox", { exact: true, name: "Group name" });
 const calls = () =>
   page.evaluate(() =>
     window.__projectMock.calls.filter((c) => c.cmd === "rename_group")
   );
-await project().waitFor();
-const initial = await project().evaluate((e) => ({
-  height: e.getBoundingClientRect().height,
-  size: getComputedStyle(e).fontSize,
-  tag: e.tagName,
-}));
-await project().click();
+async function openRename() {
+  await trigger.click();
+  await page
+    .getByRole("menuitem", { exact: true, name: "Rename group" })
+    .click();
+  await dialog.waitFor();
+  await field().waitFor();
+}
+async function closedWithFocus() {
+  await dialog.waitFor({ state: "hidden" });
+  await page.waitForFunction(
+    () =>
+      document.activeElement ===
+      document.querySelector('[data-group-menu="group"]')
+  );
+}
+await trigger.waitFor();
+await openRename();
 assert.equal(
-  await project().evaluate((e) => e.tagName),
-  "DIV",
-  "Click keeps the editable tag"
+  await field().inputValue(),
+  "254",
+  "Dialog starts with the group name"
 );
-assert.equal(
-  await project().evaluate((e) => getComputedStyle(e).fontSize),
-  initial.size,
-  "Click preserves typography"
-);
-assert.equal(
-  await project().evaluate((e) => e.getBoundingClientRect().height),
-  initial.height,
-  "Click preserves layout"
-);
-assert.equal(
-  await page.locator('input[aria-label="Group name"]').count(),
-  0,
-  "No input replaces the heading"
-);
-await field().fill("  New   project  ");
+await field().fill("  New   group  ");
 await field().press("Enter");
-await saved("New project");
-await page.waitForFunction(
-  () =>
-    document
-      .querySelector('[aria-label="Group name"]')
-      .getAttribute("aria-busy") === "false"
-);
-assert.equal((await calls()).length, 1, "Enter saves once despite blur");
-assert.equal((await calls())[0].args.name, "New project");
+await saved("New group");
+await closedWithFocus();
+assert.equal((await calls()).length, 1, "Enter saves once");
 assert.equal(
-  await project().evaluate((e) => document.activeElement === e),
-  true,
-  "Enter restores focus"
+  (await calls())[0].args.name,
+  "New group",
+  "Whitespace is normalized"
 );
-await project().click();
+
+await openRename();
 await field().fill("Cancelled");
-await field().press("Escape");
-assert.equal((await calls()).length, 1, "Escape never saves");
-await project().click();
-await field().press("Tab");
-await project().waitFor();
-assert.equal((await calls()).length, 1, "Untouched blur never saves");
-await project().click();
-await field().fill("a".repeat(65));
-await field().press("Enter");
-await page.getByText("Use 64 characters or fewer.", { exact: true }).waitFor();
-assert.equal((await calls()).length, 1, "Oversized name never saves");
-await field().fill("   ");
-await field().press("Enter");
-await page.getByText("Enter a name.", { exact: true }).waitFor();
-assert.equal((await calls()).length, 1, "Blank name never saves");
-await field().fill("Blur save");
-await field().press("Tab");
-await saved("Blur save");
-await page.waitForFunction(
-  () =>
-    document
-      .querySelector('[aria-label="Group name"]')
-      .getAttribute("aria-busy") === "false"
+await dialog.getByRole("button", { exact: true, name: "Cancel" }).click();
+await closedWithFocus();
+assert.equal((await calls()).length, 1, "Cancel never saves");
+await openRename();
+assert.equal(
+  await field().inputValue(),
+  "New group",
+  "Cancel discards the draft"
 );
-assert.equal((await calls()).length, 2, "Edited blur saves once");
+await field().fill("Escape cancelled");
+await field().press("Escape");
+await closedWithFocus();
+assert.equal((await calls()).length, 1, "Escape never saves");
+
+await openRename();
+await field().fill("a".repeat(65));
+assert.equal(
+  await dialog
+    .getByRole("button", { exact: true, name: "Save changes" })
+    .isDisabled(),
+  true,
+  "Oversized names cannot save"
+);
+await field().press("Enter");
+assert.equal((await calls()).length, 1, "Oversized name never writes");
+await field().fill("   ");
+assert.equal(
+  await dialog
+    .getByRole("button", { exact: true, name: "Save changes" })
+    .isDisabled(),
+  true,
+  "Blank names cannot save"
+);
+await field().press("Enter");
+assert.equal((await calls()).length, 1, "Blank name never writes");
+const long = "L".repeat(64);
+assert.equal(long.length, 64);
+await field().fill(long);
+await field().press("Enter");
+await saved(long.trim());
+await closedWithFocus();
+assert.equal((await calls()).length, 2, "A 64-character draft can save");
+
 await page.evaluate(() => {
   window.__projectMock.failRename = true;
 });
-await project().click();
+await openRename();
 await field().fill("Retry name");
 await field().press("Enter");
-await page.getByText("Could not save project name", { exact: true }).waitFor();
+await dialog
+  .getByText("Could not save project name", { exact: true })
+  .waitFor();
 assert.equal(
-  await field().textContent(),
+  await field().inputValue(),
   "Retry name",
-  "Failure preserves draft"
+  "Failure preserves the draft"
 );
 await page.evaluate(() => {
   window.__projectMock.failRename = false;
 });
 await field().press("Enter");
 await saved("Retry name");
-await page.waitForFunction(
-  () =>
-    document
-      .querySelector('[aria-label="Group name"]')
-      .getAttribute("aria-busy") === "false"
+await closedWithFocus();
+assert.equal(
+  (await calls()).length,
+  4,
+  "A backend failure permits one explicit retry"
 );
-const long = `${"Long project name ".repeat(3)}1234567890`;
-assert.equal(long.length, 64);
-await project().click();
-await field().fill(long);
+
+await page.evaluate(() => {
+  const dispatch = window.__mockDispatch;
+  window.__mockDispatch = (cmd, args) => {
+    if (cmd === "overview" && window.__projectMock.failRefresh) {
+      throw new Error("Refresh unavailable");
+    }
+    return dispatch(cmd, args);
+  };
+  window.__projectMock.failRefresh = true;
+});
+await openRename();
+await field().fill("Saved before refresh");
 await field().press("Enter");
-await saved(long);
-await page.waitForFunction(
-  () =>
-    document
-      .querySelector('[aria-label="Group name"]')
-      .getAttribute("aria-busy") === "false"
+await dialog
+  .getByText("Group saved. Refresh unavailable", { exact: true })
+  .waitFor();
+assert.equal(
+  await field().isDisabled(),
+  true,
+  "A saved draft stays frozen until refreshed"
 );
-await page.locator("[data-tunnel-id=synthetic]").click();
-const bounds = await project().evaluate((e) => ({
-  overflow: getComputedStyle(e).textOverflow,
-  scroll: e.scrollWidth,
-  width: e.clientWidth,
-}));
-assert.ok(
-  bounds.scroll > bounds.width,
-  "Long heading overflows available width"
+assert.equal(
+  (await calls()).length,
+  5,
+  "Successful write happens before refresh failure"
 );
-assert.equal(bounds.overflow, "ellipsis", "Long heading shows ellipsis");
-await page.mouse.move(700, 500);
-await project().hover();
-await page.locator("[data-slot=tooltip-content]").waitFor();
-assert.ok(
-  (await page.locator("[data-slot=tooltip-content]").innerText()).includes(
-    long
-  ),
-  "Tooltip contains full name"
+await page.evaluate(() => {
+  window.__projectMock.failRefresh = false;
+});
+await dialog
+  .getByRole("button", { exact: true, name: "Retry refresh" })
+  .click();
+await closedWithFocus();
+assert.equal(
+  (await calls()).length,
+  5,
+  "Refresh retry never repeats the write"
 );
+
 await page.evaluate(() => {
   window.__projectMock.renameDelay = 500;
 });
-await project().click();
-await field().fill("Focus retained");
+await openRename();
+await field().fill("Busy save");
 await field().press("Enter");
-const row = page.locator("[data-tunnel-id=synthetic]");
-await row.click();
-await saved("Focus retained");
 await page.waitForFunction(
   () =>
     document
-      .querySelector('[aria-label="Group name"]')
-      .getAttribute("aria-busy") === "false"
+      .querySelector('[role="dialog"] form')
+      ?.getAttribute("aria-busy") === "true"
 );
+await page.keyboard.press("Escape");
+await page.mouse.click(1000, 425);
 assert.equal(
-  await row.evaluate((e) => document.activeElement === e),
+  await dialog.isVisible(),
   true,
-  "Pending Enter save does not steal subsequent focus"
+  "Busy dialog ignores Escape and outside clicks"
 );
+await saved("Busy save");
+await closedWithFocus();
+assert.equal((await calls()).length, 6, "Busy submission writes once");
 const title = page.getByRole("textbox", { exact: true, name: "Project name" });
 const before = await title.evaluate((e) => ({
   font: getComputedStyle(e).fontSize,
@@ -260,5 +281,5 @@ await page.waitForFunction(
 assert.deepEqual(errors, [], "No browser errors");
 await browser.close();
 console.log(
-  "Project rename passed: Enter, Escape, blur, limits, retry, focus, ellipsis, tooltip"
+  "Group dialog and project rename passed: Enter, Cancel, Escape, limits, retry, refresh-only retry, busy dismissal, focus, inline title"
 );

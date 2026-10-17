@@ -186,6 +186,8 @@ pub fn open_dashboard<R: Runtime>(app: &AppHandle<R>, view: Option<String>) {
     };
     let builder = WebviewWindowBuilder::new(app, DASHBOARD, WebviewUrl::App(url.into()))
         .title("Underlane")
+        // Let HTML handle project dragging; WebView2's native handler intercepts it on Windows.
+        .disable_drag_drop_handler()
         .inner_size(1080.0, 700.0)
         // onboarding_status enables resizing only for the completed dashboard.
         .resizable(false)

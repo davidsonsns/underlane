@@ -47,8 +47,17 @@
   } from "./view-state";
 
   const CAP = 500;
-  let { focusId = null }: { focusId?: string | null } = $props();
-  let tunnelId = $state<string | null>(null);
+  let {
+    focusId = null,
+    scopeId = null,
+    embedded = false,
+  }: {
+    focusId?: string | null;
+    scopeId?: string | null;
+    embedded?: boolean;
+  } = $props();
+  let filterTunnelId = $state<string | null>(null);
+  const tunnelId = $derived(scopeId ?? filterTunnelId);
   let rows = $state<RequestSummary[]>([]);
   /** Only the first load shows the queryStatus.loading panel; later reloads keep the current view until they land. */
   const queryStatus = $state<{ failure: string | null; loading: boolean }>({
@@ -62,7 +71,12 @@
   let statuses = $state<number[]>([]);
   let methods = $state<string[]>([]);
   const filtered = $derived(
-    Boolean(search || statuses.length || methods.length || tunnelId)
+    Boolean(
+      search ||
+        statuses.length ||
+        methods.length ||
+        (scopeId === null && tunnelId)
+    )
   );
   const matchingFiltered = $derived(
     Boolean(search || statuses.length || methods.length)
@@ -72,6 +86,7 @@
   let paused = $state(false);
   let pauseKnown = $state(false);
   let pauseBusy = $state(false);
+  let inspectionBusy = $state(false);
   let actionError = $state<string | null>(null);
   let clearOpen = $state(false);
   let clearTarget = $state<{ id: string | null; name: string } | null>(null);
@@ -103,9 +118,10 @@
 
   const inspectable = (t: { kind: string }) => t.kind !== "token";
   $effect(() => {
-    tunnelId = focusId;
+    filterTunnelId = focusId;
   });
   const tunnel = $derived(store.tunnels.find((t) => t.id === tunnelId) ?? null);
+  const canInspect = $derived(tunnel !== null && inspectable(tunnel));
 
   let pauseGen = 0;
   $effect(() => {
@@ -115,7 +131,7 @@
     paused = false;
     pauseKnown = false;
     actionError = null;
-    if (!id) {
+    if (!(id && canInspect)) {
       return;
     }
     api.requestCapturePaused(id).then(
@@ -142,7 +158,7 @@
   }
 
   async function toggleCapture() {
-    if (!tunnelId || pauseBusy) {
+    if (!(tunnelId && canInspect && tunnel?.inspect) || pauseBusy) {
       return;
     }
     const id = tunnelId;
@@ -176,6 +192,25 @@
       }
     } finally {
       pauseBusy = false;
+    }
+  }
+
+  async function enableInspection() {
+    if (!(tunnel && canInspect) || tunnel.inspect || inspectionBusy) {
+      return;
+    }
+    const { id } = tunnel;
+    inspectionBusy = true;
+    actionError = null;
+    try {
+      await api.updateTunnel(id, { inspect: true });
+      await store.refresh();
+    } catch (e) {
+      if (id === tunnelId) {
+        actionError = errorText(e);
+      }
+    } finally {
+      inspectionBusy = false;
     }
   }
 
@@ -465,7 +500,9 @@
     }
   }
 
-  const inspectionSubtitle = $derived(getInspectionSubtitle(tunnel, paused));
+  const inspectionSubtitle = $derived(
+    getInspectionSubtitle(canInspect ? tunnel : null, paused)
+  );
   const emptyMessage = $derived(
     requestEmptyMessage(tunnel, matchingFiltered, paused)
   );
@@ -575,11 +612,11 @@
     <div
       class="flex min-h-11 flex-none flex-wrap items-center gap-2 border-b-[0.5px] border-border px-3 py-1.5"
     >
-      {#if tunnelId}
+      {#if scopeId === null && tunnelId}
         <FilterChip
           label="Project / tunnel"
           onremove={() => {
-            tunnelId = null;
+            filterTunnelId = null;
           }}
           removeLabel="Remove project or tunnel filter"
           value={tunnel?.name ?? tunnelId}
@@ -617,7 +654,7 @@
           search = "";
           statuses = [];
           methods = [];
-          tunnelId = null;
+          filterTunnelId = null;
         }}
         variant="ghost"
         >Reset filters</Button
@@ -627,7 +664,7 @@
 {/snippet}
 
 {#snippet requestToolbar()}
-  <Toolbar subtitle={inspectionSubtitle} title="Requests">
+  <Toolbar subtitle={inspectionSubtitle} title={embedded ? "" : "Requests"}>
     <SearchAction
       label="Search requests"
       bind:this={searchAction}
@@ -636,13 +673,14 @@
     />
     <RequestFilters
       boundary={filterBoundary}
+      tunnelLocked={scopeId !== null}
       bind:methods
       bind:open={
         () => headerMenu === "filters",
         (value) => setHeaderMenu("filters", value)
       }
       bind:statuses
-      bind:tunnelId
+      bind:tunnelId={filterTunnelId}
     />
     <span aria-hidden="true" class="mx-0.5 h-4 border-l border-border"></span>
     <OptionsMenu bind:menu={headerMenu} bind:trigger={optionsTrigger}>
@@ -676,7 +714,7 @@
       <div class="-mx-2.5 mt-1 border-t border-border px-0.5 pt-1.5">
         <Button
           class="w-full justify-start"
-          disabled={!(tunnel?.inspect && pauseKnown) || pauseBusy}
+          disabled={!(canInspect && tunnel?.inspect && pauseKnown) || pauseBusy}
           onclick={toggleCapture}
           variant="ghost"
           >{#if paused}
@@ -723,7 +761,15 @@
     </div>
   {/if}
 
-  {#if !(store.tunnels.some(inspectable) || store.loading)}
+  {#if tunnel && !canInspect}
+    <div class="grid flex-1 place-items-center">
+      <StatePanel
+        kind="empty"
+        message="Request inspection is available for config-file and quick tunnels. Token tunnels manage their routes in Cloudflare."
+        title="Request inspection unavailable"
+      />
+    </div>
+  {:else if !(store.tunnels.some(inspectable) || store.loading)}
     <div class="grid flex-1 place-items-center">
       <StatePanel
         kind="empty"
@@ -738,12 +784,10 @@
         message="Turn it on to capture each request's headers and bodies through Underlane's local proxy. The tunnel restarts to apply it."
         title="Inspection is off"
       >
-        <Button
-          onclick={async () => {
-            await api.updateTunnel(tunnel.id, { inspect: true });
-            await store.refresh();
-          }}
-          >Turn on inspection</Button
+        <Button disabled={inspectionBusy} onclick={enableInspection}
+          >{inspectionBusy
+            ? "Turning on inspection…"
+            : "Turn on inspection"}</Button
         >
       </StatePanel>
     </div>

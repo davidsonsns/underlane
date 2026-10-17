@@ -41,6 +41,23 @@ function project(id: string, state: Partial<TunnelState> = {}): Tunnel {
 }
 
 describe("grouped tunnel presentation", () => {
+  it("includes empty named groups in sidebar order and only includes a populated ungrouped bucket", () => {
+    const grouped = { ...project("web"), group_id: "work", group_name: "Work" };
+    const named = [
+      { id: "empty", name: "Personal" },
+      { id: "work", name: "Work" },
+    ];
+    const groups = groupTunnels([grouped, project("scratch")], named);
+    expect(groups.map((group) => group.id)).toEqual(["empty", "work", null]);
+    expect(groups[0].tunnels).toEqual([]);
+    expect(
+      groups.flatMap((group) => group.tunnels).map((tunnel) => tunnel.id)
+    ).toEqual(["web", "scratch"]);
+    expect(groupTunnels([], named).map((group) => group.id)).toEqual([
+      "empty",
+      "work",
+    ]);
+  });
   it("keeps backend ordering and separates identical group names by identity", () => {
     const first = { ...project("first"), group_id: "b", group_name: "Same" };
     const ungrouped = project("ungrouped");

@@ -256,6 +256,20 @@ impl Db {
         Ok(())
     }
 
+    pub fn delete_empty_group(&self, id: &str) -> anyhow::Result<()> {
+        let conn = self.conn.lock().unwrap();
+        let deleted = conn.execute(
+            "DELETE FROM groups WHERE id = ?1 AND NOT EXISTS (SELECT 1 FROM tunnels WHERE group_id = ?1)",
+            [id],
+        )?;
+        if deleted == 0 {
+            let exists: bool = conn.query_row("SELECT EXISTS(SELECT 1 FROM groups WHERE id = ?1)", [id], |r| r.get(0))?;
+            anyhow::ensure!(exists, "Group not found.");
+            anyhow::bail!("Only empty groups can be deleted. Move its projects to another group first.");
+        }
+        Ok(())
+    }
+
     /// Delete groups that no longer have tunnels.
     pub fn prune_empty_groups(&self) -> anyhow::Result<()> {
         self.with(|c| c.execute("DELETE FROM groups WHERE id NOT IN (SELECT group_id FROM tunnels WHERE group_id IS NOT NULL)", []))?;
@@ -380,7 +394,6 @@ impl Db {
         tx.execute("DELETE FROM tunnels WHERE id = ?1", [id])?;
         tx.execute("DELETE FROM logs WHERE tunnel_id = ?1", [id])?;
         tx.execute("DELETE FROM requests WHERE tunnel_id = ?1", [id])?;
-        tx.execute("DELETE FROM groups WHERE id NOT IN (SELECT group_id FROM tunnels WHERE group_id IS NOT NULL)", [])?;
         tx.commit()?;
         truncate_wal(&conn)
     }
@@ -763,6 +776,80 @@ mod group_tests {
         let default = db.ensure_group(" \t\n\u{a0}").unwrap();
         assert_eq!(default.name, "Default");
         assert_eq!(db.ensure_group("").unwrap().id, default.id);
+    }
+
+    #[test]
+    fn empty_groups_survive_unrelated_project_deletion_and_reopen() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("groups.db");
+        let db = Db::open(&path).unwrap();
+        let empty = db.ensure_group("Empty").unwrap();
+        let tunnel = crate::import::add_simple(&db, TunnelKind::Quick, "Web", "Work", Some("http://localhost:3000".into()), "info").unwrap();
+        let groups = db.groups().unwrap();
+        assert_eq!(groups[0], empty);
+
+        db.delete_tunnel(&tunnel.id).unwrap();
+        assert!(db.tunnels().unwrap().is_empty());
+        assert_eq!(db.groups().unwrap(), groups);
+        drop(db);
+
+        assert_eq!(Db::open(&path).unwrap().groups().unwrap(), groups);
+    }
+
+    #[test]
+    fn empty_groups_survive_project_membership_updates_and_reopen() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("groups.db");
+        let db = Db::open(&path).unwrap();
+        let empty = db.ensure_group("Empty").unwrap();
+        let mut tunnel = crate::import::add_simple(&db, TunnelKind::Quick, "Web", "Work", Some("http://localhost:3000".into()), "info").unwrap();
+        let destination = db.ensure_group("Personal").unwrap();
+        let groups = db.groups().unwrap();
+        assert_eq!(groups[0], empty);
+
+        tunnel.group_id = Some(destination.id);
+        db.upsert_tunnel(&tunnel).unwrap();
+        assert_eq!(db.tunnel(&tunnel.id).unwrap().unwrap(), tunnel);
+        assert_eq!(db.groups().unwrap(), groups);
+        tunnel.group_id = None;
+        db.upsert_tunnel(&tunnel).unwrap();
+        assert_eq!(db.groups().unwrap(), groups);
+        drop(db);
+
+        let db = Db::open(&path).unwrap();
+        assert_eq!(db.groups().unwrap(), groups);
+        assert_eq!(db.tunnel(&tunnel.id).unwrap().unwrap(), tunnel);
+    }
+
+    #[test]
+    fn delete_empty_group_persists_after_reopen() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("groups.db");
+        let db = Db::open(&path).unwrap();
+        let empty = db.ensure_group("Empty").unwrap();
+        let retained = db.ensure_group("Retained").unwrap();
+        db.delete_empty_group(&empty.id).unwrap();
+        assert_eq!(db.groups().unwrap(), vec![retained.clone()]);
+        drop(db);
+
+        assert_eq!(Db::open(&path).unwrap().groups().unwrap(), vec![retained]);
+    }
+
+    #[test]
+    fn delete_empty_group_rejects_non_empty_group_without_changing_membership() {
+        let db = Db::open_in_memory().unwrap();
+        let tunnel = crate::import::add_simple(&db, TunnelKind::Quick, "Web", "Work", Some("http://localhost:3000".into()), "info").unwrap();
+        let groups = db.groups().unwrap();
+        let error = db.delete_empty_group(tunnel.group_id.as_deref().unwrap()).unwrap_err();
+        assert_eq!(error.to_string(), "Only empty groups can be deleted. Move its projects to another group first.");
+        assert_eq!(db.groups().unwrap(), groups);
+        assert_eq!(db.tunnel(&tunnel.id).unwrap().unwrap(), tunnel);
+    }
+
+    #[test]
+    fn delete_empty_group_rejects_missing_group() {
+        let db = Db::open_in_memory().unwrap();
+        assert_eq!(db.delete_empty_group("missing").unwrap_err().to_string(), "Group not found.");
     }
 
     #[test]

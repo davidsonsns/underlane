@@ -15,7 +15,9 @@
   data-tauri-drag-region
 >
   <div class="flex min-w-0 items-baseline gap-2.5" data-tauri-drag-region>
-    <h1 class="m-0 text-lg font-semibold" data-tauri-drag-region>{title}</h1>
+    {#if title}
+      <h1 class="m-0 text-lg font-semibold" data-tauri-drag-region>{title}</h1>
+    {/if}
     {#if subtitle}
       <span
         class="truncate text-callout text-muted-foreground"

@@ -42,11 +42,13 @@
 
   let {
     initialTab = "project",
+    initialGroup = "",
     busy = $bindable(false),
     onclose,
     onadded,
   }: {
     initialTab?: AddTab;
+    initialGroup?: string;
     busy?: boolean;
     onclose: () => void;
     onadded: (id: string) => void | Promise<void>;
@@ -54,7 +56,8 @@
 
   // svelte-ignore state_referenced_locally
   let tab = $state<AddTab>(initialTab);
-  let project = $state({ group: "", name: "" });
+  // svelte-ignore state_referenced_locally
+  let project = $state({ group: initialGroup, name: "" });
   let origin = $state("");
   let defaultDirectory = $state<string | null>(null);
   let directory = $state<string | null>(null);
@@ -232,7 +235,12 @@
                 preview?.path ?? null,
                 directory
               )
-            : await api.addQuick("", origin, "Quick tunnels", false);
+            : await api.addQuick(
+                "",
+                origin,
+                project.group || "Quick tunnels",
+                false
+              );
       }
       if (alive) {
         await finish(createdId);

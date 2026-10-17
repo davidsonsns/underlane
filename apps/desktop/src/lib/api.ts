@@ -44,6 +44,7 @@ export const api = {
     invoke<void>("connect_cloudflare", { requestId }),
   connectHostnameDns: (id: string, hostname: string, token: string) =>
     invoke<HostnameDns>("connect_hostname_dns", { hostname, id, token }),
+  createGroup: (name: string) => invoke<string>("create_group", { name }),
   createHostnameDns: (id: string, hostname: string) =>
     invoke<HostnameDns>("create_hostname_dns", { hostname, id }),
   createProject: (
@@ -58,6 +59,7 @@ export const api = {
       requestId,
       revision,
     }),
+  deleteGroup: (id: string) => invoke<void>("delete_group", { id }),
   deleteTunnel: (id: string, deleteConfig = false) =>
     invoke<void>("delete_tunnel", { deleteConfig, id }),
   detectCloudflared: () => invoke<Binary | null>("detect_cloudflared"),

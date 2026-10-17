@@ -231,9 +231,27 @@ fn deserialize_group_patch<'de, D: serde::Deserializer<'de>>(deserializer: D) ->
 }
 
 #[tauri::command]
+pub async fn create_group(core: CoreState<'_>, name: String) -> Res<String> {
+    blocking(&core, move |c| {
+        let group = c.db.ensure_group(&name).map_err(err)?;
+        c.notify_changed();
+        Ok(group.id)
+    }).await
+}
+
+#[tauri::command]
 pub async fn rename_group(core: CoreState<'_>, id: String, name: String) -> Res<()> {
     blocking(&core, move |c| {
         c.db.rename_group(&id, &name).map_err(err)?;
+        c.notify_changed();
+        Ok(())
+    }).await
+}
+
+#[tauri::command]
+pub async fn delete_group(core: CoreState<'_>, id: String) -> Res<()> {
+    blocking(&core, move |c| {
+        c.db.delete_empty_group(&id).map_err(err)?;
         c.notify_changed();
         Ok(())
     }).await
@@ -285,7 +303,6 @@ fn update_tunnel_inner(core: &Core, id: String, patch: TunnelPatch) -> Res<()> {
         needs_restart = true;
     }
     core.db.upsert_tunnel(&t).map_err(err)?;
-    core.db.prune_empty_groups().map_err(err)?;
     if needs_restart {
         core.restart_if_running(&id).map_err(err)?;
     }

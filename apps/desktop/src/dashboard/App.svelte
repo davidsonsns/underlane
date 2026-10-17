@@ -3,33 +3,39 @@
   import ScrollText from "@lucide/svelte/icons/scroll-text";
   import SettingsIcon from "@lucide/svelte/icons/settings";
   import TriangleAlert from "@lucide/svelte/icons/triangle-alert";
-  import Waypoints from "@lucide/svelte/icons/waypoints";
   import { listen } from "@tauri-apps/api/event";
   import { type Component, onMount, tick, untrack } from "svelte";
-  import { fade } from "svelte/transition";
   import LaneGlyph from "$lib/components/app/LaneGlyph.svelte";
-  import { Badge } from "$lib/components/ui/badge/index.js";
   import { Button } from "$lib/components/ui/button/index.js";
   import { kbRing } from "$lib/components/ui/mac";
   import { Toaster } from "$lib/components/ui/sonner/index.js";
   import { Provider as TooltipProvider } from "$lib/components/ui/tooltip/index.js";
+  import { groupTunnels } from "$lib/tunnel-groups";
   import { cn } from "$lib/utils";
   import { api, errorText } from "../lib/api";
   import { snapshot } from "../lib/snapshot.svelte";
   import { store } from "../lib/store.svelte";
-  import { motion } from "../lib/theme";
   import AddSheet from "./AddSheet.svelte";
   import type { AddTab } from "./AddSheetBody.svelte";
+  import GroupSheet from "./GroupSheet.svelte";
   import Logs from "./Logs.svelte";
   import Onboarding from "./Onboarding.svelte";
+  import ProjectSidebar from "./ProjectSidebar.svelte";
   import Requests from "./Requests.svelte";
   import { track } from "./reactivity";
   import Settings from "./Settings.svelte";
-  import Tunnels from "./Tunnels.svelte";
+  import Tunnels, { type ProjectTab } from "./Tunnels.svelte";
   import UpdateButton from "./UpdateButton.svelte";
 
   type View = "tunnels" | "requests" | "logs" | "settings";
   let view = $state<View>("tunnels");
+  let selectedId = $state<string | null>(null);
+  let projectTab = $state<ProjectTab>("overview");
+  let collapsedGroups = $state<string[]>(loadCollapsedGroups());
+  let groupOpen = $state(false);
+  let editingGroup = $state<{ id: string; name: string } | null>(null);
+  let groupTrigger: HTMLElement | null = null;
+  let addGroup = $state("");
   let onboarding = $state<boolean | null>(null);
   let onboardingError = $state<string | null>(null);
   let existingAuthorization = $state(false);
@@ -43,6 +49,7 @@
   let sheetSession = $state(0);
   $effect.pre(() => {
     track(addTab);
+    track(addGroup);
     if (adding) {
       untrack(() => {
         sheetSession += 1;
@@ -56,6 +63,86 @@
     selectFirst: (side?: "req" | "resp") => Promise<void>;
   } | null>(null);
 
+  function loadCollapsedGroups(): string[] {
+    try {
+      const value: unknown = JSON.parse(
+        localStorage.getItem("underlane.projects.collapsed-groups") ?? "[]"
+      );
+      return Array.isArray(value)
+        ? value.filter((id): id is string => typeof id === "string")
+        : [];
+    } catch {
+      return [];
+    }
+  }
+
+  $effect(() => {
+    try {
+      if (collapsedGroups.length) {
+        localStorage.setItem(
+          "underlane.projects.collapsed-groups",
+          JSON.stringify(collapsedGroups)
+        );
+      } else {
+        localStorage.removeItem("underlane.projects.collapsed-groups");
+      }
+    } catch {
+      // Group navigation still works when browser storage is unavailable.
+    }
+  });
+
+  $effect(() => {
+    if (
+      store.overview &&
+      !store.tunnels.some((tunnel) => tunnel.id === selectedId)
+    ) {
+      selectedId = store.tunnels[0]?.id ?? null;
+      projectTab = "overview";
+    }
+  });
+
+  function selectProject(id: string) {
+    show("tunnels", () => {
+      selectedId = id;
+      projectTab = "overview";
+      focusId = null;
+      view = "tunnels";
+    });
+  }
+
+  function editGroup(
+    trigger: HTMLElement,
+    group?: { id: string; name: string }
+  ) {
+    groupTrigger = trigger;
+    editingGroup = group ?? null;
+    groupOpen = true;
+  }
+
+  async function removeProject(id: string, deleteConfig: boolean) {
+    const order = groupTunnels(
+      store.tunnels,
+      store.overview?.groups ?? []
+    ).flatMap((group) => group.tunnels);
+    const index = order.findIndex((tunnel) => tunnel.id === id);
+    const next = order[index + 1] ?? order[index - 1] ?? null;
+    await api.deleteTunnel(id, deleteConfig);
+    selectedId = next?.id ?? null;
+    projectTab = "overview";
+    if (next) {
+      collapsedGroups = collapsedGroups.filter(
+        (group) => group !== (next.group_id ?? "ungrouped")
+      );
+    }
+    await store.refresh();
+    await tick();
+    const row = next
+      ? document.querySelector<HTMLElement>(`[data-tunnel-id="${next.id}"]`)
+      : null;
+    row?.scrollIntoView({ block: "nearest" });
+    (row ?? document.querySelector<HTMLElement>("[data-add-tunnel]"))?.focus();
+  }
+
   function navigate(target: string) {
     if (onboarding !== false) {
       return;
@@ -66,6 +153,7 @@
     if (v === "add") {
       // add:<tab> opens a given tab (O6), e.g. for screenshots.
       addTab = id === "quick" ? "quick" : "project";
+      addGroup = "";
       addTrigger = null;
       addedId = null;
       view = "tunnels";
@@ -73,6 +161,19 @@
       return;
     }
     adding = false;
+    if (id && (v === "tunnels" || v === "requests" || v === "logs")) {
+      show("tunnels", () => {
+        selectedId = id;
+        const tunnel = store.tunnels.find((item) => item.id === id);
+        collapsedGroups = collapsedGroups.filter(
+          (group) => group !== (tunnel?.group_id ?? "ungrouped")
+        );
+        projectTab = v === "tunnels" ? "overview" : v;
+        view = "tunnels";
+        focusId = null;
+      });
+      return;
+    }
     const next = ["tunnels", "requests", "logs", "settings"].includes(v)
       ? (v as View)
       : view;
@@ -138,6 +239,11 @@
         addTrigger = null;
         addedId = null;
         focusId = null;
+        selectedId = null;
+        projectTab = "overview";
+        collapsedGroups = [];
+        groupOpen = false;
+        addGroup = "";
         view = "tunnels";
         existingAuthorization = false;
         onboarding = null;
@@ -188,6 +294,8 @@
     }
     onboarding = false;
     focusId = id ?? null;
+    selectedId = id ?? null;
+    projectTab = "overview";
     view = "tunnels";
     await tick();
     if (mode === "project") {
@@ -197,10 +305,12 @@
     }
   }
 
-  function openAdd(e: MouseEvent) {
-    addTrigger = e.currentTarget as HTMLElement;
+  function openAdd(e: MouseEvent | HTMLElement, group = "") {
+    addTrigger =
+      e instanceof HTMLElement ? e : (e.currentTarget as HTMLElement);
     addedId = null;
     addTab = "project";
+    addGroup = group;
     adding = true;
   }
 
@@ -221,6 +331,12 @@
       addTrigger = null;
       addedId = id;
       focusId = id;
+      selectedId = id;
+      projectTab = "overview";
+      const created = store.tunnels.find((tunnel) => tunnel.id === id);
+      collapsedGroups = collapsedGroups.filter(
+        (group) => group !== (created?.group_id ?? "ungrouped")
+      );
       view = "tunnels";
       await tick();
       if (session === sheetSession && adding) {
@@ -234,30 +350,20 @@
     label: string;
     icon: Component<{ class?: string }>;
   }[] = [
-    { icon: Waypoints, id: "tunnels", label: "Projects" },
-    { icon: List, id: "requests", label: "Requests" },
-    { icon: ScrollText, id: "logs", label: "Logs" },
+    { icon: List, id: "requests", label: "All requests" },
+    { icon: ScrollText, id: "logs", label: "All logs" },
     { icon: SettingsIcon, id: "settings", label: "Settings" },
   ];
 </script>
 {#snippet sidebarNavigation()}
   <nav aria-label="Sections" class="relative isolate flex flex-col gap-1">
-    <!-- The selection is one pill that slides to the current item, like the segmented
-           control's thumb. Items are h-8 with a 4px gap, so item i sits i × (100% + 4px) down. -->
-    <div
-      aria-hidden="true"
-      class="pointer-events-none absolute inset-x-0 top-0 -z-1 h-8 rounded-md bg-sidebar-accent transition-[translate] duration-200 ease-out motion-reduce:transition-none"
-      style:translate="0 calc({nav.findIndex(
-        (n) => n.id === view
-      )} * (100% + 4px))"
-    ></div>
     {#each nav as n}
       <button
         aria-current={view === n.id ? "page" : undefined}
         class={cn(
           "flex h-8 items-center gap-2.5 rounded-md px-2.5 text-left transition-colors",
           view === n.id
-            ? "text-foreground"
+            ? "bg-sidebar-accent text-foreground"
             : "text-muted-foreground hover:bg-fill hover:text-foreground",
           kbRing
         )}
@@ -270,11 +376,6 @@
       >
         <n.icon class="size-[15px]" />
         <span class="flex-1">{n.label}</span>
-        {#if n.id === "tunnels" && store.activeCount > 0}
-          <span class="flex" transition:fade={{ duration: motion(150) }}
-            ><Badge variant="ok">{store.activeCount}</Badge></span
-          >
-        {/if}
       </button>
     {/each}
   </nav>
@@ -328,9 +429,9 @@
     <Onboarding {existingAuthorization} oncomplete={finishOnboarding} />
   {:else}
     <!-- Neutral sidebar and content surfaces share the same light/dark palette. -->
-    <div class="grid h-screen grid-cols-[208px_1fr]">
+    <div class="grid h-screen grid-cols-[224px_minmax(0,1fr)]">
       <aside
-        class="flex flex-col border-e-[0.5px] border-border bg-sidebar px-2.5 pb-2.5"
+        class="flex min-h-0 flex-col border-e-[0.5px] border-border bg-sidebar px-2.5 pb-2.5"
         data-tauri-drag-region
       >
         <!-- Room for the traffic lights: the dashboard has an overlay title bar
@@ -343,8 +444,16 @@
           <LaneGlyph class="pointer-events-none text-foreground" size={20} />
           <span>Underlane</span>
         </div>
-        {@render sidebarNavigation()}
+        <ProjectSidebar
+          active={view === "tunnels"}
+          onadd={openAdd}
+          ongroup={editGroup}
+          onselect={selectProject}
+          {selectedId}
+          bind:collapsed={collapsedGroups}
+        />
         <div class="mt-auto flex flex-col gap-3 pt-4">
+          {@render sidebarNavigation()}
           <UpdateButton />
           {@render cloudflaredStatus()}
         </div>
@@ -354,7 +463,13 @@
         class="min-w-0 overflow-hidden bg-background [view-transition-name:page]"
       >
         {#if view === "tunnels"}
-          <Tunnels {focusId} onadd={openAdd} />
+          <Tunnels
+            onadd={openAdd}
+            onremove={removeProject}
+            {selectedId}
+            bind:requestsRef
+            bind:tab={projectTab}
+          />
         {:else if view === "requests"}
           <Requests {focusId} bind:this={requestsRef} />
         {:else if view === "logs"}
@@ -369,6 +484,7 @@
      focusId). Otherwise, without a live trigger (opened from the popover, or the empty state went
      away after creation), focus goes to the Tunnels toolbar's New button. -->
     <AddSheet
+      group={addGroup}
       onadded={afterCreation(sheetSession)}
       returnFocus={() => {
         const row = addedId
@@ -385,6 +501,17 @@
       }}
       tab={addTab}
       bind:open={adding}
+    />
+    <GroupSheet
+      group={editingGroup}
+      onsaved={(id) => {
+        collapsedGroups = collapsedGroups.filter((group) => group !== id);
+      }}
+      returnFocus={() =>
+        groupTrigger?.isConnected
+          ? groupTrigger
+          : document.querySelector<HTMLElement>("[data-add-tunnel]")}
+      bind:open={groupOpen}
     />
   {/if}
 

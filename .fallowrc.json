@@ -10,6 +10,7 @@
     "e2e/hostname-modal-motion.mjs",
     "e2e/hostnames.mjs",
     "e2e/project-names.mjs",
+    "e2e/workspace-browser.mjs",
     "e2e/run.mjs",
     "e2e/separate-tunnel.mjs",
     "scripts/login-item-check.mjs",
@@ -191,13 +192,7 @@
         "reason": "Live log events merge with an inflight snapshot and bounded event buffer, then append only newer matching rows; transaction ordering prevents duplicates and stale view updates."
       },
       {
-        "files": ["apps/desktop/src/dashboard/Tunnels.svelte"],
-        "functions": ["reconcileSelection"],
-        "maxCrap": 73,
-        "reason": "The mounted selection effect resolves missing or removed tunnel IDs against the latest overview while preserving a valid selection; the two fallback guards share one ownership decision."
-      },
-      {
-        "files": ["apps/desktop/src/dashboard/Tunnels.svelte"],
+        "files": ["apps/desktop/src/dashboard/ProjectSidebar.svelte"],
         "functions": ["onListKey"],
         "maxCrap": 73,
         "reason": "The composite tunnel navigation keeps modifier-key exclusion, inert-row filtering, clamping, selection and keyboard focus in one accessible roving-focus handler."
@@ -233,8 +228,8 @@
         "reason": "The splitter clamps dimensions against both panes and persists only valid view state; these coupled layout guards are intentionally evaluated together."
       },
       {
-        "files": ["apps/desktop/src/dashboard/Tunnels.svelte"],
-        "functions": ["remove"],
+        "files": ["apps/desktop/src/dashboard/App.svelte"],
+        "functions": ["removeProject"],
         "maxCrap": 43,
         "reason": "Removal chooses the next visible tunnel before deletion and restores keyboard focus after refresh/tick, including the last-tunnel empty state; ordered cleanup preserves accessibility."
       },

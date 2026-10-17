@@ -1,5 +1,6 @@
 <script lang="ts">
   import Check from "@lucide/svelte/icons/check";
+  import ChevronRight from "@lucide/svelte/icons/chevron-right";
   import CircleAlert from "@lucide/svelte/icons/circle-alert";
   import CircleCheck from "@lucide/svelte/icons/circle-check";
   import Ellipsis from "@lucide/svelte/icons/ellipsis";
@@ -45,7 +46,12 @@
   import { Button } from "$lib/components/ui/button/index.js";
   import { Checkbox } from "$lib/components/ui/checkbox/index.js";
   import { Input } from "$lib/components/ui/input/index.js";
-  import { kbRing, menuContent, menuItem } from "$lib/components/ui/mac";
+  import {
+    kbRing,
+    menuContent,
+    menuIndicator,
+    menuItem,
+  } from "$lib/components/ui/mac";
   import {
     Content as SelectContent,
     Item as SelectItem,
@@ -53,6 +59,7 @@
     Trigger as SelectTrigger,
   } from "$lib/components/ui/select/index.js";
   import { Switch } from "$lib/components/ui/switch/index.js";
+  import { Content as TabsContent } from "$lib/components/ui/tabs/index.js";
   import { configChecker } from "$lib/config-change";
   import { failurePresentation } from "$lib/failure";
   import { returnFocusTo } from "$lib/focus";
@@ -82,9 +89,13 @@
   let {
     tunnel,
     onremove,
+    navigation,
+    activity,
   }: {
     tunnel: Tunnel;
     onremove: (id: string, deleteConfig: boolean) => Promise<void>;
+    navigation: Snippet;
+    activity: Snippet;
   } = $props();
   let busy = $state(false);
   let restarting = $state(false);
@@ -1061,6 +1072,52 @@
               <RotateCw class="size-3.5" />
               {restarting ? "Restarting…" : "Restart"}
             </DropdownMenu.Item>
+            <DropdownMenu.Sub>
+              <DropdownMenu.SubTrigger
+                class={cn(menuItem, "ps-2")}
+                disabled={operationBusy}
+              >
+                <FolderOpen class="size-3.5" />Move to group<ChevronRight
+                  class="ml-auto size-3.5"
+                />
+              </DropdownMenu.SubTrigger>
+              <DropdownMenu.Portal>
+                <DropdownMenu.SubContent
+                  aria-label="Move project to group"
+                  class={cn(menuContent, "max-h-80")}
+                  sideOffset={6}
+                >
+                  <DropdownMenu.RadioGroup
+                    onValueChange={(id) => {
+                      const group = store.overview?.groups.find(
+                        (item) => item.id === id
+                      );
+                      if (id === "*" || group) {
+                        patch({ group: group?.name ?? null });
+                      }
+                    }}
+                    value={tunnel.group_id ?? "*"}
+                  >
+                    {#each store.overview?.groups ?? [] as group (group.id)}
+                      <DropdownMenu.RadioItem class={menuItem} value={group.id}>
+                        <span class={menuIndicator}
+                          >{#if tunnel.group_id === group.id}
+                            <Check />
+                          {/if}</span
+                        >{group.name}
+                      </DropdownMenu.RadioItem>
+                    {/each}
+                    <DropdownMenu.RadioItem class={menuItem} value="*">
+                      <span class={menuIndicator}
+                        >{#if tunnel.group_id === null}
+                          <Check />
+                        {/if}</span
+                      >No group
+                    </DropdownMenu.RadioItem>
+                  </DropdownMenu.RadioGroup>
+                </DropdownMenu.SubContent>
+              </DropdownMenu.Portal>
+            </DropdownMenu.Sub>
             {#if tunnel.kind === "config"}
               <DropdownMenu.Item
                 class={cn(menuItem, "ps-2")}
@@ -1113,75 +1170,6 @@
   </div>
 {/snippet}
 
-{@render detailHeader()}
-
-{@render sharedTunnelNotice()}
-
-{@render separateConfirmation()}
-
-{@render connectionNotice()}
-{#if setupError}
-  <div class="mb-3.5">
-    <AlertRoot variant="destructive">
-      {#snippet icon()}
-        <CircleAlert />
-      {/snippet}
-      <AlertDescription class="whitespace-pre-wrap text-foreground"
-        >{setupError}</AlertDescription
-      >
-    </AlertRoot>
-  </div>
-{/if}
-{#if failureMessage}
-  {#snippet errorBody()}
-    <div class="whitespace-pre-wrap select-text">{failureMessage}</div>
-  {/snippet}
-  {@render notice("crashed", errorBody, "alert")}
-{/if}
-{#if configTarget && configChange?.status === "changed"}
-  <div class="mb-3.5" transition:slide={{ duration: motion(180) }}>
-    <AlertRoot role="status" variant="warning">
-      {#snippet icon()}
-        <FilePenLine />
-      {/snippet}
-      {#snippet action()}
-        <Button disabled={operationBusy} onclick={restart} variant="outline"
-          >{restarting ? "Restarting…" : "Restart"}</Button
-        >
-      {/snippet}
-      <AlertTitle>Config changed on disk</AlertTitle>
-      <AlertDescription>Restart to apply your changes.</AlertDescription>
-    </AlertRoot>
-  </div>
-{/if}
-{#if configTarget && (configError || configChange?.status === "unreadable")}
-  {#snippet configErrorBody()}
-    <div class="whitespace-pre-wrap select-text">
-      {configError ??
-        configChange?.message ??
-        "Couldn't read the config file. The running config is still loaded."}
-    </div>
-  {/snippet}
-  {@render notice("degraded", configErrorBody, "alert")}
-{/if}
-{#if validation && !validation.ok}
-  {#key JSON.stringify(validation)}
-    <div class="mb-3.5" transition:slide={{ duration: motion(180) }}>
-      <FailureNotice
-        failure={failurePresentation(
-          validation.failure,
-          validation.raw,
-          validation.hint
-        )}
-      />
-    </div>
-  {/key}
-{/if}
-
-<Routes {tunnel} />
-
-{@render behaviorSettings()}
-
 {#snippet sourceNote()}
   {#if tunnel.kind === "config"}
     Starting and request inspection leave this file unchanged. Tunnel setup and
@@ -1193,6 +1181,89 @@
   {/if}
 {/snippet}
 
-{@render sourceSettings()}
+<div class="flex min-h-0 flex-1 flex-col">
+  <div class="mx-auto w-full max-w-[880px] shrink-0 px-8 pt-7">
+    {@render detailHeader()}
+    {@render navigation()}
+    {#if failureMessage}
+      {#snippet errorBody()}
+        <div class="whitespace-pre-wrap select-text">{failureMessage}</div>
+      {/snippet}
+      {@render notice("crashed", errorBody, "alert")}
+    {/if}
+  </div>
 
-{@render detailActions()}
+  {@render separateConfirmation()}
+
+  <TabsContent class="mt-0 min-h-0 flex-1 overflow-y-auto" value="overview">
+    <div class="mx-auto max-w-[880px] px-8 pb-10">
+      {@render sharedTunnelNotice()}
+
+      {@render connectionNotice()}
+      {#if setupError}
+        <div class="mb-3.5">
+          <AlertRoot variant="destructive">
+            {#snippet icon()}
+              <CircleAlert />
+            {/snippet}
+            <AlertDescription class="whitespace-pre-wrap text-foreground"
+              >{setupError}</AlertDescription
+            >
+          </AlertRoot>
+        </div>
+      {/if}
+      {#if configTarget && configChange?.status === "changed"}
+        <div class="mb-3.5" transition:slide={{ duration: motion(180) }}>
+          <AlertRoot role="status" variant="warning">
+            {#snippet icon()}
+              <FilePenLine />
+            {/snippet}
+            {#snippet action()}
+              <Button
+                disabled={operationBusy}
+                onclick={restart}
+                variant="outline"
+                >{restarting ? "Restarting…" : "Restart"}</Button
+              >
+            {/snippet}
+            <AlertTitle>Config changed on disk</AlertTitle>
+            <AlertDescription>Restart to apply your changes.</AlertDescription>
+          </AlertRoot>
+        </div>
+      {/if}
+      {#if configTarget &&
+        (configError || configChange?.status === "unreadable")}
+        {#snippet configErrorBody()}
+          <div class="whitespace-pre-wrap select-text">
+            {configError ??
+              configChange?.message ??
+              "Couldn't read the config file. The running config is still loaded."}
+          </div>
+        {/snippet}
+        {@render notice("degraded", configErrorBody, "alert")}
+      {/if}
+      {#if validation && !validation.ok}
+        {#key JSON.stringify(validation)}
+          <div class="mb-3.5" transition:slide={{ duration: motion(180) }}>
+            <FailureNotice
+              failure={failurePresentation(
+                validation.failure,
+                validation.raw,
+                validation.hint
+              )}
+            />
+          </div>
+        {/key}
+      {/if}
+
+      <Routes {tunnel} />
+
+      {@render behaviorSettings()}
+
+      {@render sourceSettings()}
+
+      {@render detailActions()}
+    </div>
+  </TabsContent>
+  {@render activity()}
+</div>

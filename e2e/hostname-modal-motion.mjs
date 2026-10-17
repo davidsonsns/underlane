@@ -76,7 +76,10 @@ assert.ok(
 const hostnameTop = samples.at(-1).y;
 await page.getByRole("button", { exact: true, name: "Cancel" }).click();
 await page.getByRole("dialog").waitFor({ state: "detached" });
-await page.getByRole("button", { exact: true, name: "New" }).click();
+await page
+  .getByRole("button", { exact: true, name: "New project or group" })
+  .click();
+await page.getByRole("menuitem", { exact: true, name: "New project" }).click();
 await page.getByRole("dialog").waitFor();
 await page.waitForTimeout(300);
 const addTop = await page
