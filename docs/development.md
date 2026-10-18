@@ -66,6 +66,18 @@ pnpm --filter @underlane/web test   # Motion, slideshow, reduced-motion, and no-
 pnpm --filter @underlane/web screenshots
 ```
 
+PostHog tracks production visits on `underlane.app` and `www.underlane.app` only.
+It uses cookieless mode without person profiles or session recordings; keep
+**Cookieless tracking** enabled in the PostHog project's Web analytics settings.
+The client token in `index.astro` is public and write-only. Development and Vercel
+preview URLs do not send analytics.
+
+The conversion events are `get_underlane_clicked` (header or hero),
+`install_guide_opened` (the build CTA), and `install_command_copied` (after a
+successful clipboard write). These measure install intent, not completed app
+downloads or installations. Traffic sources and UTM campaigns appear in PostHog's
+Web analytics dashboard.
+
 The screenshot command launches the real Svelte UI with synthetic Tauri data and captures
 light/dark projects, requests, logs, and the menu bar panel. It uses a temporary Vite server,
 never connects to Cloudflare, and does not use app data. Browser captures omit native macOS
