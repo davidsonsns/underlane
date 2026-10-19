@@ -7,10 +7,8 @@
   import FilePenLine from "@lucide/svelte/icons/file-pen-line";
   import FolderOpen from "@lucide/svelte/icons/folder-open";
   import Info from "@lucide/svelte/icons/info";
-  import List from "@lucide/svelte/icons/list";
   import Play from "@lucide/svelte/icons/play";
   import RotateCw from "@lucide/svelte/icons/rotate-cw";
-  import ScrollText from "@lucide/svelte/icons/scroll-text";
   import Square from "@lucide/svelte/icons/square";
   import Trash2 from "@lucide/svelte/icons/trash-2";
   import TriangleAlert from "@lucide/svelte/icons/triangle-alert";
@@ -59,7 +57,6 @@
     Trigger as SelectTrigger,
   } from "$lib/components/ui/select/index.js";
   import { Switch } from "$lib/components/ui/switch/index.js";
-  import { Content as TabsContent } from "$lib/components/ui/tabs/index.js";
   import { configChecker } from "$lib/config-change";
   import { failurePresentation } from "$lib/failure";
   import { returnFocusTo } from "$lib/focus";
@@ -89,13 +86,9 @@
   let {
     tunnel,
     onremove,
-    navigation,
-    activity,
   }: {
     tunnel: Tunnel;
     onremove: (id: string, deleteConfig: boolean) => Promise<void>;
-    navigation: Snippet;
-    activity: Snippet;
   } = $props();
   let busy = $state(false);
   let restarting = $state(false);
@@ -575,22 +568,7 @@
 {/snippet}
 
 {#snippet detailActions()}
-  <div class="mt-5.5 flex flex-wrap items-center gap-2">
-    {#if tunnel.inspect}
-      <Button
-        onclick={() => api.openDashboard(`requests:${tunnel.id}`)}
-        variant="ghost"
-        ><List class="size-3.5" />
-        View requests</Button
-      >
-    {/if}
-    <Button
-      onclick={() => api.openDashboard(`logs:${tunnel.id}`)}
-      variant="ghost"
-      ><ScrollText class="size-3.5" />
-      View logs</Button
-    >
-    <span class="flex-1"></span>
+  <div class="mt-5.5 flex justify-end">
     <AlertDialogRoot bind:open={removeOpen}>
       <AlertDialogTrigger bind:ref={removeTrigger}>
         {#snippet child({
@@ -989,7 +967,10 @@
 {/snippet}
 
 {#snippet detailHeader()}
-  <header class="mb-3.5 flex min-w-0 items-center gap-3">
+  <header
+    class="flex h-(--toolbar-h) shrink-0 items-center gap-3 border-b-[0.5px] border-border pr-4 pl-5"
+    data-tauri-drag-region
+  >
     <div class="flex min-w-0 max-w-1/2 items-center gap-2.5">
       <!-- StatusDot carries the accessible status; the tooltip adds detail. -->
       <Tip text={statusTooltip}>
@@ -1006,8 +987,9 @@
           </button>
         {/snippet}
       </Tip>
+      <h1 class="sr-only">{tunnel.name}</h1>
       <EditableName
-        class="text-xl leading-none font-semibold tracking-[-0.01em]"
+        class="text-lg leading-none font-semibold tracking-[-0.01em]"
         label={tunnel.kind === "config" ? "Project name" : "Tunnel name"}
         name={tunnel.name}
         onsave={async (name) => {
@@ -1018,6 +1000,7 @@
     </div>
     <span
       class="min-w-0 flex-1 truncate text-callout leading-none text-muted-foreground"
+      data-tauri-drag-region
       title={headerMeta}
       >{headerMeta}</span
     >
@@ -1182,21 +1165,20 @@
 {/snippet}
 
 <div class="flex min-h-0 flex-1 flex-col">
-  <div class="mx-auto w-full max-w-[880px] shrink-0 px-8 pt-7">
-    {@render detailHeader()}
-    {@render navigation()}
-    {#if failureMessage}
+  {@render detailHeader()}
+  {#if failureMessage}
+    <div class="mx-auto w-full max-w-[880px] shrink-0 px-8 pt-4">
       {#snippet errorBody()}
         <div class="whitespace-pre-wrap select-text">{failureMessage}</div>
       {/snippet}
       {@render notice("crashed", errorBody, "alert")}
-    {/if}
-  </div>
+    </div>
+  {/if}
 
   {@render separateConfirmation()}
 
-  <TabsContent class="mt-0 min-h-0 flex-1 overflow-y-auto" value="overview">
-    <div class="mx-auto max-w-[880px] px-8 pb-10">
+  <div class="min-h-0 flex-1 overflow-y-auto">
+    <div class="mx-auto max-w-[880px] px-8 pt-4 pb-10">
       {@render sharedTunnelNotice()}
 
       {@render connectionNotice()}
@@ -1264,6 +1246,5 @@
 
       {@render detailActions()}
     </div>
-  </TabsContent>
-  {@render activity()}
+  </div>
 </div>

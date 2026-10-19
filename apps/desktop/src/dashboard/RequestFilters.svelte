@@ -23,14 +23,12 @@
     statuses = $bindable([]),
     methods = $bindable([]),
     tunnelId = $bindable(null),
-    tunnelLocked = false,
     open = $bindable(false),
     boundary = null,
   }: {
     statuses: number[];
     methods: string[];
     tunnelId: string | null;
-    tunnelLocked?: boolean;
     open?: boolean;
     boundary?: HTMLElement | null;
   } = $props();
@@ -41,7 +39,7 @@
   const count = $derived(
     Number(statuses.length > 0) +
       Number(methods.length > 0) +
-      Number(!tunnelLocked && tunnelId !== null)
+      Number(tunnelId !== null)
   );
   const statusGroups = [
     { code: 2, label: "Success" },
@@ -206,7 +204,5 @@
 >
   {@render statusMenu()}
   {@render methodMenu()}
-  {#if !tunnelLocked}
-    <TunnelFilter {boundary} bind:tunnelId />
-  {/if}
+  <TunnelFilter {boundary} bind:tunnelId />
 </FilterMenu>

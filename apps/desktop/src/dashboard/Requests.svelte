@@ -49,15 +49,10 @@
   const CAP = 500;
   let {
     focusId = null,
-    scopeId = null,
-    embedded = false,
   }: {
     focusId?: string | null;
-    scopeId?: string | null;
-    embedded?: boolean;
   } = $props();
-  let filterTunnelId = $state<string | null>(null);
-  const tunnelId = $derived(scopeId ?? filterTunnelId);
+  let tunnelId = $state<string | null>(null);
   let rows = $state<RequestSummary[]>([]);
   /** Only the first load shows the queryStatus.loading panel; later reloads keep the current view until they land. */
   const queryStatus = $state<{ failure: string | null; loading: boolean }>({
@@ -71,12 +66,7 @@
   let statuses = $state<number[]>([]);
   let methods = $state<string[]>([]);
   const filtered = $derived(
-    Boolean(
-      search ||
-        statuses.length ||
-        methods.length ||
-        (scopeId === null && tunnelId)
-    )
+    Boolean(search || statuses.length || methods.length || tunnelId)
   );
   const matchingFiltered = $derived(
     Boolean(search || statuses.length || methods.length)
@@ -118,7 +108,7 @@
 
   const inspectable = (t: { kind: string }) => t.kind !== "token";
   $effect(() => {
-    filterTunnelId = focusId;
+    tunnelId = focusId;
   });
   const tunnel = $derived(store.tunnels.find((t) => t.id === tunnelId) ?? null);
   const canInspect = $derived(tunnel !== null && inspectable(tunnel));
@@ -612,11 +602,11 @@
     <div
       class="flex min-h-11 flex-none flex-wrap items-center gap-2 border-b-[0.5px] border-border px-3 py-1.5"
     >
-      {#if scopeId === null && tunnelId}
+      {#if tunnelId}
         <FilterChip
           label="Project / tunnel"
           onremove={() => {
-            filterTunnelId = null;
+            tunnelId = null;
           }}
           removeLabel="Remove project or tunnel filter"
           value={tunnel?.name ?? tunnelId}
@@ -654,7 +644,7 @@
           search = "";
           statuses = [];
           methods = [];
-          filterTunnelId = null;
+          tunnelId = null;
         }}
         variant="ghost"
         >Reset filters</Button
@@ -664,7 +654,7 @@
 {/snippet}
 
 {#snippet requestToolbar()}
-  <Toolbar subtitle={inspectionSubtitle} title={embedded ? "" : "Requests"}>
+  <Toolbar subtitle={inspectionSubtitle} title="Requests">
     <SearchAction
       label="Search requests"
       bind:this={searchAction}
@@ -673,14 +663,13 @@
     />
     <RequestFilters
       boundary={filterBoundary}
-      tunnelLocked={scopeId !== null}
       bind:methods
       bind:open={
         () => headerMenu === "filters",
         (value) => setHeaderMenu("filters", value)
       }
       bind:statuses
-      bind:tunnelId={filterTunnelId}
+      bind:tunnelId
     />
     <span aria-hidden="true" class="mx-0.5 h-4 border-l border-border"></span>
     <OptionsMenu bind:menu={headerMenu} bind:trigger={optionsTrigger}>

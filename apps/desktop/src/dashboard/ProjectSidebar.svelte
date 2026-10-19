@@ -3,10 +3,14 @@
   import ChevronRight from "@lucide/svelte/icons/chevron-right";
   import Ellipsis from "@lucide/svelte/icons/ellipsis";
   import Eye from "@lucide/svelte/icons/eye";
+  import Play from "@lucide/svelte/icons/play";
   import Plus from "@lucide/svelte/icons/plus";
+  import RotateCw from "@lucide/svelte/icons/rotate-cw";
+  import Square from "@lucide/svelte/icons/square";
   import { DropdownMenu } from "bits-ui";
   import { tick } from "svelte";
   import { api, errorText } from "$lib/api";
+  import IconAction from "$lib/components/app/IconAction.svelte";
   import StatusDot from "$lib/components/app/StatusDot.svelte";
   import { Button } from "$lib/components/ui/button/index.js";
   import { kbRing, menuContent, menuItem } from "$lib/components/ui/mac";
@@ -36,12 +40,16 @@
 
   let list = $state<HTMLElement | null>(null);
   let createTrigger = $state<HTMLButtonElement | null>(null);
+  let projectMenu = $state<"create" | "bulk" | null>(null);
   let draggedId = $state<string | null>(null);
   let dropTarget = $state<string | null>(null);
   let busy = $state(false);
   let failureMessage = $state<string | null>(null);
   let refreshFailed = $state(false);
   let announcement = $state("");
+  let bulkBusy = $state(false);
+  let bulkError = $state<string | null>(null);
+  const anyOn = $derived(store.tunnels.some(isOn));
   const groupTriggers = new Map<string, HTMLButtonElement>();
   const groups = $derived.by(() => {
     const grouped = groupTunnels(store.tunnels, store.overview?.groups ?? []);
@@ -67,6 +75,35 @@
       ? selectedId
       : visibleTunnels[0]?.id
   );
+
+  function setProjectMenu(menu: "create" | "bulk", open: boolean) {
+    if (open) {
+      projectMenu = menu;
+    } else if (projectMenu === menu) {
+      projectMenu = null;
+    }
+  }
+
+  function onProjectMenuCloseAutoFocus(event: Event) {
+    if (projectMenu) {
+      event.preventDefault();
+    }
+  }
+
+  async function bulk(action: () => Promise<void>) {
+    if (bulkBusy) {
+      return;
+    }
+    bulkBusy = true;
+    bulkError = null;
+    try {
+      await action();
+    } catch (error) {
+      bulkError = errorText(error);
+    } finally {
+      bulkBusy = false;
+    }
+  }
 
   function toggle(id: string) {
     collapsed = collapsed.includes(id)
@@ -265,40 +302,104 @@
 
 <div class="flex min-h-0 flex-1 flex-col">
   <div class="flex h-8 shrink-0 items-center justify-between gap-2 pl-2.5">
-    <h2 class="text-xs font-semibold text-muted-foreground">Projects</h2>
-    <DropdownMenu.Root>
-      <DropdownMenu.Trigger>
-        {#snippet child({
-          props,
-        })}
-          <Button
-            {...props}
-            aria-label="New project or group"
-            data-add-tunnel
-            data-project-menu
-            size="icon"
-            variant="ghost"
-            bind:ref={createTrigger}
-            ><Plus class="size-3.5" /></Button
+    <h2 class="min-w-0 flex-1 text-xs font-semibold text-muted-foreground">
+      Projects
+    </h2>
+    <div
+      class="pointer-events-none flex shrink-0 items-center gap-px opacity-0 transition-opacity duration-(--dur) group-hover/sidebar:pointer-events-auto group-hover/sidebar:opacity-100 focus-within:pointer-events-auto focus-within:opacity-100 [&:has([aria-expanded=true])]:pointer-events-auto [&:has([aria-expanded=true])]:opacity-100"
+    >
+      <DropdownMenu.Root
+        onOpenChange={(open) => setProjectMenu("create", open)}
+        open={projectMenu === "create"}
+      >
+        <DropdownMenu.Trigger>
+          {#snippet child({
+            props,
+          })}
+            <Button
+              {...props}
+              aria-label="New project or group"
+              data-add-tunnel
+              data-project-menu
+              size="icon"
+              variant="ghost"
+              bind:ref={createTrigger}
+              ><Plus class="size-3.5" /></Button
+            >
+          {/snippet}
+        </DropdownMenu.Trigger>
+        <DropdownMenu.Portal>
+          <DropdownMenu.Content
+            align="end"
+            class={menuContent}
+            onCloseAutoFocus={onProjectMenuCloseAutoFocus}
+            sideOffset={3}
           >
-        {/snippet}
-      </DropdownMenu.Trigger>
-      <DropdownMenu.Portal>
-        <DropdownMenu.Content align="end" class={menuContent} sideOffset={3}>
-          <DropdownMenu.Item
-            class={menuItem}
-            onSelect={() => createTrigger && onadd(createTrigger)}
-            >New project</DropdownMenu.Item
+            <DropdownMenu.Item
+              class={menuItem}
+              onSelect={() => createTrigger && onadd(createTrigger)}
+              >New project</DropdownMenu.Item
+            >
+            <DropdownMenu.Item
+              class={menuItem}
+              onSelect={() => createTrigger && ongroup(createTrigger)}
+              >New group</DropdownMenu.Item
+            >
+          </DropdownMenu.Content>
+        </DropdownMenu.Portal>
+      </DropdownMenu.Root>
+      <DropdownMenu.Root
+        onOpenChange={(open) => setProjectMenu("bulk", open)}
+        open={projectMenu === "bulk"}
+      >
+        <DropdownMenu.Trigger>
+          {#snippet child({
+            props,
+          })}
+            <IconAction
+              {...props}
+              disabled={bulkBusy || !store.tunnels.length}
+              label="All project actions"
+              ><Ellipsis class="size-3.5" /></IconAction
+            >
+          {/snippet}
+        </DropdownMenu.Trigger>
+        <DropdownMenu.Portal>
+          <DropdownMenu.Content
+            align="end"
+            class={menuContent}
+            onCloseAutoFocus={onProjectMenuCloseAutoFocus}
+            sideOffset={3}
           >
-          <DropdownMenu.Item
-            class={menuItem}
-            onSelect={() => createTrigger && ongroup(createTrigger)}
-            >New group</DropdownMenu.Item
-          >
-        </DropdownMenu.Content>
-      </DropdownMenu.Portal>
-    </DropdownMenu.Root>
+            {#if anyOn}
+              <DropdownMenu.Item
+                class={cn(menuItem, "ps-2")}
+                disabled={bulkBusy}
+                onSelect={() => bulk(api.restartAll)}
+                ><RotateCw />Restart all running</DropdownMenu.Item
+              >
+              <DropdownMenu.Item
+                class={cn(menuItem, "ps-2")}
+                disabled={bulkBusy}
+                onSelect={() => bulk(api.stopAll)}
+                ><Square />Stop all</DropdownMenu.Item
+              >
+            {:else}
+              <DropdownMenu.Item
+                class={cn(menuItem, "ps-2")}
+                disabled={bulkBusy}
+                onSelect={() => bulk(api.startAll)}
+                ><Play />Start all</DropdownMenu.Item
+              >
+            {/if}
+          </DropdownMenu.Content>
+        </DropdownMenu.Portal>
+      </DropdownMenu.Root>
+    </div>
   </div>
+  {#if bulkError}
+    <p class="px-2.5 py-2 text-xs text-bad-text" role="alert">{bulkError}</p>
+  {/if}
 
   <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
   <!-- biome-ignore lint/a11y/noNoninteractiveElementInteractions: Arrow keys move focus between the project buttons. -->
@@ -329,7 +430,7 @@
           class={cn(
             "min-w-0 rounded-md transition-colors",
             hasGroups && "mb-2",
-            dropTarget === key && "bg-fill ring-1 ring-primary/50 ring-inset"
+            dropTarget === key && "bg-fill"
           )}
           data-drop-target={dropTarget === key ? "true" : undefined}
           data-project-group={key}
@@ -458,7 +559,7 @@
             </div>
           {/if}
           {#if !folded}
-            <div class={cn("flex flex-col gap-1", hasGroups && "pt-1 pl-3")}>
+            <div class={cn("flex flex-col gap-px", hasGroups && "pt-1 pl-3")}>
               {@render projectRows(group)}
               {#if hasGroups && !group.tunnels.length}
                 <p class="px-2.5 py-1.5 text-xs text-muted-foreground">

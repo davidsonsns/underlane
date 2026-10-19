@@ -14,19 +14,15 @@
   let {
     levels = $bindable([]),
     tunnelId = $bindable(null),
-    tunnelLocked = false,
     open = $bindable(false),
     boundary = null,
   }: {
     levels: string[];
     tunnelId: string | null;
-    tunnelLocked?: boolean;
     open?: boolean;
     boundary?: HTMLElement | null;
   } = $props();
-  const count = $derived(
-    Number(levels.length > 0) + Number(!tunnelLocked && tunnelId !== null)
-  );
+  const count = $derived(Number(levels.length > 0) + Number(tunnelId !== null));
   const levelOptions = [
     { color: "var(--text-3)", label: "Debug", value: "debug" },
     { color: "var(--info)", label: "Info", value: "info" },
@@ -71,7 +67,5 @@
       </DropdownMenu.CheckboxItem>
     {/each}
   </FilterSubmenu>
-  {#if !tunnelLocked}
-    <TunnelFilter {boundary} includeToken bind:tunnelId />
-  {/if}
+  <TunnelFilter {boundary} includeToken bind:tunnelId />
 </FilterMenu>

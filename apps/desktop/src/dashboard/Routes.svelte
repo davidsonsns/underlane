@@ -338,7 +338,7 @@
   </span>
 {/snippet}
 
-<section aria-labelledby={headingId} class="mt-8">
+<section aria-labelledby={headingId}>
   {@render routeHeading()}
 
   {#if restartWarning?.id === tunnel.id}

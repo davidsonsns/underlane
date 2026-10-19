@@ -2,7 +2,6 @@
   import List from "@lucide/svelte/icons/list";
   import ScrollText from "@lucide/svelte/icons/scroll-text";
   import SettingsIcon from "@lucide/svelte/icons/settings";
-  import TriangleAlert from "@lucide/svelte/icons/triangle-alert";
   import { listen } from "@tauri-apps/api/event";
   import { type Component, onMount, tick, untrack } from "svelte";
   import LaneGlyph from "$lib/components/app/LaneGlyph.svelte";
@@ -12,6 +11,7 @@
   import { Provider as TooltipProvider } from "$lib/components/ui/tooltip/index.js";
   import { groupTunnels } from "$lib/tunnel-groups";
   import { cn } from "$lib/utils";
+  import { version as appVersion } from "../../src-tauri/tauri.conf.json";
   import { api, errorText } from "../lib/api";
   import { snapshot } from "../lib/snapshot.svelte";
   import { store } from "../lib/store.svelte";
@@ -24,13 +24,12 @@
   import Requests from "./Requests.svelte";
   import { track } from "./reactivity";
   import Settings from "./Settings.svelte";
-  import Tunnels, { type ProjectTab } from "./Tunnels.svelte";
+  import Tunnels from "./Tunnels.svelte";
   import UpdateButton from "./UpdateButton.svelte";
 
   type View = "tunnels" | "requests" | "logs" | "settings";
   let view = $state<View>("tunnels");
   let selectedId = $state<string | null>(null);
-  let projectTab = $state<ProjectTab>("overview");
   let collapsedGroups = $state<string[]>(loadCollapsedGroups());
   let groupOpen = $state(false);
   let editingGroup = $state<{ id: string; name: string } | null>(null);
@@ -97,14 +96,12 @@
       !store.tunnels.some((tunnel) => tunnel.id === selectedId)
     ) {
       selectedId = store.tunnels[0]?.id ?? null;
-      projectTab = "overview";
     }
   });
 
   function selectProject(id: string) {
     show("tunnels", () => {
       selectedId = id;
-      projectTab = "overview";
       focusId = null;
       view = "tunnels";
     });
@@ -128,7 +125,6 @@
     const next = order[index + 1] ?? order[index - 1] ?? null;
     await api.deleteTunnel(id, deleteConfig);
     selectedId = next?.id ?? null;
-    projectTab = "overview";
     if (next) {
       collapsedGroups = collapsedGroups.filter(
         (group) => group !== (next.group_id ?? "ungrouped")
@@ -161,14 +157,13 @@
       return;
     }
     adding = false;
-    if (id && (v === "tunnels" || v === "requests" || v === "logs")) {
+    if (id && v === "tunnels") {
       show("tunnels", () => {
         selectedId = id;
         const tunnel = store.tunnels.find((item) => item.id === id);
         collapsedGroups = collapsedGroups.filter(
           (group) => group !== (tunnel?.group_id ?? "ungrouped")
         );
-        projectTab = v === "tunnels" ? "overview" : v;
         view = "tunnels";
         focusId = null;
       });
@@ -240,7 +235,6 @@
         addedId = null;
         focusId = null;
         selectedId = null;
-        projectTab = "overview";
         collapsedGroups = [];
         groupOpen = false;
         addGroup = "";
@@ -295,7 +289,6 @@
     onboarding = false;
     focusId = id ?? null;
     selectedId = id ?? null;
-    projectTab = "overview";
     view = "tunnels";
     await tick();
     if (mode === "project") {
@@ -332,7 +325,6 @@
       addedId = id;
       focusId = id;
       selectedId = id;
-      projectTab = "overview";
       const created = store.tunnels.find((tunnel) => tunnel.id === id);
       collapsedGroups = collapsedGroups.filter(
         (group) => group !== (created?.group_id ?? "ungrouped")
@@ -350,8 +342,8 @@
     label: string;
     icon: Component<{ class?: string }>;
   }[] = [
-    { icon: List, id: "requests", label: "All requests" },
-    { icon: ScrollText, id: "logs", label: "All logs" },
+    { icon: List, id: "requests", label: "Requests" },
+    { icon: ScrollText, id: "logs", label: "Logs" },
     { icon: SettingsIcon, id: "settings", label: "Settings" },
   ];
 </script>
@@ -381,31 +373,6 @@
   </nav>
 {/snippet}
 
-{#snippet cloudflaredStatus()}
-  <div class="px-2 text-xs">
-    {#if store.overview?.cloudflared}
-      <span class="text-muted-foreground"
-        >cloudflared {store.overview.cloudflared.version ?? ""}</span
-      >
-    {:else if store.overview}
-      <button
-        class={cn(
-          "flex items-center gap-1 rounded-xs text-degraded-text",
-          kbRing
-        )}
-        onclick={() =>
-          show("settings", () => {
-            view = "settings";
-          })}
-        type="button"
-      >
-        <TriangleAlert class="size-3" />
-        cloudflared not found
-      </button>
-    {/if}
-  </div>
-{/snippet}
-
 <svelte:window onblur={() => inactive(true)} onfocus={() => inactive(false)} />
 
 <!-- One tooltip provider and one toaster per window (02 §1.4, §2). -->
@@ -431,7 +398,7 @@
     <!-- Neutral sidebar and content surfaces share the same light/dark palette. -->
     <div class="grid h-screen grid-cols-[224px_minmax(0,1fr)]">
       <aside
-        class="flex min-h-0 flex-col border-e-[0.5px] border-border bg-sidebar px-2.5 pb-2.5"
+        class="group/sidebar flex min-h-0 flex-col border-e-[0.5px] border-border bg-sidebar px-2.5 pb-2.5"
         data-tauri-drag-region
       >
         <!-- Room for the traffic lights: the dashboard has an overlay title bar
@@ -455,7 +422,9 @@
         <div class="mt-auto flex flex-col gap-3 pt-4">
           {@render sidebarNavigation()}
           <UpdateButton />
-          {@render cloudflaredStatus()}
+          <div class="px-2 text-xs text-muted-foreground">
+            Underlane {appVersion}
+          </div>
         </div>
       </aside>
 
@@ -463,13 +432,7 @@
         class="min-w-0 overflow-hidden bg-background [view-transition-name:page]"
       >
         {#if view === "tunnels"}
-          <Tunnels
-            onadd={openAdd}
-            onremove={removeProject}
-            {selectedId}
-            bind:requestsRef
-            bind:tab={projectTab}
-          />
+          <Tunnels onadd={openAdd} onremove={removeProject} {selectedId} />
         {:else if view === "requests"}
           <Requests {focusId} bind:this={requestsRef} />
         {:else if view === "logs"}
