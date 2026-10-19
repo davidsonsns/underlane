@@ -737,6 +737,22 @@ mod kv_tests {
     use super::*;
 
     #[test]
+    fn background_opacity_defaults_for_existing_settings_and_survives_reopen() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("opacity.db");
+        {
+            let db = Db::open(&path).unwrap();
+            db.kv_set("settings", r#"{"theme":"dark"}"#).unwrap();
+            let mut settings = db.settings().unwrap();
+            assert_eq!(settings.background_opacity, 100);
+            assert_eq!(settings.theme, "dark");
+            settings.background_opacity = 85;
+            db.save_settings(&settings).unwrap();
+        }
+        assert_eq!(Db::open(&path).unwrap().settings().unwrap().background_opacity, 85);
+    }
+
+    #[test]
     fn one_shot_value_is_returned_to_only_one_reader() {
         let db = std::sync::Arc::new(Db::open_in_memory().unwrap());
         db.kv_set("session", "[]").unwrap();

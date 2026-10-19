@@ -589,6 +589,7 @@ fn save_settings_inner(core: &Core, settings: Settings) -> Res<()> {
     s.log_ttl_days = s.log_ttl_days.clamp(1, 365);
     s.max_db_mb = s.max_db_mb.clamp(16, 10_240);
     s.max_body_kb = s.max_body_kb.min(16 * 1024);
+    s.background_opacity = s.background_opacity.clamp(50, 100);
     s.redact_headers = s.redact_headers.into_iter().map(|h| h.trim().to_string()).filter(|h| !h.is_empty()).collect();
     s.redact_query = s.redact_query.into_iter().map(|h| h.trim().to_string()).filter(|h| !h.is_empty()).collect();
     if !["system", "light", "dark"].contains(&s.theme.as_str()) {

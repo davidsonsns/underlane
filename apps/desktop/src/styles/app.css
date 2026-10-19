@@ -99,6 +99,11 @@
 @theme inline {
   /* shadcn contract */
   --color-background: var(--background);
+  --color-window-background: color-mix(
+    in srgb,
+    var(--bg) var(--window-opacity-preview, var(--window-opacity)),
+    transparent
+  );
   --color-foreground: var(--foreground);
   --color-card: var(--card);
   --color-card-foreground: var(--card-foreground);
@@ -227,8 +232,13 @@
     --border: var(--line);
     --input: var(--line-strong);
     --ring: var(--tint);
-    /* Opaque neutral chrome keeps surfaces consistent over the native window material. */
-    --sidebar: var(--sidebar-tint);
+    /* Window backgrounds reveal the backdrop; controls stay solid. */
+    --window-opacity: 100%;
+    --sidebar: color-mix(
+      in srgb,
+      var(--sidebar-tint) var(--window-opacity-preview, var(--window-opacity)),
+      transparent
+    );
     --sidebar-foreground: var(--text-1);
     --sidebar-primary: var(--selection-fill);
     --sidebar-primary-foreground: var(--on-selection);
@@ -305,7 +315,7 @@
        13px goes on body. */
     height: 100%;
     overflow: hidden; /* no rubber-band scrolling of the whole page */
-    background: transparent; /* both windows are transparent over NSVisualEffectView */
+    background: transparent; /* dashboard backdrop is clear; the popover uses native vibrancy */
   }
   body {
     height: 100%;
@@ -322,6 +332,14 @@
     -webkit-user-select: none;
     user-select: none;
     background: transparent;
+  }
+  /* Dashboard cards share the canvas opacity; portaled dialogs keep the opaque root token. */
+  main {
+    --card: color-mix(
+      in srgb,
+      var(--surface) var(--window-opacity-preview, var(--window-opacity)),
+      transparent
+    );
   }
   /* lucide draws 24px at stroke 2, heavier than SF Symbols at 13-15px.
      A CSS stroke-width beats the presentation attribute; utilities still win. */

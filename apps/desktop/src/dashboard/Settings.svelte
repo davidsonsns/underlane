@@ -2,7 +2,7 @@
   import Check from "@lucide/svelte/icons/check";
   import FolderOpen from "@lucide/svelte/icons/folder-open";
   import { revealItemInDir } from "@tauri-apps/plugin-opener";
-  import { onMount, untrack } from "svelte";
+  import { onDestroy, onMount, untrack } from "svelte";
   import CopyButton from "$lib/components/app/CopyButton.svelte";
   import IconAction from "$lib/components/app/IconAction.svelte";
   import SettingsGroup from "$lib/components/app/SettingsGroup.svelte";
@@ -42,6 +42,10 @@
   let draft = $state<Settings | null>(null);
   let login = $state<LoginItem | null>(null);
   let detecting = $state(false);
+  let savingOpacity = false;
+  let pendingOpacity: number | null = null;
+  let opacityRevision = 0;
+  let alive = true;
   let redactText = $state("");
   let redactQueryText = $state("");
   let resetOpen = $state(false);
@@ -71,6 +75,7 @@
 
   // data-field → the draft key it edits; a focused field keeps its typed value (see below).
   const KEEP: Record<string, keyof Settings> = {
+    "background-opacity": "background_opacity",
     "max-body": "max_body_kb",
     "max-db": "max_db_mb",
     path: "cloudflared_path",
@@ -105,21 +110,66 @@
     login = await api.loginItem();
   });
 
+  function clearOpacityPreview() {
+    document.documentElement.style.removeProperty("--window-opacity-preview");
+  }
+
+  onDestroy(() => {
+    alive = false;
+    clearOpacityPreview();
+  });
+
   async function save(patch: Partial<Settings>) {
     if (!draft) {
-      return;
+      return false;
     }
     Object.assign(draft, patch);
     try {
       await api.saveSettings($state.snapshot(draft));
+      return true;
     } catch (e) {
       notify.error(e, "Couldn't save settings");
+      return false;
     }
   }
 
   function setTheme(theme: string) {
     if (theme === "system" || theme === "light" || theme === "dark") {
       save({ theme });
+    }
+  }
+
+  function previewOpacity(event: Event) {
+    opacityRevision += 1;
+    document.documentElement.style.setProperty(
+      "--window-opacity-preview",
+      `${num(event)}%`
+    );
+  }
+
+  async function saveOpacity(event: Event) {
+    pendingOpacity = num(event);
+    if (savingOpacity) {
+      return;
+    }
+    savingOpacity = true;
+    try {
+      while (pendingOpacity !== null) {
+        const opacity = pendingOpacity;
+        const revision = opacityRevision;
+        pendingOpacity = null;
+        // biome-ignore lint/performance/noAwaitInLoops: Serialize writes and coalesce repeated keyboard changes.
+        const saved = await save({ background_opacity: opacity });
+        if (alive && revision === opacityRevision) {
+          if (!saved && draft) {
+            draft.background_opacity =
+              store.overview?.settings.background_opacity ?? 100;
+          }
+          clearOpacityPreview();
+        }
+      }
+    } finally {
+      savingOpacity = false;
     }
   }
 
@@ -375,6 +425,38 @@
             {/each}
           </SelectContent>
         </SelectRoot>
+      {/snippet}
+    </SettingsRow>
+    <SettingsRow
+      help="See windows behind Underlane. Text and controls stay solid."
+      label="Background opacity"
+    >
+      {#snippet control({
+        id,
+        describedBy,
+      })}
+        <div class="flex items-center gap-3">
+          <input
+            aria-describedby={describedBy}
+            aria-valuetext={`${currentDraft.background_opacity}%`}
+            class="h-5 w-36 accent-primary"
+            data-field="background-opacity"
+            {id}
+            max="100"
+            min="50"
+            onchange={saveOpacity}
+            oninput={previewOpacity}
+            step="1"
+            type="range"
+            bind:value={currentDraft.background_opacity}
+          >
+          <output
+            aria-hidden="true"
+            class="w-9 text-right tabular-nums"
+            for={id}
+            >{currentDraft.background_opacity}%</output
+          >
+        </div>
       {/snippet}
     </SettingsRow>
     <SettingsRow help="Used for newly added tunnels." label="Default log level">

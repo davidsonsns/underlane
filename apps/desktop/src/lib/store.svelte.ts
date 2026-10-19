@@ -4,7 +4,7 @@ import { api, errorText } from "./api";
 import { columnPrefs } from "./columns.svelte";
 import { clearDnsCache } from "./dns-cache";
 import { sectionPrefs } from "./sections.svelte";
-import { applyTheme } from "./theme";
+import { applyBackgroundOpacity, applyTheme } from "./theme";
 import { notify } from "./toast";
 import { preserveConfigMappings } from "./tunnel-state";
 import type { Overview, TunnelState } from "./types";
@@ -36,6 +36,7 @@ class AppStore {
       this.overview = o;
       this.error = null;
       applyTheme(o.settings.theme);
+      applyBackgroundOpacity(o.settings.background_opacity);
     } catch (e) {
       if (generation === this.generation) {
         this.error = errorText(e);
@@ -97,6 +98,7 @@ class AppStore {
         this.overview.settings = s;
       }
       applyTheme(s.theme);
+      applyBackgroundOpacity(s.background_opacity);
     });
     await listen<{ tunnel_id: string }>("request", (e) => {
       const id = e.payload.tunnel_id;

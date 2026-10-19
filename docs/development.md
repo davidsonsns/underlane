@@ -91,6 +91,8 @@ window controls. Install Chromium first if needed: `pnpm exec playwright install
 - Frontend Vitest tests cover formatting, filtering, grouping, async query guards, navigation,
   and list state. With Vite running, `node e2e/onboarding-browser.mjs` checks onboarding with
   synthetic IPC. Browser mocks accept `E2E_BASE_URL` for a frozen preview.
+  `node e2e/opacity-browser.mjs` checks opacity preview, persistence, keyboard adjustment,
+  failure rollback, and both themes; set `BROWSER=webkit` to verify the WebKit renderer.
 - `make e2e` launches the native app with isolated data and a local echo server, exposes it
   through a real quick tunnel, and checks captured JSON in SQLite and the dashboard plus
   the native menu bar count. It needs network access, but no Cloudflare account.

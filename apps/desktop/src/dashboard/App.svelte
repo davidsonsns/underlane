@@ -429,7 +429,7 @@
       </aside>
 
       <main
-        class="min-w-0 overflow-hidden bg-background [view-transition-name:page]"
+        class="min-w-0 overflow-hidden bg-window-background [view-transition-name:page]"
       >
         {#if view === "tunnels"}
           <Tunnels onadd={openAdd} onremove={removeProject} {selectedId} />

@@ -146,6 +146,7 @@ function fixture({ theme }) {
     ],
     last_launch: null,
     settings: {
+      background_opacity: 100,
       cloudflared_path: null,
       default_loglevel: "info",
       log_ttl_days: 7,

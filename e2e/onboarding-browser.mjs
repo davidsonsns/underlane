@@ -28,6 +28,7 @@ function fixture({
     groups: [],
     last_launch: null,
     settings: {
+      background_opacity: 100,
       cloudflared_path: cloudflaredPath,
       default_loglevel: "info",
       log_ttl_days: 7,

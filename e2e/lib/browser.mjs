@@ -100,6 +100,7 @@ export function installHostnameMock({ delay, mockName }) {
     groups: [{ id: "group", name: "254", sort: 0 }],
     last_launch: null,
     settings: {
+      background_opacity: 100,
       cloudflared_path: null,
       default_loglevel: "info",
       log_ttl_days: 7,

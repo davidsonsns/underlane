@@ -76,6 +76,8 @@ pub struct Settings {
     pub redact_query: Vec<String>,
     /// "system" | "light" | "dark"
     pub theme: String,
+    /// Window canvas opacity, as a percentage from 50 to 100. Content stays opaque.
+    pub background_opacity: u32,
     pub default_loglevel: String,
 }
 
@@ -89,6 +91,7 @@ impl Default for Settings {
             redact_headers: Vec::new(),
             redact_query: Vec::new(),
             theme: "system".into(),
+            background_opacity: 100,
             default_loglevel: "info".into(),
         }
     }

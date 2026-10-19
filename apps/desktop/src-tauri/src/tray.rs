@@ -197,8 +197,8 @@ pub fn open_dashboard<R: Runtime>(app: &AppHandle<R>, view: Option<String>) {
         // Shown after build, once the window-state plugin has restored the last size and position.
         .visible(false)
         .theme(current_theme(app))
-        .transparent(true)
-        .effects(WindowEffectsConfig { effects: vec![Effect::Sidebar], state: Some(EffectState::FollowsWindowActiveState), radius: None, color: None, ..Default::default() });
+        // Keep the backdrop clear: vibrancy would blur windows behind the opacity tint.
+        .transparent(true);
     #[cfg(target_os = "macos")]
     let builder = builder.title_bar_style(tauri::TitleBarStyle::Overlay).hidden_title(true);
     match builder.build() {

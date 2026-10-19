@@ -111,6 +111,7 @@ export interface OnboardingStatus {
 }
 
 export interface Settings {
+  background_opacity: number;
   cloudflared_path: string | null;
   default_loglevel: string;
   log_ttl_days: number;

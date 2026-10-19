@@ -11,6 +11,14 @@ export function applyTheme(theme: Settings["theme"]) {
   }
 }
 
+/** Tint the transparent canvas without fading text or controls. */
+export function applyBackgroundOpacity(opacity = 100) {
+  const percent = Number.isFinite(opacity)
+    ? Math.min(100, Math.max(50, opacity))
+    : 100;
+  document.documentElement.style.setProperty("--window-opacity", `${percent}%`);
+}
+
 /** Sets html[data-kb-nav] once the user presses Tab, clears it on any pointer use. The
  *  `kb-focus:` variant keys off it so buttons only show a focus ring during keyboard
  *  navigation, as on macOS (text fields always show theirs). Call once per window. */
