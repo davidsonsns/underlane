@@ -287,7 +287,7 @@ fn validate_service(service: &str) -> Result<(), ConfigError> {
     Ok(())
 }
 
-fn fully_shadows(earlier: &str, hostname: &str) -> bool {
+pub(crate) fn fully_shadows(earlier: &str, hostname: &str) -> bool {
     earlier == "*"
         || earlier == hostname
         || earlier.strip_prefix("*.").is_some_and(|suffix| {

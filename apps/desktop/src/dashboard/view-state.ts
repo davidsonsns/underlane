@@ -37,11 +37,14 @@ export function requestEmptyMessage(
   }
   return "Start the tunnel, then send it some traffic.";
 }
-export type Reach = "up" | "ready" | "down" | "idle" | "none";
+export type Reach = "up" | "ready" | "down" | "idle" | "unknown" | "none";
 export function routeReach(
   reachable: boolean | null | undefined,
   live: boolean
 ): Reach {
+  if (reachable === undefined) {
+    return "unknown";
+  }
   if (typeof reachable !== "boolean") {
     return "none";
   }
@@ -60,6 +63,7 @@ export function routeReachTip(
     idle: `Nothing is listening on ${address}. Start it before starting the tunnel.`,
     none: undefined,
     ready: `Something is listening on ${address}, but the tunnel is stopped. Start it to route traffic here. Underlane doesn't manage this service.`,
+    unknown: `Local service reachability at ${address} has not been checked. Underlane doesn't manage this service.`,
     up: `Local service reachable at ${address}. Underlane doesn't manage this service.`,
   };
   return messages[reach];

@@ -10,6 +10,7 @@ mod hostnames;
 mod setup;
 mod separate_tunnel;
 mod dns;
+mod diagnostics;
 mod platform;
 mod state;
 mod tokens;
@@ -83,6 +84,9 @@ pub fn run() {
             commands::load_hostnames,
             commands::save_hostnames,
             commands::check_hostname_dns,
+            commands::check_connection,
+            commands::preview_dns_repair,
+            commands::repair_hostname_dns,
             commands::create_hostname_dns,
             commands::connect_hostname_dns,
             commands::open_config_in_editor,
@@ -103,6 +107,8 @@ pub fn run() {
             commands::update_tunnel,
             commands::delete_tunnel,
             commands::start_tunnel,
+            commands::start_hostname,
+            commands::stop_hostname,
             commands::stop_tunnel,
             commands::restart_tunnel,
             commands::start_all,
@@ -174,6 +180,7 @@ pub fn run() {
         // Closing the dashboard must not quit a menu bar app; only an explicit quit does.
         RunEvent::ExitRequested { api, code: None, .. } => api.prevent_exit(),
         RunEvent::Exit => {
+            dns::clear_repair_reviews();
             // Stop every tunnel before the process goes away (logout won't wait for async work).
             if let Some(core) = handle.try_state::<Arc<Core>>() {
                 let core = core.inner().clone();

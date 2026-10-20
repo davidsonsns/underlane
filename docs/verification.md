@@ -608,3 +608,122 @@ No real Cloudflare authorization, DNS change, system binary installation, or per
 mutation was performed. Live browser authorization and notarized Gatekeeper delivery were not
 exercised. An intermediate concurrent Cargo build/test run passed its 234 tests but lost Tauri
 dependencies during rustdoc; the separate serial doctest run passed.
+
+## 2026-10-19 — Hostname diagnostics and reviewed DNS repair
+
+Implemented the approved inline warning with shared backend DNS, local TCP and public HTTPS
+evidence, explicit failure states, safe test paths, and an exact-record DNS repair review.
+The repair checks the selected account/tunnel, config and connector run, and preserves the
+connector's running state. Diagnostic generation and overview merge tests reject late events.
+Independent review found and verified fixes for proxy-disabled records being mislabeled and
+for stale checking/null overview payloads replacing newer warnings.
+
+Validation: `cargo test --workspace` passed 285 tests (3 ignored); the final targeted scheduler
+suite passed all 4 tests. `pnpm test` passed 151 frontend tests and 15 harness tests. Svelte
+checking reported zero errors/warnings. Desktop/e2e lint and production frontend build passed.
+The frozen production UI passed `e2e/connection-inline.mjs` in Chromium and WebKit, and the
+existing `e2e/dns-status.mjs` flow passed in Chromium. Screenshots in ignored `e2e/out/` show
+the dark/light inline warning and repair confirmation with synthetic hostnames and IDs.
+
+The native debug app was bundled with the e2e feature for local verification. No installed app
+was replaced, and no live Cloudflare account or DNS mutation was exercised. A disposable live
+hostname test and Google sign-in remain unverified. Full-repository lint still reports existing
+Astro style errors under unchanged `apps/web`; the modified desktop files pass scoped lint.
+Cloudflare's final-read/PATCH external-edit race remains documented.
+
+## 2026-10-19 — Individual hostname controls
+
+Hostname rows reveal Start/Stop on hover or keyboard focus. A stopped project can start only
+the selected hostnames; whole-project Start enables all, and row Stop leaves sibling routes
+running. Saved selections survive reloads and recovery, with no source YAML writes.
+
+Local traffic regressions use a fake connector and real loopback HTTP, WebSocket, and SSE
+servers. They verify that repeated row changes preserve the connector PID/run/config revision,
+listeners, active sibling streams, source and derived YAML bytes, and disabled-origin isolation.
+Capture-disabled forwarding creates no request records. Persistence failures, stale targets,
+config edits, unsupported fallback origins, and proxy startup failures reject safely.
+
+The core suite passed 244 tests (2 existing ignored), including 8 hostname-control regressions.
+The frontend suite passed 154 tests; native app unit tests passed 52 (1 existing ignored).
+Svelte checking reported zero errors/warnings, the production frontend build passed, and
+modified desktop/e2e files passed lint. Synthetic browser checks passed both requested flows,
+hover/Tab access, busy/error/retry handling, unavailable controls, and Start all hostnames;
+the existing inline connection diagnostics browser regression also passed. Dark/light screenshots
+are in ignored `e2e/out/hostname-controls-*.png`.
+
+No live Cloudflare traffic or installed app replacement was performed. Full-repository lint
+still reports existing Astro style errors under unchanged `apps/web`.
+
+## 2026-10-19 — Hostname control state regressions
+
+Reproduced the reported DNS badges on disabled siblings with the real row and DNS components:
+`e2e/hostname-control-regressions.mjs` failed while only one routing flag was enabled. Separate
+Rust regressions failed because stopping the last hostname left a connector alive and an empty
+saved selection could launch again automatically.
+
+Stopped badges are removed. DNS presentation uses current row activity, and explicit checks
+can reveal a result for just the requested stopped row. Automatic diagnostic scheduling targets
+only running enabled rows. Last-hostname Stop now commits the empty selection and queues
+connector shutdown under one lock; its command waits for that exact run to finish. Stale removed
+route keys cannot keep a connector alive, and empty saved selections do not autostart.
+
+The full core suite passed 248 tests (2 existing ignored), including 12 hostname regressions.
+The native app library passed 55 tests (1 existing ignored), including 8 diagnostics tests.
+The frontend suite passed 154 tests, Svelte checking reported zero errors/warnings, and the
+production frontend build and modified desktop/e2e lint passed. The new browser regression
+passed Chromium and WebKit; existing hostname controls, inline connection, and DNS checks
+passed Chromium. Screenshots in `e2e/out/hostname-regressions-*.png` show one active hostname
+and the stopped project. No installed app or live Cloudflare account was changed.
+
+## 2026-10-19 — End-to-end hostname lifecycle review
+
+Four additional failing core regressions exposed stale saved route keys starting an empty
+connector, a deferred Start surviving a later Stop, overlapping ingress rules forwarding through
+the wrong gate, and unordered state publications. Current-route selection checks, per-project
+action generations, conservative overlap eligibility, and monotonic per-run `state_seq` values
+now cover these paths. Core and frontend consumers reject older state events and overview replies.
+Ambiguous overlapping hostname/path rules retain whole-project controls and explain why row
+controls are unavailable.
+
+Shared localhost services now use evidence for their exact rule, hostname, path and service.
+Unchecked HTTP services retain a neutral hollow dot. Copy/Open selects an enabled hostname;
+disabled siblings cannot keep a recovered origin warning visible. Backend and frontend reject
+diagnostic evidence for changed route identities even when the run/revision is unchanged.
+
+`e2e/hostname-controls-native.mjs` drives actual WebKit row buttons through Tauri IPC, the
+supervisor, state events and rendered header/sidebar indicators. Its disposable database and fake
+connector are checked before mutations. Both requested five-hostname flows pass, with real
+loopback gate responses, unchanged sibling connector PID, final connector process exit, unchanged
+source YAML, empty-selection autostart suppression and stale-selection relaunch checks.
+
+Validation: 254 core tests passed (2 existing ignored), 56 native app library tests passed
+(1 existing ignored), 166 frontend tests and 15 harness tests passed. Svelte reported zero
+errors/warnings; scoped desktop/e2e lint passed. State-order and shared-service regressions passed
+Chromium and WebKit. The native debug bundle was built locally; no installed app was replaced
+and no live Cloudflare tunnel or DNS change was exercised.
+
+## 2026-10-19 — v0.5.0 release preflight
+
+All workspace packages and the desktop bundle use 0.5.0. The release-notes validator accepts
+the dated changelog section. `cargo check --workspace`, `make test`, the production frontend
+build, and scoped desktop/e2e/scripts lint pass. The full suite passes 316 Rust tests (3 existing
+ignored), 166 frontend tests, and 15 script tests; Svelte reports zero errors and warnings.
+
+Independent release review found that token-authenticated config projects can receive remote
+ingress that bypasses local hostname gates. Individual controls now reject both `token` and
+`token-file` configs before persistence or spawning and advertise whole-project controls.
+Regression coverage verifies both forms, unchanged running connectors, and preserved source
+YAML; the mitigation passed independent review.
+
+Hostname control, shared-service, and inline diagnostic browser regressions pass against the
+production frontend in Chromium and WebKit. State-sequence browser checks pass on the Vite
+development server because that harness imports the store module directly. The rebuilt native
+debug app passes both five-hostname flows, sibling PID preservation, final connector exit,
+unchanged source YAML, and empty/stale saved-selection relaunch checks in disposable app data.
+
+The required full-repository lint and analysis commands were run and remain failing. Lint
+reports the same 100 Astro errors on the v0.4.0 baseline and this release; scoped app/scripts
+lint is clean. Analysis reports 12 unused standalone test scripts, 6 clone groups, and 55 health
+findings, compared with 6 unused scripts, 4 clone groups, and 37 health findings on v0.4.0.
+No lint rules, analysis thresholds, or suppressions were relaxed for the release. Live Cloudflare
+changes were not exercised.

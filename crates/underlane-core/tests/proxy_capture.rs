@@ -311,6 +311,23 @@ fn redacts_credentials_and_oauth_fragments_in_url_headers() {
 }
 
 #[tokio::test]
+async fn http_origin_forwards_without_loading_tls_certificates() {
+    let origin = common::start_origin().await;
+    let mut up = underlane_core::derived::Upstream::from_service(0, None, &format!("http://{origin}")).unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    up.ca_pool = Some(dir.path().join("missing-ca.pem"));
+    let ctx = underlane_core::proxy::ProxyContext {
+        tunnel_id: "t".into(),
+        options: std::sync::Arc::new(std::sync::RwLock::new(CaptureOptions::default())),
+        sink: std::sync::Arc::new(|_| {}),
+    };
+    let proxy = underlane_core::proxy::start(0, up, ctx).await.unwrap();
+    let (head, body) = raw_request(proxy.port(), "GET /headers HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n").await;
+    assert!(head.starts_with("HTTP/1.1 200"), "{head}");
+    assert!(!body.is_empty());
+}
+
+#[tokio::test]
 async fn tls_timeout_is_a_separate_handshake_deadline() {
     // An "HTTPS origin" that accepts TCP immediately but never speaks TLS.
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();

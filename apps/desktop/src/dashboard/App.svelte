@@ -196,6 +196,9 @@
   // connections, so requests queue here: one snapshot's `finally` can't end snapshot mode while
   // another is still reading.
   interface SnapshotRequest {
+    action?: "start" | "stop";
+    hostname?: string;
+    inspect?: boolean;
     nonce: string;
     select?: string;
     tab?: string;
@@ -211,7 +214,59 @@
         await requestsRef.selectFirst(p.tab === "req" ? "req" : "resp");
       }
       await new Promise((r) => setTimeout(r, 400));
-      await api.e2eReport(p.nonce, document.body.innerText);
+      if (p.action && p.hostname) {
+        const row = [
+          ...document.querySelectorAll<HTMLElement>("[data-route-hostname]"),
+        ].find((element) => element.dataset.routeHostname === p.hostname);
+        const label = `${p.action === "start" ? "Start" : "Stop"} ${p.hostname}`;
+        const button = [
+          ...(row?.querySelectorAll<HTMLButtonElement>("button") ?? []),
+        ].find((element) => element.getAttribute("aria-label") === label);
+        if (!button || button.getAttribute("aria-disabled") === "true") {
+          throw new Error(`Hostname action unavailable: ${label}`);
+        }
+        button.click();
+        await new Promise((r) => setTimeout(r, 400));
+        await tick();
+      }
+      const selected = store.tunnels.find((tunnel) => tunnel.id === selectedId);
+      const sidebar = [
+        ...document.querySelectorAll<HTMLElement>("[data-tunnel-id]"),
+      ].find((element) => element.dataset.tunnelId === selectedId);
+      await api.e2eReport(
+        p.nonce,
+        p.inspect
+          ? JSON.stringify({
+              headerStatus: document
+                .querySelector('header [role="img"]')
+                ?.getAttribute("aria-label"),
+              rows: [
+                ...document.querySelectorAll<HTMLElement>(
+                  "[data-route-hostname]"
+                ),
+              ].map((row) => ({
+                actions: [...row.querySelectorAll("button")].map((button) =>
+                  button.getAttribute("aria-label")
+                ),
+                dots: [
+                  ...row.querySelectorAll<HTMLElement>('[role="img"]'),
+                ].map((dot) => ({
+                  label: dot.getAttribute("aria-label"),
+                  visible: !dot.classList.contains("invisible"),
+                })),
+                hostname: row.dataset.routeHostname,
+              })),
+              sidebar: sidebar?.getAttribute("aria-label"),
+              sidebarStatus: sidebar
+                ?.querySelector('[role="img"]')
+                ?.getAttribute("aria-label"),
+              state: selected?.state,
+              text: document.body.innerText,
+            })
+          : document.body.innerText
+      );
+    } catch (error) {
+      await api.e2eReport(p.nonce, JSON.stringify({ error: errorText(error) }));
     } finally {
       snapshot.full = false;
     }

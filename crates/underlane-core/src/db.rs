@@ -9,6 +9,7 @@ use serde::Serialize;
 
 use crate::model::{LogLine, Group, Settings, Tunnel, TunnelKind};
 use crate::proxy::capture::{BodyCapture, CapturedExchange, ExchangeKind};
+use crate::route_control::RouteSelection;
 
 const SCHEMA_VERSION: i64 = 3;
 
@@ -220,6 +221,24 @@ impl Db {
         self.with(|c| c.query_row("DELETE FROM settings WHERE key = ?1 RETURNING value", [key], |r| r.get(0)).optional())
     }
 
+    pub fn route_selection(&self, id: &str) -> anyhow::Result<RouteSelection> {
+        match self.kv_get(&format!("hostname-selection:{id}"))? {
+            Some(value) => Ok(serde_json::from_str(&value)?),
+            None => Ok(RouteSelection::default()),
+        }
+    }
+
+    pub fn save_route_selection(&self, id: &str, selection: &RouteSelection) -> anyhow::Result<()> {
+        let value = serde_json::to_string(selection)?;
+        let changed = self.with(|c| c.execute(
+            "INSERT INTO settings(key, value) SELECT ?1, ?2 WHERE EXISTS (SELECT 1 FROM tunnels WHERE id = ?3)
+             ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+            params![format!("hostname-selection:{id}"), value, id],
+        ))?;
+        anyhow::ensure!(changed == 1, "Tunnel not found.");
+        Ok(())
+    }
+
     // ---- groups & tunnels ----
 
     pub fn groups(&self) -> anyhow::Result<Vec<Group>> {
@@ -394,6 +413,7 @@ impl Db {
         tx.execute("DELETE FROM tunnels WHERE id = ?1", [id])?;
         tx.execute("DELETE FROM logs WHERE tunnel_id = ?1", [id])?;
         tx.execute("DELETE FROM requests WHERE tunnel_id = ?1", [id])?;
+        tx.execute("DELETE FROM settings WHERE key = ?1", [format!("hostname-selection:{id}")])?;
         tx.commit()?;
         truncate_wal(&conn)
     }
@@ -735,6 +755,33 @@ fn group_by_name(conn: &Connection, name: &str, exclude_id: Option<&str>) -> rus
 #[cfg(test)]
 mod kv_tests {
     use super::*;
+
+    #[test]
+    fn hostname_selection_survives_reopen_and_is_removed_with_its_project() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("hostnames.db");
+        let db = Db::open(&path).unwrap();
+        let tunnel = crate::import::add_simple(&db, TunnelKind::Quick, "Web", "", Some("http://localhost:3000".into()), "info").unwrap();
+        let selection = RouteSelection::Only(vec![crate::route_control::RouteKey {
+            hostname: "app.example.com".into(), path: None, service: "http://localhost:3000".into(),
+        }]);
+        assert_eq!(db.route_selection(&tunnel.id).unwrap(), RouteSelection::default());
+        db.save_route_selection(&tunnel.id, &selection).unwrap();
+        drop(db);
+        let db = Db::open(&path).unwrap();
+        assert_eq!(db.route_selection(&tunnel.id).unwrap(), selection);
+        assert_eq!(db.route_selection("other").unwrap(), RouteSelection::default());
+        db.delete_tunnel(&tunnel.id).unwrap();
+        assert!(db.kv_get(&format!("hostname-selection:{}", tunnel.id)).unwrap().is_none());
+        assert!(db.save_route_selection(&tunnel.id, &selection).is_err());
+    }
+
+    #[test]
+    fn corrupt_hostname_selection_never_defaults_to_exposing_all_routes() {
+        let db = Db::open_in_memory().unwrap();
+        db.kv_set("hostname-selection:project", "invalid").unwrap();
+        assert!(db.route_selection("project").is_err());
+    }
 
     #[test]
     fn background_opacity_defaults_for_existing_settings_and_survives_reopen() {

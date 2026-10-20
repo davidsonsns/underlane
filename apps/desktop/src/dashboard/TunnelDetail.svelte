@@ -58,6 +58,7 @@
   } from "$lib/components/ui/select/index.js";
   import { Switch } from "$lib/components/ui/switch/index.js";
   import { configChecker } from "$lib/config-change";
+  import { connectionWarning, resolvedOriginFailure } from "$lib/connection";
   import { failurePresentation } from "$lib/failure";
   import { returnFocusTo } from "$lib/focus";
   import { notify } from "$lib/toast";
@@ -131,7 +132,7 @@
 
   const s = $derived(tunnel.state);
   const failure = $derived(
-    s.failure || s.status === "crashed"
+    (s.failure || s.status === "crashed") && !resolvedOriginFailure(tunnel, now)
       ? failurePresentation(s.failure, s.detail, s.hint)
       : null
   );
@@ -154,6 +155,7 @@
   );
   const headerMeta = $derived(
     [
+      connectionWarning(tunnel),
       s.status === "connected" && s.started_at
         ? formatUptime(s.started_at, now)
         : "",
@@ -835,7 +837,7 @@
         <FailureNotice detail={s.detail} {failure} status={s.status} />
       </div>
     {/key}
-  {:else if s.detail || s.hint}
+  {:else if (s.detail || s.hint) && !resolvedOriginFailure(tunnel, now)}
     {#snippet stateBody()}
       {#if s.detail}
         <div class="whitespace-pre-wrap select-text">{s.detail}</div>
@@ -1047,6 +1049,18 @@
             class={cn(menuContent, "min-w-32")}
             sideOffset={3}
           >
+            {#if on &&
+              s.mappings.some(
+                (mapping) => mapping.hostname && mapping.enabled === false
+              )}
+              <DropdownMenu.Item
+                class={cn(menuItem, "ps-2")}
+                disabled={operationBusy}
+                onSelect={() => run(() => api.start(tunnel.id))}
+              >
+                <Play class="size-3.5" />Start all hostnames
+              </DropdownMenu.Item>
+            {/if}
             <DropdownMenu.Item
               class={cn(menuItem, "ps-2")}
               disabled={operationBusy || !on}
@@ -1238,7 +1252,7 @@
         {/key}
       {/if}
 
-      <Routes {tunnel} />
+      <Routes {operationBusy} {tunnel} />
 
       {@render behaviorSettings()}
 

@@ -474,6 +474,43 @@ fn config_spec(f: &Fake, text: &str) -> RunSpec {
 }
 
 #[tokio::test]
+async fn first_hostname_in_large_project_starts_promptly() {
+    use underlane_core::config::TunnelConfig;
+    use underlane_core::route_control::{RouteKey, RouteTarget};
+
+    let f = fake("ok");
+    let mut source = format!("tunnel: {}\ningress:\n", uuid::Uuid::new_v4());
+    for index in 0..12 {
+        source.push_str(&format!("  - hostname: app{index}.example.com\n    service: http://localhost:3000\n"));
+    }
+    source.push_str("  - service: http_status:404\n");
+    let spec = config_spec(&f, &source);
+    let config = TunnelConfig::load(Path::new(spec.tunnel.config_path.as_ref().unwrap())).unwrap();
+    let (sup, states, _) = supervisor(&f, |cfg| cfg.health_interval = Duration::from_secs(2));
+    let started = std::time::Instant::now();
+    sup.start_route(spec.clone(), RouteTarget {
+        key: RouteKey::from_rule(&config.ingress[0]).unwrap(), run: 0, config_revision: 0,
+    }, |_| Ok(())).unwrap();
+    let first = wait_status(&states, Status::Connected).await;
+    let first_elapsed = started.elapsed();
+    assert!(first.mappings[0].enabled);
+    assert!(first.mappings[1..12].iter().all(|mapping| !mapping.enabled));
+
+    let started = std::time::Instant::now();
+    sup.start_route(spec, RouteTarget {
+        key: RouteKey::from_rule(&config.ingress[1]).unwrap(), run: first.run, config_revision: first.config_revision,
+    }, |_| Ok(())).unwrap();
+    let second = sup.config_state("tun-1").unwrap();
+    let second_elapsed = started.elapsed();
+    sup.stop_all().await;
+    eprintln!("first hostname: {first_elapsed:?}; second hostname: {second_elapsed:?}");
+    assert_eq!((second.pid, second.run, second.config_revision), (first.pid, first.run, first.config_revision));
+    assert!(second.mappings[0].enabled && second.mappings[1].enabled);
+    assert!(first_elapsed < Duration::from_millis(1500), "first hostname startup took {first_elapsed:?}");
+    assert!(second_elapsed < Duration::from_millis(1500));
+}
+
+#[tokio::test]
 async fn project_drafts_are_refused_before_starting_cloudflared() {
     let f = fake("ok");
     let spec = config_spec(&f, "ingress:\n  - service: http_status:404\n");
@@ -608,7 +645,8 @@ async fn edit_during_preparation_keeps_the_bytes_used_for_derived_config() {
     let loaded = wait_status(&states, Status::Connected).await;
     assert_eq!(loaded.mappings[0].service, "http://localhost:4000");
     assert_eq!(loaded.check_config_change(path).status, ConfigChangeStatus::Changed);
-    assert!(std::fs::read_to_string(f.data.join("derived/tun-1.yml")).unwrap().contains("4000"));
+    let derived = underlane_core::config::TunnelConfig::load(&f.data.join("derived/tun-1.yml")).unwrap();
+    assert!(derived.ingress[0].service.starts_with("http://127.0.0.1:"));
     assert_eq!(sup.config_state("tun-1").unwrap().loaded_config, loaded.loaded_config);
     sup.stop("tun-1").await;
 }

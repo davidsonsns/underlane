@@ -108,6 +108,27 @@ describe("format", () => {
       "api.internal:8443"
     );
   });
+  it("picks an enabled hostname instead of a stopped hostname for public links", () => {
+    const mapping = (hostname: string, enabled?: boolean) => ({
+      enabled,
+      hostname,
+    });
+    const url = (mappings: ReturnType<typeof mapping>[]) =>
+      publicUrl({
+        kind: "config",
+        state: { mappings, public_url: null },
+      } as never);
+    expect(
+      url([
+        mapping("paused.example.com", false),
+        mapping("live.example.com", true),
+      ])
+    ).toBe("https://live.example.com");
+    expect(url([mapping("paused.example.com", false)])).toBeNull();
+    expect(url([mapping("legacy.example.com")])).toBe(
+      "https://legacy.example.com"
+    );
+  });
   it("shell-quotes untrusted methods and handles HEAD", () => {
     const base = {
       host: "h.example.com",

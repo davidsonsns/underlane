@@ -11,6 +11,7 @@ use underlane_core::db::{Db, RequestSummary};
 use underlane_core::model::{LogLine, Settings, Tunnel, TunnelKind};
 use underlane_core::proxy::capture::{CaptureOptions, CapturedExchange, SharedOptions};
 use underlane_core::proxy::now_ms;
+use underlane_core::route_control::{RouteKey, RouteTarget};
 use underlane_core::supervisor::{ConfigChange, Event, RunSpec, Status, Supervisor, SupervisorConfig, TunnelState};
 use serde::Serialize;
 use tauri::{AppHandle, Emitter};
@@ -207,6 +208,7 @@ pub struct Core {
     pub db: Arc<Db>,
     pub sup: Arc<Supervisor>,
     pub states: Mutex<HashMap<String, TunnelState>>,
+    pub connections: crate::diagnostics::Connections,
     pub capture: SharedOptions,
     pub binary: RwLock<Option<Binary>>,
     pub settings: RwLock<Settings>,
@@ -235,6 +237,7 @@ pub struct TunnelView {
     pub cloudflare_tunnel_id: Option<String>,
     pub separating_tunnel: bool,
     pub separate_tunnel_pending: bool,
+    pub connection: Option<crate::diagnostics::TunnelConnection>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -413,12 +416,17 @@ impl Core {
         let mut cfg = SupervisorConfig::new(data_dir.clone(), binary.as_ref().map(|b| PathBuf::from(&b.path)), capture.clone());
         cfg.shim = shim;
         let sup = Supervisor::new(cfg, sink);
+        for tunnel in db.tunnels()? {
+            sup.restore_route_selection(&tunnel.id, db.route_selection(&tunnel.id)?)
+                .map_err(anyhow::Error::msg)?;
+        }
 
         let core = Arc::new(Core {
             handle,
             db,
             sup,
             states: Mutex::new(HashMap::new()),
+            connections: crate::diagnostics::Connections::default(),
             capture,
             binary: RwLock::new(binary),
             settings: RwLock::new(settings),
@@ -436,6 +444,7 @@ impl Core {
         tokio::spawn(writer_task(core.clone(), write_rx));
         tokio::spawn(state_task(core.clone(), state_rx));
         tokio::spawn(sweep_task(core.clone()));
+        tokio::spawn(crate::diagnostics::monitor(core.clone()));
         Ok(core)
     }
 
@@ -468,8 +477,8 @@ impl Core {
 
     /// State plus the routes parsed from the config file when the tunnel isn't running, so a
     /// stopped tunnel still shows where it would send traffic.
-    fn state_with_routes(&self, t: &Tunnel) -> (TunnelState, bool) {
-        let mut s = self.state_of(&t.id);
+    pub(crate) fn state_with_routes(&self, t: &Tunnel) -> (TunnelState, bool) {
+        let mut s = self.sup.config_state(&t.id).unwrap_or_else(|| self.state_of(&t.id));
         let loaded = if t.kind == TunnelKind::Config {
             t.config_path.as_deref().map(|p| underlane_core::config::TunnelConfig::load(std::path::Path::new(p)))
         } else { None };
@@ -486,15 +495,19 @@ impl Core {
                     s.detail = Some(underlane_core::projects::DRAFT_DETAIL.into());
                     s.hint = Some(underlane_core::projects::DRAFT_HINT.into());
                 }
+                let control_error = underlane_core::supervisor::hostname_control_error(&c);
+                let selection = self.sup.route_selection(&t.id);
                 s.mappings = c
                     .ingress
                     .iter()
-                    .map(|r| underlane_core::supervisor::RouteMapping {
-                        hostname: r.hostname.clone(),
-                        path: r.path.clone(),
-                        service: r.service.clone(),
-                        inspected: false,
-                        note: None,
+                    .map(|r| {
+                        let route_key = RouteKey::from_rule(r);
+                        underlane_core::supervisor::RouteMapping {
+                            hostname: r.hostname.clone(), path: r.path.clone(), service: r.service.clone(),
+                            inspected: false, note: control_error.clone(),
+                            control_supported: route_key.is_some() && control_error.is_none(),
+                            enabled: selection.enables(route_key.as_ref()), route_key,
+                        }
                     })
                     .collect();
             }
@@ -504,6 +517,7 @@ impl Core {
 
     /// Tell every window that the tunnel list or a tunnel's definition changed.
     pub fn notify_changed(&self) {
+        self.connections.wake();
         let _ = self.handle.emit("tunnels-changed", ());
     }
 
@@ -522,6 +536,7 @@ impl Core {
                 let (state, setup_needed) = self.state_with_routes(&t);
                 TunnelView {
                     group_name: t.group_id.as_ref().and_then(|id| names.get(id)).cloned().unwrap_or_default(),
+                    connection: self.connections.view(&t.id, &state),
                     state,
                     setup_needed,
                     separating_tunnel: crate::separate_tunnel::is_running(&t.id),
@@ -559,20 +574,47 @@ impl Core {
         anyhow::ensure!(!crate::separate_tunnel::is_running(id), "Finish creating the separate tunnel before starting this project.");
         anyhow::ensure!(!crate::separate_tunnel::start_blocked(self, id).map_err(anyhow::Error::msg)?, "Separate tunnel setup is unfinished. Retry Create separate tunnel to finish updating DNS before starting this project.");
         let spec = self.spec(id)?;
-        let status = self.state_of(id).status;
-        if self.sup.is_running(id) && status == Status::Crashed {
-            self.sup.restart(spec);
-        } else {
-            self.sup.start(spec);
+        self.connections.invalidate(id);
+        let retrying_crash = self.sup.is_running(id) && self.state_of(id).status == Status::Crashed;
+        self.sup.start_all_routes(spec, |selection| self.db.save_route_selection(id, selection).map_err(|e| e.to_string()))
+            .map_err(anyhow::Error::msg)?;
+        if retrying_crash {
+            self.sup.restart(self.spec(id)?);
         }
         Ok(())
+    }
+
+    pub fn start_hostname(&self, id: &str, target: RouteTarget) -> anyhow::Result<()> {
+        let _operation = self.operations.try_read().map_err(|_| anyhow::anyhow!("App reset is in progress."))?;
+        anyhow::ensure!(!crate::separate_tunnel::is_running(id), "Finish creating the separate tunnel before starting a hostname.");
+        anyhow::ensure!(!crate::separate_tunnel::start_blocked(self, id).map_err(anyhow::Error::msg)?, "Separate tunnel setup is unfinished. Finish it before starting a hostname.");
+        let spec = self.spec(id)?;
+        let key = target.key.clone();
+        self.sup.start_route(spec, target, |selection| self.db.save_route_selection(id, selection).map_err(|e| e.to_string()))
+            .map_err(anyhow::Error::msg)?;
+        self.connections.hostname_changed(id, &key);
+        self.notify_changed();
+        Ok(())
+    }
+
+    pub fn stop_hostname(&self, id: &str, target: RouteTarget) -> anyhow::Result<bool> {
+        let _operation = self.operations.try_read().map_err(|_| anyhow::anyhow!("App reset is in progress."))?;
+        anyhow::ensure!(!crate::separate_tunnel::is_running(id), "Finish creating the separate tunnel before stopping a hostname.");
+        let key = target.key.clone();
+        let selection = self.sup.stop_route(id, target, |selection| self.db.save_route_selection(id, selection).map_err(|e| e.to_string()))
+            .map_err(anyhow::Error::msg)?;
+        self.connections.hostname_changed(id, &key);
+        self.notify_changed();
+        Ok(matches!(selection, underlane_core::route_control::RouteSelection::Only(keys) if keys.is_empty()))
     }
 
     pub fn restart(&self, id: &str) -> anyhow::Result<()> {
         let _operation = self.operations.try_read().map_err(|_| anyhow::anyhow!("App reset is in progress."))?;
         anyhow::ensure!(!crate::separate_tunnel::is_running(id), "Finish creating the separate tunnel before restarting this project.");
         anyhow::ensure!(!crate::separate_tunnel::start_blocked(self, id).map_err(anyhow::Error::msg)?, "Separate tunnel setup is unfinished. Retry Create separate tunnel to finish updating DNS before restarting this project.");
-        self.sup.restart(self.spec(id)?);
+        let spec = self.spec(id)?;
+        self.connections.invalidate(id);
+        self.sup.restart(spec);
         Ok(())
     }
 
@@ -581,11 +623,14 @@ impl Core {
         let _operation = self.operations.try_read().map_err(|_| anyhow::anyhow!("App reset is in progress."))?;
         anyhow::ensure!(!crate::separate_tunnel::is_running(id), "Finish creating the separate tunnel before restarting this project.");
         anyhow::ensure!(!crate::separate_tunnel::start_blocked(self, id).map_err(anyhow::Error::msg)?, "Separate tunnel setup is unfinished. Retry Create separate tunnel to finish updating DNS before restarting this project.");
-        self.sup.restart_if_running(self.spec(id)?);
+        let spec = self.spec(id)?;
+        self.connections.invalidate(id);
+        self.sup.restart_if_running(spec);
         Ok(())
     }
 
     pub async fn stop(&self, id: &str) {
+        self.connections.invalidate(id);
         self.sup.stop(id).await;
     }
 
@@ -599,7 +644,7 @@ impl Core {
             }
         };
         for id in ids {
-            if let Err(e) = self.start(&id) {
+            if let Err(e) = self.restart(&id) {
                 tracing::warn!("startup tunnel {id}: {e}");
             }
         }
@@ -619,6 +664,8 @@ impl Core {
     pub fn reset_runtime(&self) -> anyhow::Result<()> {
         self.states.lock().unwrap().clear();
         self.latest_run.lock().unwrap().clear();
+        self.connections.clear();
+        crate::dns::clear_repair_reviews();
         self.request_capture.tunnels.write().unwrap().clear();
         self.dropped.store(0, Ordering::Relaxed);
         self.written_since_sweep.store(0, Ordering::Relaxed);
@@ -637,7 +684,12 @@ impl Core {
         b
     }
 
-    fn on_state(&self, s: TunnelState) {
+    fn on_state(&self, mut s: TunnelState) {
+        if let Some(current) = self.sup.config_state(&s.id) {
+            if current.run == s.run && current.state_seq >= s.state_seq {
+                s = current;
+            }
+        }
         {
             let mut latest = self.latest_run.lock().unwrap();
             let seen = latest.entry(s.id.clone()).or_insert(0);
@@ -646,10 +698,19 @@ impl Core {
             }
             *seen = s.run;
         }
-        let prev = self.states.lock().unwrap().insert(s.id.clone(), s.clone());
+        let prev = {
+            let mut states = self.states.lock().unwrap();
+            if states.get(&s.id).is_some_and(|current| {
+                current.run > s.run || (current.run == s.run && current.state_seq > s.state_seq)
+            }) {
+                return;
+            }
+            states.insert(s.id.clone(), s.clone())
+        };
         if prev.as_ref() == Some(&s) {
             return;
         }
+        self.connections.wake();
         let _ = self.handle.emit("tunnel-state", &s);
         let active = self.active_count();
         tray::set_count(&self.handle, active);

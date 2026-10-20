@@ -4,6 +4,24 @@ Notable changes to Underlane, with the newest version first.
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-10-19
+
+### Added
+
+- Individual hostname Start/Stop controls on hover and keyboard focus, with saved selections and uninterrupted sibling hostname traffic for supported local HTTP/HTTPS configs.
+- Inline hostname diagnostics distinguish DNS mismatches, stopped connectors, unavailable local services, and public HTTPS failures across the dashboard and menu bar.
+- A reviewed Repair DNS flow updates only the selected tunnel CNAME, with configuration/account checks and verified readback.
+- Background public reachability checks and route-specific test paths distinguish successful responses from authentication gates, cached responses, and unverified routes.
+
+### Fixed
+
+- Starting the first hostname in a project skips unnecessary TLS certificate loading for plain HTTP origins.
+- Starting one hostname no longer displays automatic DNS status on its stopped siblings.
+- Unverified DNS status stays in the hostname actions menu instead of adding an inline badge.
+- Stopping the last enabled hostname shuts down its connector and clears project activity.
+- Token-authenticated configs keep whole-project controls so remote routing cannot bypass an individual hostname's stopped state.
+- Removed Stopped badges from hostname rows.
+
 ## [0.4.0] - 2026-10-18
 
 ### Added
@@ -48,7 +66,8 @@ Notable changes to Underlane, with the newest version first.
 - Guided cloudflared installation and tunnel setup, hostname editing with backups, and DNS checks.
 - Searchable tunnel logs, failure explanations, and warnings when a config needs a restart.
 
-[Unreleased]: https://github.com/davidsonsns/underlane/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/davidsonsns/underlane/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/davidsonsns/underlane/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/davidsonsns/underlane/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/davidsonsns/underlane/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/davidsonsns/underlane/compare/v0.1.0...v0.2.0

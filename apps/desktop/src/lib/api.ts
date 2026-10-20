@@ -3,6 +3,7 @@ import type {
   Binary,
   Candidate,
   ConfigChange,
+  DnsRepairPreview,
   HostnameConfig,
   HostnameDns,
   HostnameRoute,
@@ -15,9 +16,11 @@ import type {
   ProjectConfigPreview,
   RequestDetail,
   RequestSummary,
+  RouteTarget,
   SeparateTunnelPreview,
   SeparateTunnelResult,
   Settings,
+  TunnelConnection,
   TunnelSetupResult,
   Validation,
 } from "./types";
@@ -33,6 +36,18 @@ export const api = {
     invoke<void>("cancel_project_setup", { id, requestId }),
   checkConfigChange: (id: string) =>
     invoke<ConfigChange | null>("check_config_change", { id }),
+  checkConnection: (
+    id: string,
+    hostname?: string,
+    ruleIndex?: number,
+    testPath?: string
+  ) =>
+    invoke<TunnelConnection>("check_connection", {
+      hostname,
+      id,
+      ruleIndex,
+      testPath,
+    }),
   checkHostnameDns: (id: string, hostname: string) =>
     invoke<HostnameDns>("check_hostname_dns", { hostname, id }),
   clearLogs: (tunnelId: string | null) =>
@@ -94,6 +109,8 @@ export const api = {
   openDashboard: (view?: string) =>
     invoke<void>("open_dashboard", { view: view ?? null }),
   overview: () => invoke<Overview>("overview"),
+  previewDnsRepair: (id: string, hostname: string) =>
+    invoke<DnsRepairPreview>("preview_dns_repair", { hostname, id }),
   previewProjectConfig: (path: string) =>
     invoke<ProjectConfigPreview>("preview_project_config", { path }),
   previewSeparateTunnel: (id: string) =>
@@ -112,6 +129,8 @@ export const api = {
   quit: () => invoke<void>("quit"),
   renameGroup: (id: string, name: string) =>
     invoke<void>("rename_group", { id, name }),
+  repairDns: (id: string, reviewId: string) =>
+    invoke<HostnameDns>("repair_hostname_dns", { id, reviewId }),
   requestCapturePaused: (tunnelId: string) =>
     invoke<boolean>("request_capture_paused", { tunnelId }),
   resetApp: () => invoke<void>("reset_app"),
@@ -143,8 +162,12 @@ export const api = {
     invoke<TunnelSetupResult>("setup_project_tunnel", { id, requestId }),
   start: (id: string) => invoke<void>("start_tunnel", { id }),
   startAll: () => invoke<void>("start_all"),
+  startHostname: (id: string, target: RouteTarget) =>
+    invoke<void>("start_hostname", { id, target }),
   stop: (id: string) => invoke<void>("stop_tunnel", { id }),
   stopAll: () => invoke<void>("stop_all"),
+  stopHostname: (id: string, target: RouteTarget) =>
+    invoke<void>("stop_hostname", { id, target }),
   updateTunnel: (
     id: string,
     patch: Partial<{

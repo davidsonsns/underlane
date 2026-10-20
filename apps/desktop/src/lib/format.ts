@@ -150,7 +150,8 @@ export function publicUrl(t: Pick<Tunnel, "state" | "kind">): string | null {
     return t.state.public_url;
   }
   const host = t.state.mappings.find(
-    (m: RouteMapping) => m.hostname && !m.hostname.includes("*")
+    (m: RouteMapping) =>
+      m.enabled !== false && m.hostname && !m.hostname.includes("*")
   )?.hostname;
   return host ? `https://${host}` : null;
 }
@@ -333,12 +334,12 @@ export const statusLabel: Record<string, string> = {
 
 /** What each tunnel status means, for the status dot's tooltip. */
 export const statusHint: Record<string, string> = {
-  connected: "Connected. Cloudflare is routing traffic through this tunnel.",
+  connected:
+    "Connected to Cloudflare. Public hostname reachability is checked separately.",
   crashed:
     "Crashed. cloudflared exited unexpectedly. Check Logs for the error.",
   degraded:
     "Degraded. Lost the connection to Cloudflare; cloudflared is reconnecting.",
   starting: "Starting. cloudflared is connecting to Cloudflare.",
-  stopped:
-    "Stopped. cloudflared isn't running, so no traffic reaches these hostnames.",
+  stopped: "Stopped. This project's cloudflared connector isn't running.",
 };

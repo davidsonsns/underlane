@@ -24,6 +24,7 @@
   import { Switch } from "$lib/components/ui/switch/index.js";
   // The provider alone, not the ui/tooltip barrel (Tip brings the rest).
   import TooltipProvider from "$lib/components/ui/tooltip/tooltip-provider.svelte";
+  import { connectionWarning, resolvedOriginFailure } from "$lib/connection";
   import {
     popoverKeyAction,
     popoverRowIndex,
@@ -202,7 +203,9 @@
       {activeTunnelOwner(t, store.tunnels)?.name}
       uses this tunnel</span
     >
-  {:else if t.state.failure ||
+  {:else if connectionWarning(t)}
+    <span class={cn(detail, "text-degraded-text")}>{connectionWarning(t)}</span>
+  {:else if (t.state.failure && !resolvedOriginFailure(t)) ||
     t.state.status === "crashed" ||
     t.state.status === "degraded"}
     <span class={cn(detail, t.state.status === "crashed" && "text-bad-text")}
@@ -228,7 +231,9 @@
 {#snippet tunnelRow(
   t: Tunnel
 )}
-  {@const m = t.state.mappings.find((m) => m.hostname) ?? t.state.mappings[0]}
+  {@const m =
+    t.state.mappings.find((m) => m.hostname && m.enabled !== false) ??
+    t.state.mappings.find((m) => m.enabled !== false)}
   {@const url = publicUrl(t)}
   <!-- The status shows in words in the row when it matters, so the dot's hint is hover-only (no tab stop). -->
   <TunnelStatus status={t.state.status} />

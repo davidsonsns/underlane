@@ -24,10 +24,15 @@ features came from everyday use.
   or a hex view, and copy requests as curl.
 - Start and stop tunnels from the menu bar, recover from crashes, and bring tunnels
   back automatically at login.
+- Start and stop individual HTTP/HTTPS hostnames on hover or keyboard focus, without
+  reconnecting the project's other hostnames or changing its source YAML. Token-authenticated
+  configs retain whole-project controls because Cloudflare can replace their routing rules.
 - Organize projects into groups, load existing cloudflared configs, or share a local
   service through a temporary quick tunnel.
-- Edit hostname rules with backups, check and create DNS records using your Cloudflare
-  login, and spot config changes that need a restart.
+- Edit hostname rules with backups, detect DNS routes pointing to another tunnel, and
+  repair a reviewed DNS record using your Cloudflare login.
+- Check DNS, connector connectivity, local services, and public HTTPS separately; spot
+  config changes that need a restart.
 - Search and filter tunnel logs, with failure explanations and suggested fixes.
 
 ## Setup

@@ -62,6 +62,29 @@ try {
     unknown: "DNS target unverified",
   };
   async function checkTooltip(hostname, result) {
+    if (result.status === "unknown") {
+      assert.equal(
+        await page
+          .getByRole("button", {
+            exact: true,
+            name: `DNS target unverified for ${hostname}`,
+          })
+          .count(),
+        0
+      );
+      await page
+        .getByRole("button", {
+          exact: true,
+          name: `DNS actions for ${hostname}`,
+        })
+        .click();
+      const menu = page.getByRole("menu");
+      await menu.getByText("DNS target unverified", { exact: true }).waitFor();
+      assert.ok((await menu.innerText()).includes(result.message));
+      await page.keyboard.press("Escape");
+      await menu.waitFor({ state: "hidden" });
+      return;
+    }
     const badge = page.getByRole("button", {
       exact: true,
       name: `${labels[result.status]} for ${hostname}`,
@@ -127,11 +150,19 @@ try {
     .click();
   await page.getByRole("menuitem", { exact: true, name: "Check DNS" }).click();
   await page
-    .getByRole("button", { name: `DNS verified for ${hosts[0]}` })
-    .hover();
-  await tooltip.waitFor();
-  assert.ok((await tooltip.innerText()).includes("Cloudflare confirmed"));
-  assert.ok(!(await tooltip.innerText()).includes("It was preserved"));
+    .getByRole("button", { name: `DNS needs attention for ${hosts[0]}` })
+    .waitFor({ state: "hidden" });
+  assert.equal(
+    await page.getByRole("button", { name: /^DNS verified for / }).count(),
+    0
+  );
+  await page
+    .getByRole("button", { name: `DNS actions for ${hosts[0]}` })
+    .click();
+  await page
+    .getByRole("menuitem", { exact: true, name: "Check DNS" })
+    .waitFor();
+  await page.keyboard.press("Escape");
   const calls = await page.evaluate(() => window.__dnsMock.calls);
   assert.equal(
     calls.filter((call) => call.cmd === "check_hostname_dns").length,
@@ -145,7 +176,7 @@ try {
   );
   assert.deepEqual(errors, []);
   console.log(
-    "DNS tooltip passed: diagnostic details, keyboard focus, Escape, refresh, and no DNS mutations"
+    "DNS tooltip passed: warnings remain, verified badge disappears, actions stay available, keyboard focus, Escape, refresh, and no DNS mutations"
   );
 } finally {
   await browser.close();

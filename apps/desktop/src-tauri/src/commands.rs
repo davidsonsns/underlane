@@ -55,7 +55,9 @@ pub async fn save_hostnames(
     core: CoreState<'_>, id: String, revision: String,
     routes: Vec<underlane_core::hostnames::HostnameRoute>, fallback_service: String,
 ) -> Res<crate::hostnames::SaveResult> {
-    crate::hostnames::save(core.inner().clone(), id, revision, routes, fallback_service).await
+    let result = crate::hostnames::save(core.inner().clone(), id.clone(), revision, routes, fallback_service).await;
+    core.connections.invalidate(&id);
+    result
 }
 
 #[tauri::command]
@@ -80,12 +82,40 @@ pub async fn check_hostname_dns(core: CoreState<'_>, id: String, hostname: Strin
 
 #[tauri::command]
 pub async fn create_hostname_dns(core: CoreState<'_>, id: String, hostname: String) -> Res<underlane_core::dns::HostnameDns> {
-    crate::dns::create(core.inner().clone(), id, hostname).await
+    core.connections.clear();
+    let result = crate::dns::create(core.inner().clone(), id, hostname).await;
+    core.connections.clear();
+    core.notify_changed();
+    result
 }
 
 #[tauri::command]
 pub async fn connect_hostname_dns(core: CoreState<'_>, id: String, hostname: String, token: String) -> Res<underlane_core::dns::HostnameDns> {
-    crate::dns::connect(core.inner().clone(), id, hostname, underlane_core::secret::Secret::new(token)).await
+    let result = crate::dns::connect(core.inner().clone(), id, hostname, underlane_core::secret::Secret::new(token)).await;
+    core.connections.clear();
+    core.notify_changed();
+    result
+}
+
+#[tauri::command]
+pub async fn check_connection(
+    core: CoreState<'_>, id: String, hostname: Option<String>, rule_index: Option<usize>, test_path: Option<String>,
+) -> Res<crate::diagnostics::TunnelConnection> {
+    crate::diagnostics::check(core.inner().clone(), id, hostname, rule_index, test_path).await
+}
+
+#[tauri::command]
+pub async fn preview_dns_repair(core: CoreState<'_>, id: String, hostname: String) -> Res<crate::dns::DnsRepairPreview> {
+    crate::dns::preview_repair(core.inner().clone(), id, hostname).await
+}
+
+#[tauri::command]
+pub async fn repair_hostname_dns(core: CoreState<'_>, id: String, review_id: String) -> Res<underlane_core::dns::HostnameDns> {
+    core.connections.clear();
+    let result = crate::dns::repair(core.inner().clone(), id, review_id).await;
+    core.connections.clear();
+    core.notify_changed();
+    result
 }
 
 #[tauri::command]
@@ -329,7 +359,9 @@ pub async fn delete_tunnel(core: CoreState<'_>, id: String, delete_config: Optio
         }
     }
     core.db.delete_tunnel(&id).map_err(err)?;
+    core.sup.clear_route_selection(&id);
     core.states.lock().unwrap().remove(&id);
+    core.connections.invalidate(&id);
     let _ = std::fs::remove_file(core.data_dir.join("derived").join(format!("{id}.yml")));
     core.notify_changed();
     Ok(())
@@ -346,6 +378,22 @@ fn delete_config_file(path: &str) -> Res<()> {
 #[tauri::command]
 pub async fn start_tunnel(core: CoreState<'_>, id: String) -> Res<()> {
     blocking(&core, move |c| c.start(&id).map_err(err)).await
+}
+
+#[tauri::command]
+pub async fn start_hostname(core: CoreState<'_>, id: String, target: underlane_core::route_control::RouteTarget) -> Res<()> {
+    blocking(&core, move |c| c.start_hostname(&id, target).map_err(err)).await
+}
+
+#[tauri::command]
+pub async fn stop_hostname(core: CoreState<'_>, id: String, target: underlane_core::route_control::RouteTarget) -> Res<()> {
+    let run = target.run;
+    let target_id = id.clone();
+    let last_hostname = blocking(&core, move |c| c.stop_hostname(&target_id, target).map_err(err)).await?;
+    if last_hostname {
+        core.sup.wait_for_stop(&id, run).await;
+    }
+    Ok(())
 }
 
 #[tauri::command]
@@ -381,9 +429,7 @@ pub fn start_all_inner<R: Runtime>(app: &AppHandle<R>) {
                 .is_some_and(|config| underlane_core::projects::needs_setup(&config)) {
                 continue;
             }
-            if !core.state_of(&t.id).status.is_active() {
-                let _ = core.start(&t.id);
-            }
+            let _ = core.start(&t.id);
         }
     }
 }
@@ -424,18 +470,12 @@ pub async fn probe_services(services: Vec<String>) -> Vec<Option<bool>> {
 }
 
 async fn probe_service(service: String) -> Option<bool> {
-    let authority = match underlane_core::derived::split_service(&service) {
-        Some((_, a)) => a,
-        None => {
-            let (scheme, rest) = service.trim().split_once("://")?;
-            if !["tcp", "ssh", "rdp", "smb"].contains(&scheme.to_ascii_lowercase().as_str()) {
-                return None;
-            }
-            rest.trim_end_matches('/').to_string()
-        }
-    };
-    let connect = tokio::net::TcpStream::connect(authority);
-    Some(matches!(tokio::time::timeout(std::time::Duration::from_millis(400), connect).await, Ok(Ok(_))))
+    use underlane_core::connection::{probe_service, ServiceStatus};
+    match probe_service(&service).await.status {
+        ServiceStatus::Reachable => Some(true),
+        ServiceStatus::Unreachable => Some(false),
+        ServiceStatus::Unsupported => None,
+    }
 }
 
 #[derive(Deserialize)]

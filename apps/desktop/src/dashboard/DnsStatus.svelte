@@ -34,12 +34,25 @@
     id,
     hostname,
     service,
-  }: { id: string; hostname: string; service: Snippet } = $props();
+    dns,
+    active = true,
+    useBackend = false,
+    oncheck,
+  }: {
+    id: string;
+    hostname: string;
+    service: Snippet;
+    dns?: HostnameDns;
+    active?: boolean;
+    useBackend?: boolean;
+    oncheck?: () => Promise<void>;
+  } = $props();
   let result = $state<HostnameDns | null>(
     untrack(() => readDnsCache(JSON.stringify([id, hostname])) ?? null)
   );
   type Action = "checking" | "creating" | "connecting";
   let busy = $state<Action | null>(null);
+  let showInactiveResult = $state(false);
   let connectOpen = $state(false);
   let token = $state("");
   let connectError = $state<string | null>(null);
@@ -54,6 +67,13 @@
   let check: () => Promise<void> = async () => undefined;
   let create: () => Promise<void> = async () => undefined;
   let connect: () => Promise<void> = async () => undefined;
+  const shared = $derived(useBackend || dns !== undefined);
+
+  $effect(() => {
+    if (shared) {
+      result = dns ?? null;
+    }
+  });
 
   function closeConnect(value: boolean) {
     if (busy === "connecting") {
@@ -78,11 +98,16 @@
   $effect(() => {
     const targetId = id;
     const targetHostname = hostname;
+    const sharedDiagnostics = shared;
+    const automaticEnabled = active;
     const cacheKey = JSON.stringify([targetId, targetHostname]);
     let alive = true;
     let pending = false;
-    result = readDnsCache(cacheKey) ?? null;
+    if (!sharedDiagnostics) {
+      result = readDnsCache(cacheKey) ?? null;
+    }
     busy = null;
+    showInactiveResult = false;
     connectOpen = false;
     token = "";
     connectError = null;
@@ -113,6 +138,29 @@
       if (action === "connecting") {
         token = "";
         connectOpen = false;
+      }
+    }
+    async function runShared(action: Action, credential: string) {
+      if (!canRun(action, credential)) {
+        return;
+      }
+      pending = true;
+      busy = action;
+      connectError = null;
+      try {
+        if (action !== "checking") {
+          applyResult(await query(action, credential), action);
+        }
+        await oncheck?.();
+      } catch (cause) {
+        if (alive) {
+          connectError = errorText(cause);
+        }
+      } finally {
+        pending = false;
+        if (alive) {
+          busy = null;
+        }
       }
     }
     const run = async (
@@ -164,10 +212,26 @@
         }
       }
     };
-    check = () => run();
-    create = () => run("creating");
-    connect = () => run("connecting", token.trim());
-    const automaticCheck = () => run("checking", "", true);
+    check = () => {
+      showInactiveResult = true;
+      return sharedDiagnostics ? runShared("checking", "") : run();
+    };
+    create = () => {
+      showInactiveResult = true;
+      return sharedDiagnostics ? runShared("creating", "") : run("creating");
+    };
+    connect = () => {
+      showInactiveResult = true;
+      return sharedDiagnostics
+        ? runShared("connecting", token.trim())
+        : run("connecting", token.trim());
+    };
+    if (sharedDiagnostics) {
+      return () => {
+        alive = false;
+      };
+    }
+    const automaticCheck = () => automaticEnabled && run("checking", "", true);
     untrack(automaticCheck);
     const timer = setInterval(() => automaticCheck(), DNS_CHECK_INTERVAL_MS);
     const visible = () => automaticCheck();
@@ -201,6 +265,9 @@
     }
     if (busy === "connecting") {
       return "Connecting DNS…";
+    }
+    if (result?.status === "conflict" && result.reason === "wrong_tunnel") {
+      return "Wrong tunnel";
     }
     return result ? labels[result.status] : "DNS";
   });
@@ -290,50 +357,55 @@
 {/snippet}
 
 <div class="flex shrink-0 items-center justify-self-end gap-3">
-  <span
-    aria-busy={busy !== null}
-    aria-live="polite"
-    class="inline-flex items-center"
-    role="status"
-  >
-    <Tip side="top" text={explanation}>
-      {#snippet children({
-        props,
-      })}
-        <button
-          {...props}
-          aria-label="{label} for {hostname}"
-          class="inline-flex cursor-help rounded-[4px] {kbRing}"
-          type="button"
-        >
-          <Badge variant={result ? variants[result.status] : "default"}>
-            {label}
-            {#if busy !== null || !result}
-              <Spinner
-                aria-hidden="true"
-                class="text-current"
-                role="presentation"
-              />
-            {/if}
-          </Badge>
-        </button>
-      {/snippet}
-      {#snippet content()}
-        <div
-          class="grid max-w-72 gap-2 p-2 text-xs leading-relaxed wrap-anywhere"
-        >
-          <div>
-            <p class="font-medium">{label}</p>
-            <p class="text-2xs text-muted-foreground">{hostname}</p>
+  {#if (active || showInactiveResult) &&
+    (result?.status === "conflict" || result?.status === "missing")}
+    <span
+      aria-busy={busy !== null}
+      aria-live="polite"
+      class="inline-flex items-center"
+      role="status"
+    >
+      <Tip side="top" text={explanation}>
+        {#snippet children({
+          props,
+        })}
+          <button
+            {...props}
+            aria-label="{label} for {hostname}"
+            class="inline-flex cursor-help rounded-[4px] {kbRing}"
+            type="button"
+          >
+            <Badge variant={result ? variants[result.status] : "default"}>
+              {label}
+              {#if busy !== null || !result}
+                <Spinner
+                  aria-hidden="true"
+                  class="text-current"
+                  role="presentation"
+                />
+              {/if}
+            </Badge>
+          </button>
+        {/snippet}
+        {#snippet content()}
+          <div
+            class="grid max-w-72 gap-2 p-2 text-xs leading-relaxed wrap-anywhere"
+          >
+            <div>
+              <p class="font-medium">{label}</p>
+              <p class="text-2xs text-muted-foreground">{hostname}</p>
+            </div>
+            <p>{explanation}</p>
+            <p
+              class="border-t border-border pt-2 text-2xs text-muted-foreground"
+            >
+              Use “Check DNS” in the ⋯ menu to refresh.
+            </p>
           </div>
-          <p>{explanation}</p>
-          <p class="border-t border-border pt-2 text-2xs text-muted-foreground">
-            Use “Check DNS” in the ⋯ menu to refresh.
-          </p>
-        </div>
-      {/snippet}
-    </Tip>
-  </span>
+        {/snippet}
+      </Tip>
+    </span>
+  {/if}
   {@render service()}
   <DropdownMenu.Root>
     <DropdownMenu.Trigger>
@@ -362,6 +434,12 @@
         }}
         sideOffset={3}
       >
+        {#if result?.status === "unknown"}
+          <div class="max-w-64 px-2 py-1.5 text-xs" role="status">
+            <p class="font-medium">{labels.unknown}</p>
+            <p class="mt-1 text-muted-foreground">{explanation}</p>
+          </div>
+        {/if}
         {#if result?.can_create &&
           result.status === "missing" &&
           !result.needs_dns_access}
@@ -391,4 +469,9 @@
   </DropdownMenu.Root>
 </div>
 
+{#if connectError && !connectOpen}
+  <p class="col-span-full text-xs text-bad-text wrap-anywhere" role="alert">
+    {connectError}
+  </p>
+{/if}
 {@render dnsTokenDialog()}

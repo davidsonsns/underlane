@@ -8,6 +8,20 @@ mod fake_cloudflared;
 use fake_cloudflared::{argv, fake};
 
 const ID: &str = "00000000-0000-4000-8000-000000000001";
+
+#[test]
+fn existing_dns_payloads_default_new_repair_metadata_safely() {
+    let status: dns::HostnameDns = serde_json::from_value(serde_json::json!({
+        "status":"unknown", "message":"Verify DNS", "can_create":false, "needs_dns_access":true
+    }))
+    .unwrap();
+    assert!(!status.can_repair);
+    assert!(status.expected_tunnel_id.is_none());
+    assert!(status.observed_tunnel_id.is_none());
+    assert!(status.actual_target.is_none());
+    assert_eq!(status.source, "public");
+    assert_eq!(status.checked_at, 0);
+}
 const SCRIPT: &str = r#"#!/usr/bin/env python3
 import json, os, pathlib, sys
 root = pathlib.Path(__file__).parent

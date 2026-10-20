@@ -7,6 +7,7 @@
   import Plus from "@lucide/svelte/icons/plus";
   import RotateCw from "@lucide/svelte/icons/rotate-cw";
   import Square from "@lucide/svelte/icons/square";
+  import TriangleAlert from "@lucide/svelte/icons/triangle-alert";
   import { DropdownMenu } from "bits-ui";
   import { tick } from "svelte";
   import { api, errorText } from "$lib/api";
@@ -14,6 +15,7 @@
   import StatusDot from "$lib/components/app/StatusDot.svelte";
   import { Button } from "$lib/components/ui/button/index.js";
   import { kbRing, menuContent, menuItem } from "$lib/components/ui/mac";
+  import { connectionWarning } from "$lib/connection";
   import { isOn, statusLabel } from "$lib/format";
   import { store } from "$lib/store.svelte";
   import { groupTunnels } from "$lib/tunnel-groups";
@@ -266,7 +268,7 @@
   {#each group.tunnels as tunnel (tunnel.id)}
     <button
       aria-current={active && tunnel.id === selectedId ? "page" : undefined}
-      aria-label={`${tunnel.name}, ${statusLabel[tunnel.state.status]}`}
+      aria-label={`${tunnel.name}, ${statusLabel[tunnel.state.status]}${connectionWarning(tunnel) ? `, ${connectionWarning(tunnel)}` : ""}`}
       class={cn(
         "flex h-8 w-full items-center gap-2.5 rounded-md px-2.5 text-left transition-colors",
         !(busy || refreshFailed) && "cursor-grab active:cursor-grabbing",
@@ -288,6 +290,15 @@
     >
       <StatusDot status={tunnel.state.status} />
       <span class="min-w-0 flex-1 truncate font-medium">{tunnel.name}</span>
+      {#if connectionWarning(tunnel)}
+        <span
+          aria-label={connectionWarning(tunnel) ?? undefined}
+          class="text-degraded-text"
+          role="img"
+          title={connectionWarning(tunnel) ?? undefined}
+          ><TriangleAlert aria-hidden="true" class="size-3.5" /></span
+        >
+      {/if}
       {#if tunnel.inspect}
         <span
           aria-label="Requests are inspected"

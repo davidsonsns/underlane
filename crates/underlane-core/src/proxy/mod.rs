@@ -1,5 +1,4 @@
-//! The inspecting reverse proxy: one loopback listener per inspected ingress rule, forwarding
-//! to exactly one upstream and recording each exchange.
+//! One loopback listener per HTTP ingress rule, with independent availability gates and capture.
 
 pub mod capture;
 mod tls;
@@ -25,6 +24,7 @@ use tokio::net::TcpListener;
 use tokio::task::JoinHandle;
 
 use crate::derived::Upstream;
+use crate::route_control::RouteGate;
 use capture::{BodyCapture, CapturedExchange, ExchangeKind, Pending, SharedOptions, Side, Sink, TeeBody};
 
 type ProxyBody = BoxBody<Bytes, hyper::Error>;
@@ -36,8 +36,7 @@ type BoxError = Box<dyn std::error::Error + Send + Sync>;
 #[derive(Clone)]
 struct OriginConnector {
     http: HttpConnector,
-    tls: Arc<rustls::ClientConfig>,
-    https: bool,
+    tls: Option<Arc<rustls::ClientConfig>>,
     server_name: Option<rustls::pki_types::ServerName<'static>>,
     connect_timeout: Duration,
     tls_timeout: Duration,
@@ -61,14 +60,14 @@ impl tower_service::Service<Uri> for OriginConnector {
                 Ok(r) => r?,
                 Err(_) => return Err(format!("timed out after {}s connecting to the origin", this.connect_timeout.as_secs()).into()),
             };
-            if !this.https {
+            let Some(tls) = this.tls else {
                 return Ok(hyper_rustls::MaybeHttpsStream::Http(tcp));
-            }
+            };
             let name = match this.server_name {
                 Some(n) => n,
                 None => rustls::pki_types::ServerName::try_from(host)?,
             };
-            let handshake = tokio_rustls::TlsConnector::from(this.tls).connect(name, TokioIo::new(tcp));
+            let handshake = tokio_rustls::TlsConnector::from(tls).connect(name, TokioIo::new(tcp));
             match tokio::time::timeout(this.tls_timeout, handshake).await {
                 Ok(Ok(tls)) => Ok(hyper_rustls::MaybeHttpsStream::Https(TokioIo::new(tls))),
                 Ok(Err(e)) => Err(format!("TLS handshake with the origin failed: {e}").into()),
@@ -90,6 +89,8 @@ pub struct ProxyContext {
 pub struct ProxyHandle {
     pub addr: SocketAddr,
     pub upstream: Upstream,
+    pub capturing: bool,
+    pub route_key: Option<crate::route_control::RouteKey>,
     task: JoinHandle<()>,
 }
 
@@ -111,10 +112,16 @@ impl Drop for ProxyHandle {
 
 /// Bind `127.0.0.1:port` (0 = any free port) and start serving.
 pub async fn start(port: u16, upstream: Upstream, ctx: ProxyContext) -> anyhow::Result<ProxyHandle> {
+    start_controlled(port, upstream, ctx, None, true).await
+}
+
+/// Forwarding and availability remain active even when request capture is disabled.
+pub async fn start_controlled(port: u16, upstream: Upstream, ctx: ProxyContext, gate: Option<RouteGate>, capture: bool) -> anyhow::Result<ProxyHandle> {
     let listener = TcpListener::bind(("127.0.0.1", port)).await?;
     let addr = listener.local_addr()?;
     let client = build_client(&upstream)?;
-    let shared = Arc::new(Shared { upstream: upstream.clone(), ctx, client });
+    let route_key = gate.as_ref().and_then(|gate| gate.key.clone());
+    let shared = Arc::new(Shared { upstream: upstream.clone(), ctx, client, gate, capture });
 
     let task = tokio::spawn(async move {
         loop {
@@ -144,24 +151,29 @@ pub async fn start(port: u16, upstream: Upstream, ctx: ProxyContext) -> anyhow::
             });
         }
     });
-    Ok(ProxyHandle { addr, upstream, task })
+    Ok(ProxyHandle { addr, upstream, task, capturing: capture, route_key })
 }
 
 fn build_client(up: &Upstream) -> anyhow::Result<UpstreamClient> {
     let mut http = HttpConnector::new();
     http.enforce_http(false);
     http.set_nodelay(true);
-    let mut tls = tls::client_config(up)?;
-    // Always HTTP/1.1 upstream, like cloudflared without http2Origin (rules with it aren't inspected).
-    tls.alpn_protocols = vec![b"http/1.1".to_vec()];
+    // Loading native certificates is expensive and unnecessary for plain HTTP origins.
+    let tls = if up.scheme == "https" {
+        let mut config = tls::client_config(up)?;
+        // Always HTTP/1.1 upstream, like cloudflared without http2Origin.
+        config.alpn_protocols = vec![b"http/1.1".to_vec()];
+        Some(Arc::new(config))
+    } else {
+        None
+    };
     let server_name = match &up.origin_server_name {
         Some(name) => Some(rustls::pki_types::ServerName::try_from(name.clone())?),
         None => None,
     };
     let connector = OriginConnector {
         http,
-        tls: Arc::new(tls),
-        https: up.scheme == "https",
+        tls,
         server_name,
         connect_timeout: up.connect_timeout,
         tls_timeout: up.tls_timeout,
@@ -173,6 +185,8 @@ struct Shared {
     upstream: Upstream,
     ctx: ProxyContext,
     client: UpstreamClient,
+    gate: Option<RouteGate>,
+    capture: bool,
 }
 
 /// Hop-by-hop headers (RFC 9110 §7.6.1) are connection-specific and never forwarded.
@@ -219,21 +233,19 @@ fn text_response(status: StatusCode, msg: String) -> Response<ProxyBody> {
 
 impl Shared {
     async fn handle(self: Arc<Self>, mut req: Request<Incoming>) -> Response<ProxyBody> {
-        let (cap, redact) = {
+        if self.gate.as_ref().is_some_and(|gate| !gate.enabled()) {
+            let mut response = text_response(StatusCode::SERVICE_UNAVAILABLE, "This hostname is stopped in Underlane.\n".into());
+            response.headers_mut().insert(header::CACHE_CONTROL, HeaderValue::from_static("no-store"));
+            return response;
+        }
+        let (cap, redact) = if self.capture {
             let o = self.ctx.options.read().unwrap();
             (o.max_body_bytes, o.redactor())
-        };
+        } else { (0, capture::Redactor::default()) };
         let path = req.uri().path_and_query().map(|p| p.as_str().to_string()).unwrap_or_else(|| "/".into());
-        let host = req
-            .headers()
-            .get(header::HOST)
-            .and_then(|h| h.to_str().ok())
-            .map(String::from)
-            .or_else(|| self.upstream.hostname.clone())
-            .unwrap_or_default();
         let upgrade = is_upgrade(&req);
 
-        let record = CapturedExchange {
+        let pending = self.capture.then(|| Pending::new(CapturedExchange {
             id: uuid::Uuid::new_v4().to_string(),
             tunnel_id: self.ctx.tunnel_id.clone(),
             rule_index: self.upstream.rule_index,
@@ -241,7 +253,8 @@ impl Shared {
             duration_ms: None,
             kind: if upgrade { ExchangeKind::Websocket } else { ExchangeKind::Http },
             method: req.method().to_string(),
-            host,
+            host: req.headers().get(header::HOST).and_then(|h| h.to_str().ok()).map(String::from)
+                .or_else(|| self.upstream.hostname.clone()).unwrap_or_default(),
             path: capture::redact_query(&path, &redact.query),
             status: None,
             req_headers: capture::redact_headers(req.headers(), &redact),
@@ -249,13 +262,12 @@ impl Shared {
             req_body: BodyCapture::default(),
             resp_body: BodyCapture::default(),
             error: None,
-        };
-        let pending = Pending::new(record, cap, self.ctx.sink.clone());
+        }, cap, self.ctx.sink.clone()));
 
         let uri: Uri = match format!("{}://{}{}", self.upstream.scheme, self.upstream.authority, path).parse() {
             Ok(u) => u,
             Err(e) => {
-                pending.lock().unwrap().commit(Some(format!("bad upstream URI: {e}")));
+                if let Some(pending) = &pending { pending.lock().unwrap().commit(Some(format!("bad upstream URI: {e}"))); }
                 return text_response(StatusCode::BAD_GATEWAY, format!("Underlane inspector: bad upstream URI: {e}\n"));
             }
         };
@@ -273,8 +285,10 @@ impl Shared {
 
         let out_body: ProxyBody = if upgrade {
             Empty::<Bytes>::new().map_err(|n: Infallible| match n {}).boxed()
-        } else {
+        } else if let Some(pending) = &pending {
             TeeBody::new(body, pending.clone(), Side::Request).boxed()
+        } else {
+            body.boxed()
         };
         let upstream_req = Request::from_parts(parts, out_body);
 
@@ -282,9 +296,11 @@ impl Shared {
             Ok(r) => r,
             Err(e) => {
                 let msg = describe_client_error(&e, &self.upstream);
-                let mut p = pending.lock().unwrap();
-                p.record.status = Some(502);
-                p.commit(Some(msg.clone()));
+                if let Some(pending) = &pending {
+                    let mut p = pending.lock().unwrap();
+                    p.record.status = Some(502);
+                    p.commit(Some(msg.clone()));
+                }
                 return text_response(StatusCode::BAD_GATEWAY, format!("Underlane inspector: {msg}\n"));
             }
         };
@@ -296,7 +312,7 @@ impl Shared {
             .and_then(|v| v.to_str().ok())
             .map(|v| v.trim_start().to_ascii_lowercase().starts_with("text/event-stream"))
             .unwrap_or(false);
-        {
+        if let Some(pending) = &pending {
             let mut p = pending.lock().unwrap();
             p.record.status = Some(status.as_u16());
             p.record.resp_headers = capture::redact_headers(resp.headers(), &redact);
@@ -310,7 +326,7 @@ impl Shared {
         if status == StatusCode::SWITCHING_PROTOCOLS {
             if let Some(client_upgrade) = client_upgrade {
                 let upstream_upgrade = hyper::upgrade::on(&mut resp);
-                pending.lock().unwrap().emit_open();
+                if let Some(pending) = &pending { pending.lock().unwrap().emit_open(); }
                 let pending = pending.clone();
                 tokio::spawn(async move {
                     let result = async {
@@ -321,14 +337,16 @@ impl Shared {
                         anyhow::Ok((up, down))
                     }
                     .await;
-                    let mut p = pending.lock().unwrap();
-                    match result {
-                        Ok((up, down)) => {
-                            p.record.req_body.count(up);
-                            p.record.resp_body.count(down);
-                            p.commit(None);
+                    if let Some(pending) = pending {
+                        let mut p = pending.lock().unwrap();
+                        match result {
+                            Ok((up, down)) => {
+                                p.record.req_body.count(up);
+                                p.record.resp_body.count(down);
+                                p.commit(None);
+                            }
+                            Err(e) => p.commit(Some(format!("websocket: {e}"))),
                         }
-                        Err(e) => p.commit(Some(format!("websocket: {e}"))),
                     }
                 });
                 let (mut parts, _) = resp.into_parts();
@@ -339,7 +357,11 @@ impl Shared {
 
         let (mut parts, body) = resp.into_parts();
         strip_hop_by_hop(&mut parts.headers);
-        Response::from_parts(parts, TeeBody::new(body, pending, Side::Response).boxed())
+        let body = match pending {
+            Some(pending) => TeeBody::new(body, pending, Side::Response).boxed(),
+            None => body.boxed(),
+        };
+        Response::from_parts(parts, body)
     }
 }
 

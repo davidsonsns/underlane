@@ -234,7 +234,7 @@ mod server {
                 let _ = app.emit_to(
                     tray::DASHBOARD,
                     "e2e-snapshot",
-                    json!({"nonce": nonce, "view": view, "select": q.get("select"), "tab": q.get("tab")}),
+                    json!({"nonce": nonce, "view": view, "select": q.get("select"), "tab": q.get("tab"), "hostname": q.get("hostname"), "action": q.get("action"), "inspect": q.get("inspect").is_some_and(|v| v == "1")}),
                 );
                 match tokio::time::timeout(Duration::from_secs(10), rx).await {
                     Ok(Ok(text)) => {

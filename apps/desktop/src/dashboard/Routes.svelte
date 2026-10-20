@@ -1,17 +1,34 @@
 <script lang="ts">
   // A tunnel's ingress rules as an aligned table: public hostname, then the local service.
   // Each service is probed while the window is visible so it's obvious which ones are running.
+  import Play from "@lucide/svelte/icons/play";
+  import Square from "@lucide/svelte/icons/square";
   import { openUrl } from "@tauri-apps/plugin-opener";
   import { mergeProps } from "bits-ui";
   import CopyButton from "$lib/components/app/CopyButton.svelte";
+  import IconAction from "$lib/components/app/IconAction.svelte";
   import Tip from "$lib/components/app/Tip.svelte";
   import { Button } from "$lib/components/ui/button/index.js";
   import { kbRing } from "$lib/components/ui/mac";
+  import { Spinner } from "$lib/components/ui/spinner/index.js";
+  import { currentConnection, routeFixAction } from "$lib/connection";
+  import { activeTunnelOwner } from "$lib/tunnel-conflict";
   import { api, errorText } from "../lib/api";
-  import { reachSummary, serviceLabel, shortService } from "../lib/format";
+  import {
+    isOn,
+    reachSummary,
+    serviceLabel,
+    shortService,
+  } from "../lib/format";
   import { store } from "../lib/store.svelte";
   import { notify } from "../lib/toast";
-  import type { Tunnel } from "../lib/types";
+  import type {
+    RouteMapping,
+    RouteTarget,
+    ServiceCheck,
+    Tunnel,
+  } from "../lib/types";
+  import ConnectionDetails from "./ConnectionDetails.svelte";
   import DnsStatus from "./DnsStatus.svelte";
   import { type Reach, routeReach, routeReachTip } from "./view-state";
 
@@ -29,11 +46,75 @@
   let restartWarning = $state<{ id: string; message: string } | null>(null);
   let retryingRestart = $state(false);
 
-  let { tunnel }: { tunnel: Tunnel } = $props();
+  let {
+    tunnel,
+    operationBusy = false,
+  }: { tunnel: Tunnel; operationBusy?: boolean } = $props();
+  let pendingHostname = $state<{ id: string; key: string } | null>(null);
   const PROBE_EVERY_MS = 3000;
+  const HTTP_SERVICE = /^https?:\/\//;
 
   const s = $derived(tunnel.state);
+  const connection = $derived(currentConnection(tunnel));
+  const sharedDiagnostics = $derived("connection" in tunnel);
   const live = $derived(s.status === "connected" || s.status === "degraded");
+  const on = $derived(isOn(tunnel));
+  const tunnelOwner = $derived(activeTunnelOwner(tunnel, store.tunnels));
+
+  function controlReason(m: RouteMapping): string | null {
+    if (m.control_supported === false) {
+      return (
+        m.note || "Individual controls are unavailable for this configuration."
+      );
+    }
+    if (pendingHostname || operationBusy) {
+      return "Wait for the current operation to finish.";
+    }
+    if (on && s.config_revision === 0) {
+      return "Waiting for the connector to start…";
+    }
+    if (tunnel.setup_needed) {
+      return "Set up this project's Cloudflare tunnel first.";
+    }
+    if (tunnel.separating_tunnel || tunnel.separate_tunnel_pending) {
+      return "Finish creating this project's separate tunnel first.";
+    }
+    if (!store.overview?.cloudflared) {
+      return "Install cloudflared first.";
+    }
+    if (!on && tunnelOwner) {
+      return `${tunnelOwner.name} is already using this Cloudflare tunnel.`;
+    }
+    return null;
+  }
+
+  async function toggleHostname(m: RouteMapping) {
+    if (!m.route_key || controlReason(m)) {
+      return;
+    }
+    // Pin the identity and generation before awaiting; sidebar selection must not retarget the action.
+    const { id } = tunnel;
+    const target: RouteTarget = {
+      config_revision: on ? s.config_revision : 0,
+      key: { ...m.route_key },
+      run: on ? s.run : 0,
+    };
+    const stopping = on && m.enabled !== false;
+    pendingHostname = { id, key: JSON.stringify(target.key) };
+    try {
+      await (stopping
+        ? api.stopHostname(id, target)
+        : api.startHostname(id, target));
+      store.scheduleRefresh();
+    } catch (error) {
+      notify.error(
+        error,
+        `Couldn't ${stopping ? "stop" : "start"} ${target.key.hostname}`
+      );
+    } finally {
+      pendingHostname = null;
+    }
+  }
 
   async function manage() {
     if (manageLoading) {
@@ -80,7 +161,7 @@
       retryingRestart = false;
     }
   }
-  const routes = $derived.by(() => {
+  const routes: RouteMapping[] = $derived.by(() => {
     if (s.mappings.length) {
       return s.mappings;
     }
@@ -106,6 +187,9 @@
   let reach = $state<Record<string, boolean | null>>({});
 
   $effect(() => {
+    if (sharedDiagnostics) {
+      return;
+    }
     const list = servicesKey ? servicesKey.split("\n") : [];
     if (!list.length) {
       return;
@@ -137,7 +221,18 @@
     };
   });
 
-  const reachOf = (service: string) => routeReach(reach[service], live);
+  const reachOf = (service: string, local?: ServiceCheck) => {
+    if (!HTTP_SERVICE.test(service)) {
+      return routeReach(null, live);
+    }
+    if (!local) {
+      return routeReach(reach[service], live);
+    }
+    if (local.status === "unsupported") {
+      return routeReach(undefined, live);
+    }
+    return routeReach(local.status === "reachable", live);
+  };
   const reachTip = routeReachTip;
 
   // Counted per route, not per distinct service, so the summary matches the rows below it.
@@ -147,7 +242,9 @@
   const upCount = $derived(probed.filter((m) => reach[m.service]).length);
   // Local probes cannot establish public DNS or end-to-end hostname reachability.
   const summary = $derived(
-    probed.length ? reachSummary(upCount, probed.length, false) : null
+    !sharedDiagnostics && probed.length
+      ? reachSummary(upCount, probed.length, false)
+      : null
   );
 
   // Links open in the default browser; the webview itself never navigates away.
@@ -161,6 +258,7 @@
     idle: "border border-off", // Same hollow ring as a stopped StatusDot.
     none: "invisible", // keeps the column width so services stay aligned
     ready: "bg-off",
+    unknown: "border border-off",
     up: "bg-ok",
   };
   const link = `cursor-pointer select-none rounded-xs hover:underline ${kbRing}`;
@@ -272,24 +370,82 @@
 {/snippet}
 
 {#snippet routeRow(
-  m: (typeof routes)[number]
+  m: (typeof routes)[number],
+  index: number
 )}
   {@const host = hostOf(m)}
-  {@const r = reachOf(m.service)}
-  {@const tip = reachTip(m.service, r)}
-  {@const linkable = live && host && !host.includes("*")}
+  {@const diagnostic = connection?.routes.find(
+    (route) =>
+      route.rule_index === index &&
+      route.hostname === host &&
+      route.path === m.path &&
+      route.service === m.service
+  )}
+  {@const r = reachOf(m.service, diagnostic?.local)}
+  {@const stopped = !on || m.enabled === false}
+  {@const tip =
+    m.enabled === false && r !== "none" && r !== "unknown"
+      ? `Local service ${r === "up" || r === "ready" ? "is listening" : "is not listening"}. This hostname is stopped. Underlane doesn't manage the local service.`
+      : reachTip(m.service, r)}
+  {@const linkable = live && !stopped && host && !host.includes("*")}
 
   <li
-    class="group/route routes-row min-h-11 items-center py-2.5 not-first:border-t not-first:border-border"
+    class="routes-row min-h-11 items-center py-2.5 not-first:border-t not-first:border-border"
+    data-route-hostname={host ?? undefined}
   >
-    {@render routeHostname(m, host, linkable)}
+    <div class="flex min-w-0 items-center gap-2">
+      {@render routeHostname(m, host, linkable)}
+      {#if tunnel.kind === "config" && host && m.route_key}
+        {@const pending =
+          pendingHostname?.id === tunnel.id &&
+          pendingHostname.key === JSON.stringify(m.route_key)}
+        {@const label = `${stopped ? "Start" : "Stop"} ${host}${m.path ?? ""}`}
+        <!-- Unavailable controls stay focusable so the tooltip can explain why. -->
+        <IconAction
+          aria-busy={pending}
+          aria-disabled={!!controlReason(m)}
+          class="shrink-0 aria-disabled:[&_svg]:opacity-45"
+          {label}
+          onclick={() => toggleHostname(m)}
+          size="icon-sm"
+          tip={controlReason(m) ?? label}
+        >
+          {#if pending}
+            <Spinner aria-hidden="true" role="presentation" />
+          {:else if stopped}
+            <Play class="size-3 fill-current" />
+          {:else}
+            <Square class="size-2.5 fill-current" />
+          {/if}
+        </IconAction>
+      {/if}
+    </div>
     {#snippet service()}
-      {@render localService(m, r, tip)}
+      {@render localService(m, stopped && r !== "none" ? "idle" : r, tip)}
     {/snippet}
     {#if tunnel.kind === "config" && host}
-      <DnsStatus hostname={host} id={tunnel.id} {service} />
+      <DnsStatus
+        active={!stopped}
+        dns={diagnostic?.dns}
+        hostname={host}
+        id={tunnel.id}
+        oncheck={sharedDiagnostics
+          ? async () => {
+              const { id } = tunnel;
+              const next = await api.checkConnection(id, host, index);
+              if (id === tunnel.id) {
+                store.applyConnection(id, next);
+              }
+            }
+          : undefined}
+        {service}
+        useBackend={sharedDiagnostics}
+      />
     {:else}
       {@render service()}
+    {/if}
+    {#if diagnostic && routeFixAction(tunnel, diagnostic)}
+      <ConnectionDetails route={diagnostic} {tunnel} />
     {/if}
     {#if m.note && tunnel.inspect}
       <span class="col-span-full mt-0.5 text-xs text-muted-foreground"
@@ -325,15 +481,12 @@
           </a>
         {/snippet}
       </Tip>
-      <CopyButton
-        class="opacity-0 transition-opacity duration-(--dur) group-hover/route:opacity-100 focus-visible:opacity-100"
-        size="icon-sm"
-        value="https://{host}"
-        what="https://{host}"
-      />
     {:else}
       <!-- Truncated, so the native title reveals the whole string (02 §2 Tip exception). -->
       {@render unlinkedHostname(m, host)}
+    {/if}
+    {#if host}
+      <CopyButton size="icon-sm" value="https://{host}" what="https://{host}" />
     {/if}
   </span>
 {/snippet}
@@ -374,7 +527,7 @@
     <!-- routes-grid / routes-row (app.css): rows are subgrids, so every service sits in one right-hand column. -->
     <ul class="routes-grid rounded-xl bg-card px-4">
       {#each routes as m, i (i)}
-        {@render routeRow(m)}
+        {@render routeRow(m, i)}
       {/each}
     </ul>
   {/if}

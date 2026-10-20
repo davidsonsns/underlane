@@ -4,7 +4,7 @@
 use std::collections::{HashMap, VecDeque};
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::{Duration, Instant};
 
@@ -27,6 +27,7 @@ use crate::platform::{self, kill_tree as terminate, sweep_group};
 use crate::proxy::capture::{CapturedExchange, SharedOptions};
 use crate::proxy::{self, now_ms, ProxyContext, ProxyHandle};
 use crate::secret::Secret;
+use crate::route_control::{RouteGate, RouteKey, RouteSelection, RouteTarget, SharedSelection};
 
 #[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
@@ -53,6 +54,9 @@ pub struct RouteMapping {
     pub inspected: bool,
     /// Why an HTTP rule isn't inspected while inspection is on.
     pub note: Option<String>,
+    pub route_key: Option<RouteKey>,
+    pub control_supported: bool,
+    pub enabled: bool,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
@@ -76,13 +80,15 @@ pub struct TunnelState {
     pub connections: u32,
     pub restarts: u32,
     pub started_at: Option<i64>,
-    /// Inspection requested and actually running (false after fail-open).
+    /// Request capture is enabled and running.
     pub inspecting: bool,
     /// A supervisor run exists (true even while crashed and waiting to retry), so the UI can
     /// offer Stop for a crash loop.
     pub supervised: bool,
     /// Which run produced this state; later runs supersede earlier ones.
     pub run: u64,
+    /// Publication order within a run, including live hostname changes.
+    pub state_seq: u64,
     /// Successful child loads within this supervisor task, including internal respawns.
     pub config_revision: u64,
     #[serde(skip)]
@@ -169,6 +175,7 @@ impl TunnelState {
             inspecting: false,
             supervised: false,
             run: 0,
+            state_seq: 0,
             config_revision: 0,
             loaded_config: None,
         }
@@ -253,14 +260,20 @@ struct RunHandle {
     done: watch::Receiver<bool>,
     /// A stop was requested; the entry stays registered until the process is gone so a new
     /// start can't overlap with it.
-    stopping: bool,
+    stopping: Arc<AtomicBool>,
     run: u64,
     config_state: Arc<Mutex<TunnelState>>,
 }
 
+type PendingStop = (watch::Receiver<bool>, u64);
+
 impl RunHandle {
     fn live(&self) -> bool {
         !self.task.is_finished()
+    }
+
+    fn stopping(&self) -> bool {
+        self.stopping.load(Ordering::SeqCst)
     }
 }
 
@@ -269,6 +282,18 @@ struct Runs {
     handles: HashMap<String, RunHandle>,
     resetting: bool,
     generation: u64,
+    selections: HashMap<String, SharedSelection>,
+    stop_generations: HashMap<String, u64>,
+}
+
+impl Runs {
+    fn start_generation(&self, id: &str) -> (u64, u64) {
+        (self.generation, self.stop_generations.get(id).copied().unwrap_or_default())
+    }
+
+    fn invalidate_deferred_starts(&mut self, id: &str) {
+        *self.stop_generations.entry(id.to_string()).or_default() += 1;
+    }
 }
 
 pub struct Supervisor {
@@ -313,41 +338,43 @@ impl Supervisor {
     /// One snapshot of runs to restore after an app restart, including starts and retries.
     /// A user Stop already in progress must not be undone by restoring the session.
     pub fn restart_session_ids(&self) -> Vec<String> {
-        self.runs.lock().unwrap().handles.iter().filter(|(_, r)| r.live() && !r.stopping).map(|(id, _)| id.clone()).collect()
+        self.runs.lock().unwrap().handles.iter().filter(|(_, r)| r.live() && !r.stopping()).map(|(id, _)| id.clone()).collect()
     }
 
     /// Authoritative state for comparisons, before the application's queued state events.
     pub fn config_state(&self, id: &str) -> Option<TunnelState> {
         let runs = self.runs.lock().unwrap();
-        let handle = runs.handles.get(id).filter(|h| h.live() && !h.stopping)?;
+        let handle = runs.handles.get(id).filter(|h| h.live() && !h.stopping())?;
         let state = handle.config_state.lock().unwrap().clone();
         Some(state)
     }
 
-    fn spawn_run(&self, runs: &mut HashMap<String, RunHandle>, spec: RunSpec) {
+    fn spawn_run(&self, runs: &mut Runs, spec: RunSpec) {
         let run_no = self.runs_started.fetch_add(1, Ordering::SeqCst) + 1;
         let (tx, rx) = mpsc::unbounded_channel();
         let (done_tx, done_rx) = watch::channel(false);
         let id = spec.tunnel.id.clone();
+        let selection = runs.selections.entry(id.clone()).or_insert_with(|| Arc::new(RwLock::new(RouteSelection::All))).clone();
         let mut initial = TunnelState::stopped(&id);
         initial.run = run_no;
         initial.supervised = true;
         let config_state = Arc::new(Mutex::new(initial));
+        let stopping = Arc::new(AtomicBool::new(false));
         let ownership = TunnelOwnership {
             identities: self.identities.clone(),
             owner: IdentityOwner { project_id: id.clone(), project_name: spec.tunnel.name.clone(), run: run_no },
             identity: None,
         };
-        let fut = run(spec, self.cfg.clone(), self.sink.clone(), rx, run_no, config_state.clone(), ownership);
+        let fut = run(spec, self.cfg.clone(), self.sink.clone(), rx, run_no, config_state.clone(), ownership, selection, stopping.clone());
         let task = self.rt.spawn(async move {
             fut.await;
             let _ = done_tx.send(true);
         });
-        runs.insert(id, RunHandle { tx, task, done: done_rx, stopping: false, run: run_no, config_state });
+        runs.handles.insert(id, RunHandle { tx, task, done: done_rx, stopping, run: run_no, config_state });
     }
 
     /// Start once the current run (if it is stopping) has fully exited.
-    fn start_after(self: &Arc<Self>, mut done: watch::Receiver<bool>, spec: RunSpec, restart: bool, generation: u64) -> JoinHandle<()> {
+    fn start_after(self: &Arc<Self>, mut done: watch::Receiver<bool>, spec: RunSpec, restart: bool, generation: (u64, u64)) -> JoinHandle<()> {
         let me = self.clone();
         self.rt.spawn(async move {
             let _ = done.wait_for(|d| *d).await;
@@ -357,7 +384,26 @@ impl Supervisor {
 
     /// Start a tunnel. A no-op if it is already running; deferred if it is still stopping.
     pub fn start(self: &Arc<Self>, spec: RunSpec) {
-        self.start_or_restart(spec, false, None);
+        let _ = self.start_all_routes(spec, |_| Ok(()));
+    }
+
+    pub fn start_all_routes<F>(self: &Arc<Self>, spec: RunSpec, save: F) -> Result<(), String>
+    where F: FnOnce(&RouteSelection) -> Result<(), String> {
+        let mut runs = self.runs.lock().unwrap();
+        if runs.resetting { return Err("The app is resetting.".into()); }
+        save(&RouteSelection::All)?;
+        self.apply_selection(&mut runs, &spec.tunnel.id, RouteSelection::All);
+        if let Some(handle) = runs.handles.get(&spec.tunnel.id).filter(|h| h.live()) {
+            if handle.stopping() {
+                let done = handle.done.clone();
+                let generation = runs.start_generation(&spec.tunnel.id);
+                drop(runs);
+                let _ = self.start_after(done, spec, false, generation);
+            }
+            return Ok(());
+        }
+        self.spawn_run(&mut runs, spec);
+        Ok(())
     }
 
     /// Restart with a (possibly updated) spec; starts it if it isn't running.
@@ -365,16 +411,19 @@ impl Supervisor {
         self.start_or_restart(spec, true, None);
     }
 
-    fn start_or_restart(self: &Arc<Self>, spec: RunSpec, restart: bool, generation: Option<u64>) {
+    fn start_or_restart(self: &Arc<Self>, spec: RunSpec, restart: bool, generation: Option<(u64, u64)>) {
         let mut runs = self.runs.lock().unwrap();
         // Check under the spawn lock so old deferred starts cannot cross a reset boundary.
-        if runs.resetting || generation.is_some_and(|generation| generation != runs.generation) {
+        if runs.resetting || generation.is_some_and(|generation| generation != runs.start_generation(&spec.tunnel.id)) {
+            return;
+        }
+        if runs.selections.get(&spec.tunnel.id).is_some_and(|selection| matches!(&*selection.read().unwrap(), RouteSelection::Only(keys) if keys.is_empty())) {
             return;
         }
         if let Some(h) = runs.handles.get(&spec.tunnel.id).filter(|h| h.live()) {
-            if h.stopping {
+            if h.stopping() {
                 let done = h.done.clone();
-                let generation = runs.generation;
+                let generation = runs.start_generation(&spec.tunnel.id);
                 drop(runs);
                 let _ = self.start_after(done, spec, restart, generation);
             } else if restart {
@@ -382,7 +431,114 @@ impl Supervisor {
             }
             return;
         }
-        self.spawn_run(&mut runs.handles, spec);
+        self.spawn_run(&mut runs, spec);
+    }
+
+    pub fn route_selection(&self, id: &str) -> RouteSelection {
+        self.runs.lock().unwrap().selections.get(id).map(|s| s.read().unwrap().clone()).unwrap_or_default()
+    }
+
+    /// Restore persisted intent before starting a project.
+    pub fn restore_route_selection(&self, id: &str, selection: RouteSelection) -> Result<(), String> {
+        let mut runs = self.runs.lock().unwrap();
+        if runs.resetting || runs.handles.get(id).is_some_and(RunHandle::live) {
+            return Err("Cannot restore hostname controls while the project is running or resetting.".into());
+        }
+        self.apply_selection(&mut runs, id, selection);
+        Ok(())
+    }
+
+    pub fn clear_route_selection(&self, id: &str) {
+        let mut runs = self.runs.lock().unwrap();
+        if !runs.handles.get(id).is_some_and(RunHandle::live) { runs.selections.remove(id); }
+    }
+
+    fn apply_selection(&self, runs: &mut Runs, id: &str, selection: RouteSelection) {
+        *runs.selections.entry(id.to_string()).or_insert_with(|| Arc::new(RwLock::new(RouteSelection::All))).write().unwrap() = selection.clone();
+        if let Some(handle) = runs.handles.get(id).filter(|h| h.live() && !h.stopping()) {
+            let mut state = handle.config_state.lock().unwrap();
+            apply_mapping_selection(&mut state.mappings, &selection);
+            state.state_seq += 1;
+            (self.sink)(Event::State(state.clone()));
+        }
+    }
+
+    /// Persist first, then change the gates without replacing the connector or listeners.
+    pub fn start_route<F>(self: &Arc<Self>, spec: RunSpec, target: RouteTarget, save: F) -> Result<RouteSelection, String>
+    where F: FnOnce(&RouteSelection) -> Result<(), String> {
+        let mut runs = self.runs.lock().unwrap();
+        let id = &spec.tunnel.id;
+        if runs.resetting { return Err("The app is resetting.".into()); }
+        let live = runs.handles.get(id).filter(|h| h.live());
+        let (keys, mut live_state) = if let Some(handle) = live {
+            let (keys, state) = validate_live_target(handle, &target)?;
+            (keys, Some(state))
+        } else {
+            if target.run != 0 || target.config_revision != 0 { return Err("This hostname belongs to an earlier run. Refresh the project and try again.".into()); }
+            if spec.tunnel.kind != TunnelKind::Config { return Err("Individual hostname controls require a local config project.".into()); }
+            let path = spec.tunnel.config_path.as_deref().ok_or("No source config is configured.")?;
+            let config = TunnelConfig::load(Path::new(path)).map_err(|e| e.to_string())?;
+            let keys = controllable_keys(&config)?;
+            if !keys.contains(&target.key) { return Err("This hostname changed in the source config. Refresh the project and try again.".into()); }
+            (keys, None)
+        };
+        let retry = live_state.as_ref().is_some_and(|state| state.status == Status::Crashed);
+        let current = runs.selections.get(id).map(|s| s.read().unwrap().clone()).unwrap_or_default();
+        let selection = if live.is_some() {
+            match current {
+                RouteSelection::All => RouteSelection::All,
+                RouteSelection::Only(mut selected) => {
+                    selected.retain(|key| keys.contains(key));
+                    if !selected.contains(&target.key) { selected.push(target.key); }
+                    RouteSelection::Only(selected)
+                }
+            }
+        } else {
+            RouteSelection::Only(vec![target.key])
+        };
+        save(&selection)?;
+        let was_live = live_state.is_some();
+        if let Some(state) = live_state.as_mut() {
+            *runs.selections.get(id).expect("a live run owns its selection").write().unwrap() = selection.clone();
+            apply_mapping_selection(&mut state.mappings, &selection);
+            state.state_seq += 1;
+            (self.sink)(Event::State((**state).clone()));
+        }
+        drop(live_state);
+        if !was_live {
+            self.apply_selection(&mut runs, id, selection.clone());
+            self.spawn_run(&mut runs, spec);
+        } else if retry {
+            if let Some(handle) = runs.handles.get(id) { let _ = handle.tx.send(Cmd::Restart(Box::new(spec))); }
+        }
+        Ok(selection)
+    }
+
+    pub fn stop_route<F>(&self, id: &str, target: RouteTarget, save: F) -> Result<RouteSelection, String>
+    where F: FnOnce(&RouteSelection) -> Result<(), String> {
+        let mut runs = self.runs.lock().unwrap();
+        if runs.resetting { return Err("The app is resetting.".into()); }
+        let handle = runs.handles.get(id).filter(|h| h.live()).ok_or("The project is stopped. Refresh the project and try again.")?;
+        let (keys, mut state) = validate_live_target(handle, &target)?;
+        let current = runs.selections.get(id).map(|s| s.read().unwrap().clone()).unwrap_or_default();
+        let selected = match current {
+            RouteSelection::All => keys,
+            RouteSelection::Only(selected) => selected.into_iter().filter(|key| keys.contains(key)).collect(),
+        };
+        let selection = RouteSelection::Only(selected.into_iter().filter(|key| key != &target.key).collect());
+        save(&selection)?;
+        *runs.selections.get(id).expect("a live run owns its selection").write().unwrap() = selection.clone();
+        apply_mapping_selection(&mut state.mappings, &selection);
+        state.state_seq += 1;
+        (self.sink)(Event::State(state.clone()));
+        drop(state);
+        if matches!(&selection, RouteSelection::Only(keys) if keys.is_empty()) {
+            runs.invalidate_deferred_starts(id);
+            let handle = runs.handles.get_mut(id).expect("validated run remains registered under the runs lock");
+            handle.stopping.store(true, Ordering::SeqCst);
+            let _ = handle.tx.send(Cmd::Stop);
+        }
+        Ok(selection)
     }
 
     /// Apply an edit only to an existing run; a concurrent user Stop always wins.
@@ -391,40 +547,52 @@ impl Supervisor {
         if runs.resetting {
             return false;
         }
-        let Some(handle) = runs.handles.get(&spec.tunnel.id).filter(|h| h.live() && !h.stopping) else { return false };
+        let Some(handle) = runs.handles.get(&spec.tunnel.id).filter(|h| h.live() && !h.stopping()) else { return false };
         handle.tx.send(Cmd::Restart(Box::new(spec))).is_ok()
     }
 
     /// Stop a tunnel and wait until its process has exited.
     pub async fn stop(&self, id: &str) {
-        let waiting = {
+        let (waiting, stopped) = {
             let mut runs = self.runs.lock().unwrap();
+            runs.invalidate_deferred_starts(id);
             match runs.handles.get_mut(id) {
                 Some(h) if h.live() => {
-                    h.stopping = true;
+                    h.stopping.store(true, Ordering::SeqCst);
                     let _ = h.tx.send(Cmd::Stop);
-                    Some((h.done.clone(), h.run))
+                    (Some((h.done.clone(), h.run)), None)
                 }
                 _ => {
                     runs.handles.remove(id);
-                    None
+                    let mut state = TunnelState::stopped(id);
+                    state.run = self.runs_started.fetch_add(1, Ordering::SeqCst) + 1;
+                    state.state_seq = 1;
+                    (None, Some(state))
                 }
             }
         };
         match waiting {
-            Some((mut done, run_no)) => {
-                let _ = done.wait_for(|d| *d).await;
-                let mut runs = self.runs.lock().unwrap();
-                if runs.handles.get(id).map(|h| h.run == run_no).unwrap_or(false) {
-                    runs.handles.remove(id);
-                }
-            }
+            Some(waiting) => self.finish_stop(id, waiting).await,
             None => {
-                let mut s = TunnelState::stopped(id);
-                s.run = self.runs_started.load(Ordering::SeqCst);
-                (self.sink)(Event::State(s));
+                (self.sink)(Event::State(stopped.expect("an idle stop reserves its state under the runs lock")));
             }
         }
+    }
+
+    async fn finish_stop(&self, id: &str, (mut done, run_no): PendingStop) {
+        let _ = done.wait_for(|done| *done).await;
+        let mut runs = self.runs.lock().unwrap();
+        if runs.handles.get(id).is_some_and(|handle| handle.run == run_no) { runs.handles.remove(id); }
+    }
+
+    /// Await only the stopping run named by a completed hostname action.
+    pub async fn wait_for_stop(&self, id: &str, run: u64) {
+        let waiting = {
+            let runs = self.runs.lock().unwrap();
+            runs.handles.get(id).filter(|handle| handle.run == run && handle.stopping())
+                .map(|handle| (handle.done.clone(), handle.run))
+        };
+        if let Some(waiting) = waiting { self.finish_stop(id, waiting).await; }
     }
 
     pub async fn stop_all(self: &Arc<Self>) {
@@ -455,6 +623,7 @@ impl Supervisor {
         self.begin_reset();
         self.stop_all().await;
         self.runs.lock().unwrap().handles.clear();
+        self.runs.lock().unwrap().selections.clear();
     }
 
     /// Allow fresh starts after reset has finished, or after a failed reset was recovered.
@@ -464,6 +633,69 @@ impl Supervisor {
 }
 
 // ---------------------------------------------------------------------------------------------
+
+fn apply_mapping_selection(mappings: &mut [RouteMapping], selection: &RouteSelection) {
+    for mapping in mappings {
+        mapping.enabled = selection.enables(mapping.route_key.as_ref());
+    }
+}
+
+/// Reject the whole selective operation if any direct origin could escape its gates.
+pub fn hostname_control_error(config: &TunnelConfig) -> Option<String> {
+    controllable_keys(config).err()
+}
+
+fn controllable_keys(config: &TunnelConfig) -> Result<Vec<RouteKey>, String> {
+    let map = config.raw.as_mapping().expect("parsed config mapping");
+    // Token-authenticated tunnels can replace local ingress with remote configuration.
+    if map.contains_key("token") || map.contains_key("token-file") {
+        return Err("Individual hostname controls are unavailable for token-authenticated configs because Cloudflare can replace their local routing rules. Use whole-project Start/Stop.".into());
+    }
+    let plan = derived::plan(config);
+    let mut keys = Vec::new();
+    for rule in &config.ingress {
+        let Some(key) = RouteKey::from_rule(rule) else {
+            if !rule.service.starts_with("http_status:") {
+                return Err("Individual hostname controls are unavailable: an origin route has no hostname.".into());
+            }
+            continue;
+        };
+        if !plan.upstreams.iter().any(|up| up.rule_index == rule.index) {
+            let reason = plan.skipped.iter().find(|(index, _)| *index == rule.index).map(|(_, reason)| reason.as_str()).unwrap_or("Only HTTP and HTTPS origins support individual hostname controls.");
+            return Err(format!("Individual hostname controls are unavailable for {}: {reason}", key.hostname));
+        }
+        if keys.contains(&key) {
+            return Err("Individual hostname controls are unavailable: identical hostname, path and service rules are duplicated.".into());
+        }
+        if config.ingress.iter().take_while(|earlier| earlier.index < rule.index).any(|earlier| {
+            let hostname = earlier.hostname.as_deref().unwrap_or("*").to_ascii_lowercase();
+            let selected = key.hostname.to_ascii_lowercase();
+            crate::hostnames::fully_shadows(&hostname, &selected) || crate::hostnames::fully_shadows(&selected, &hostname)
+        }) {
+            return Err(format!("Individual hostname controls are unavailable for {}: its hostname pattern overlaps another ingress rule. Use non-overlapping hostname rules for independent controls.", key.hostname));
+        }
+        keys.push(key);
+    }
+    Ok(keys)
+}
+
+fn validate_live_target<'a>(handle: &'a RunHandle, target: &RouteTarget) -> Result<(Vec<RouteKey>, std::sync::MutexGuard<'a, TunnelState>), String> {
+    if handle.stopping() { return Err("The project is stopping. Wait for it to stop before changing hostnames.".into()); }
+    let state = handle.config_state.lock().unwrap();
+    if state.run != target.run || state.config_revision != target.config_revision || state.config_revision == 0 {
+        return Err("This hostname belongs to an earlier config or run. Refresh the project and try again.".into());
+    }
+    let loaded = state.loaded_config.as_ref().ok_or("Individual hostname controls require a local config project.")?;
+    let config = TunnelConfig::load(Path::new(&loaded.source_path)).map_err(|e| e.to_string())?;
+    if config.fingerprint != loaded.fingerprint {
+        return Err("The source config changed. Restart the project before changing hostnames.".into());
+    }
+    let keys = controllable_keys(&config)?;
+    if !keys.contains(&target.key) || !state.mappings.iter().any(|mapping| mapping.route_key.as_ref() == Some(&target.key) && mapping.control_supported) {
+        return Err("This hostname changed. Refresh the project and try again.".into());
+    }
+    Ok((keys, state))
+}
 
 struct Prepared {
     args: Vec<String>,
@@ -632,8 +864,13 @@ async fn ensure_proxies(
     upstreams: &[Upstream],
     proxies: &mut HashMap<usize, ProxyHandle>,
     ctx: &ProxyContext,
+    control: Option<(&TunnelConfig, &SharedSelection, bool)>,
 ) -> anyhow::Result<HashMap<usize, u16>> {
-    proxies.retain(|idx, h| upstreams.iter().any(|u| u.rule_index == *idx && *u == h.upstream));
+    proxies.retain(|idx, h| {
+        let capture = control.map(|(_, _, capture)| capture).unwrap_or(true);
+        let key = control.and_then(|(config, _, _)| config.ingress.iter().find(|rule| rule.index == *idx).and_then(RouteKey::from_rule));
+        upstreams.iter().any(|u| u.rule_index == *idx && *u == h.upstream) && h.capturing == capture && h.route_key == key
+    });
     let mut ports = HashMap::new();
     for up in upstreams {
         let reuse = proxies.get(&up.rule_index).filter(|h| h.is_running()).map(|h| h.port());
@@ -641,9 +878,11 @@ async fn ensure_proxies(
             Some(p) => p,
             None => {
                 let previous = proxies.remove(&up.rule_index).map(|h| h.port()).unwrap_or(0);
-                let handle = match proxy::start(previous, up.clone(), ctx.clone()).await {
+                let gate = control.map(|(config, selection, _)| RouteGate { selection: selection.clone(), key: config.ingress.iter().find(|rule| rule.index == up.rule_index).and_then(RouteKey::from_rule) });
+                let capture = control.map(|(_, _, capture)| capture).unwrap_or(true);
+                let handle = match proxy::start_controlled(previous, up.clone(), ctx.clone(), gate.clone(), capture).await {
                     Ok(h) => h,
-                    Err(_) if previous != 0 => proxy::start(0, up.clone(), ctx.clone()).await?,
+                    Err(_) if previous != 0 => proxy::start_controlled(0, up.clone(), ctx.clone(), gate, capture).await?,
                     Err(e) => return Err(e),
                 };
                 let p = handle.port();
@@ -681,6 +920,7 @@ async fn prepare(
     ctx: &ProxyContext,
     force_no_inspect: bool,
     ownership: &mut TunnelOwnership,
+    selection: &SharedSelection,
 ) -> Result<Prepared, Fatal> {
     let t = &spec.tunnel;
     let want_inspect = t.inspect && t.kind.supports_inspection() && !force_no_inspect;
@@ -745,42 +985,38 @@ async fn prepare(
                     service: r.service.clone(),
                     inspected: false,
                     note: None,
+                    route_key: RouteKey::from_rule(r),
+                    control_supported: false,
+                    enabled: true,
                 })
                 .collect();
-            let mut ports = HashMap::new();
             let mut inspecting = false;
             let mut warning = None;
-            if want_inspect {
-                let plan = derived::plan(&config);
-                for (idx, why) in &plan.skipped {
-                    if let Some(m) = mappings.get_mut(*idx) {
-                        m.note = Some(why.clone());
-                    }
+            let plan = derived::plan(&config);
+            let control_error = controllable_keys(&config).err();
+            if !matches!(*selection.read().unwrap(), RouteSelection::All) {
+                if let Some(error) = &control_error { return Err(fatal(error.clone())); }
+            }
+            for mapping in &mut mappings {
+                mapping.control_supported = mapping.route_key.is_some() && control_error.is_none();
+                if let Some(error) = &control_error { mapping.note = Some(error.clone()); }
+            }
+            for (idx, why) in &plan.skipped {
+                if let Some(m) = mappings.get_mut(*idx) {
+                    m.note = Some(why.clone());
                 }
+            }
+            let ports = ensure_proxies(&plan.upstreams, proxies, ctx, Some((&config, selection, want_inspect))).await
+                .map_err(|error| fatal(format!("The hostname proxy could not start; the project remains stopped: {error}")))?;
+            if want_inspect {
                 if plan.upstreams.is_empty() {
                     warning = Some("Inspection is on, but no rule can be inspected.".into());
-                    proxies.clear();
                 } else {
-                    match ensure_proxies(&plan.upstreams, proxies, ctx).await {
-                        Ok(p) => {
-                            for idx in p.keys() {
-                                if let Some(m) = mappings.get_mut(*idx) {
-                                    m.inspected = true;
-                                }
-                            }
-                            ports = p;
-                            inspecting = true;
-                        }
-                        Err(e) => {
-                            proxies.clear();
-                            warning = Some(format!(
-                                "Inspection is off for this run: the proxy could not start ({e}). Traffic goes straight to the origin."
-                            ));
-                        }
+                    for idx in ports.keys() {
+                        if let Some(m) = mappings.get_mut(*idx) { m.inspected = true; }
                     }
+                    inspecting = true;
                 }
-            } else {
-                proxies.clear();
             }
             // Always run a derived copy from the data dir, even without inspection, so every
             // process Underlane starts is identifiable as its own.
@@ -819,7 +1055,7 @@ async fn prepare(
             let mut warning = None;
             if want_inspect {
                 let up = Upstream::from_service(0, None, &origin).expect("validated above");
-                match ensure_proxies(&[up], proxies, ctx).await {
+                match ensure_proxies(&[up], proxies, ctx, None).await {
                     Ok(ports) => {
                         url = format!("http://127.0.0.1:{}", ports[&0]);
                         inspecting = true;
@@ -835,7 +1071,7 @@ async fn prepare(
             let mut args = base_args(t, &neutral, cfg.grace_period);
             args.push("--url".into());
             args.push(url);
-            let mappings = vec![RouteMapping { hostname: None, path: None, service: origin, inspected: inspecting, note: None }];
+            let mappings = vec![RouteMapping { hostname: None, path: None, service: origin, inspected: inspecting, note: None, route_key: None, control_supported: false, enabled: true }];
             Ok(Prepared { args, env: vec![], cwd: None, mappings, inspecting, warning, loaded_config: None })
         }
         TunnelKind::Token => {
@@ -947,6 +1183,9 @@ fn mappings_from_remote_config(v: &serde_json::Value) -> Vec<RouteMapping> {
                     service: r.get("service").and_then(|s| s.as_str()).unwrap_or("").to_string(),
                     inspected: false,
                     note: None,
+                    route_key: None,
+                    control_supported: false,
+                    enabled: true,
                 })
                 .collect()
         })
@@ -1018,14 +1257,18 @@ fn remove_own_pidfile(cfg: &SupervisorConfig, id: &str, pid: Option<u32>) {
     }
 }
 
-async fn run(mut spec: RunSpec, cfg: SupervisorConfig, sink: EventSink, mut rx: mpsc::UnboundedReceiver<Cmd>, run_no: u64, config_state: Arc<Mutex<TunnelState>>, mut ownership: TunnelOwnership) {
+async fn run(mut spec: RunSpec, cfg: SupervisorConfig, sink: EventSink, mut rx: mpsc::UnboundedReceiver<Cmd>, run_no: u64, config_state: Arc<Mutex<TunnelState>>, mut ownership: TunnelOwnership, selection: SharedSelection, stopping: Arc<AtomicBool>) {
     let id = spec.tunnel.id.clone();
     let mut state = TunnelState::stopped(&id);
     state.run = run_no;
     state.supervised = true;
     let emit_state = |s: &TunnelState| {
-        *config_state.lock().unwrap() = s.clone();
-        sink(Event::State(s.clone()));
+        let mut published = config_state.lock().unwrap();
+        let mut state = s.clone();
+        apply_mapping_selection(&mut state.mappings, &selection.read().unwrap());
+        state.state_seq = published.state_seq + 1;
+        *published = state.clone();
+        sink(Event::State(state));
     };
     let mut proxies: HashMap<usize, ProxyHandle> = HashMap::new();
     let req_sink = sink.clone();
@@ -1072,7 +1315,7 @@ async fn run(mut spec: RunSpec, cfg: SupervisorConfig, sink: EventSink, mut rx: 
 
         // Preparing runs `ingress validate`; stay responsive to Stop while it does.
         let prepared = tokio::select! {
-            p = prepare(&spec, &cfg, &bin, &mut proxies, &ctx, force_no_inspect, &mut ownership) => p,
+            p = prepare(&spec, &cfg, &bin, &mut proxies, &ctx, force_no_inspect, &mut ownership, &selection) => p,
             cmd = rx.recv() => match cmd {
                 Some(Cmd::Restart(s)) => {
                     spec = *s;
@@ -1117,6 +1360,20 @@ async fn run(mut spec: RunSpec, cfg: SupervisorConfig, sink: EventSink, mut rx: 
                 }
             }
         };
+        if spec.tunnel.kind == TunnelKind::Config {
+            // A saved route tuple can disappear after an external edit; never start an empty connector.
+            let published = config_state.lock().unwrap();
+            let desired = selection.read().unwrap();
+            if matches!(&*desired, RouteSelection::Only(_))
+                && !prepared.mappings.iter().any(|mapping| mapping.route_key.is_some() && desired.enables(mapping.route_key.as_ref()))
+            {
+                stopping.store(true, Ordering::SeqCst);
+                state.mappings = prepared.mappings;
+                drop(desired);
+                drop(published);
+                break 'outer;
+            }
+        }
         let mut child = match spawn_child(&bin, &prepared, cfg.shim.as_deref()) {
             Ok(c) => c,
             Err(e) => {
@@ -1219,10 +1476,14 @@ async fn run(mut spec: RunSpec, cfg: SupervisorConfig, sink: EventSink, mut rx: 
                     }
                 }
                 _ = health.tick() => {
-                    // Proxy listeners must be alive for inspected traffic to flow.
-                    if state.inspecting && proxies.values().any(|h| !h.is_running()) {
+                    // Local config routes must never bypass their availability gates.
+                    if proxies.values().any(|h| !h.is_running()) {
+                        if spec.tunnel.kind == TunnelKind::Config {
+                            terminate(&mut child, cfg.grace_period + Duration::from_secs(1)).await;
+                            break RunOutcome::Exited { code: None, ran_for: started.elapsed(), diagnostics: "A hostname proxy stopped. Restarting without bypassing hostname controls.".into() };
+                        }
                         let ups: Vec<Upstream> = proxies.values().map(|h| h.upstream.clone()).collect();
-                        if ensure_proxies(&ups, &mut proxies, &ctx).await.is_err() {
+                        if ensure_proxies(&ups, &mut proxies, &ctx, None).await.is_err() {
                             break RunOutcome::FailOpen;
                         }
                     }
@@ -1438,7 +1699,7 @@ mod reset_tests {
 
         for restart in [false, true] {
             let (done, waiting) = watch::channel(false);
-            let generation = supervisor.runs.lock().unwrap().generation;
+            let generation = supervisor.runs.lock().unwrap().start_generation(&spec.tunnel.id);
             let deferred = supervisor.start_after(waiting, spec.clone(), restart, generation);
             supervisor.begin_reset();
             supervisor.start(spec.clone());

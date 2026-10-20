@@ -1,6 +1,7 @@
 //! Public DNS observations and explicit, non-overwriting cloudflared DNS routing.
 
 use std::ffi::OsString;
+use std::future::Future;
 use std::path::Path;
 use std::time::Duration;
 
@@ -15,7 +16,7 @@ use serde::{Deserialize, Serialize};
 use crate::cli::{self, ConfigPolicy, Invocation, StdoutMode};
 use crate::secret::Secret;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum DnsStatus {
     Connected,
@@ -24,12 +25,38 @@ pub enum DnsStatus {
     Unknown,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HostnameDns {
     pub status: DnsStatus,
     pub message: String,
     pub can_create: bool,
     pub needs_dns_access: bool,
+    #[serde(default)]
+    pub reason: Option<String>,
+    #[serde(default)]
+    pub expected_tunnel_id: Option<String>,
+    #[serde(default)]
+    pub observed_tunnel_id: Option<String>,
+    #[serde(default)]
+    pub actual_target: Option<String>,
+    #[serde(default)]
+    pub can_repair: bool,
+    #[serde(default = "public_source")]
+    pub source: String,
+    #[serde(default)]
+    pub checked_at: i64,
+}
+
+fn public_source() -> String {
+    "public".into()
+}
+
+pub fn checked_at() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis()
+        .min(i64::MAX as u128) as i64
 }
 
 impl HostnameDns {
@@ -39,10 +66,17 @@ impl HostnameDns {
             message: message.into(),
             can_create,
             needs_dns_access: false,
+            reason: None,
+            expected_tunnel_id: None,
+            observed_tunnel_id: None,
+            actual_target: None,
+            can_repair: false,
+            source: public_source(),
+            checked_at: checked_at(),
         }
     }
 
-    fn unknown(message: &str) -> Self {
+    pub fn unknown(message: &str) -> Self {
         Self::new(DnsStatus::Unknown, message, false)
     }
 }
@@ -107,6 +141,12 @@ struct DnsAnswer {
 }
 
 fn response(bytes: &[u8], hostname: &str, id: uuid::Uuid) -> HostnameDns {
+    let mut result = public_response(bytes, hostname, id);
+    result.expected_tunnel_id = Some(id.to_string());
+    result
+}
+
+fn public_response(bytes: &[u8], hostname: &str, id: uuid::Uuid) -> HostnameDns {
     let Ok(response) = serde_json::from_slice::<DnsResponse>(bytes) else {
         return HostnameDns::unknown(
             "Could not verify DNS: the resolver returned an invalid response. Retry.",
@@ -148,7 +188,10 @@ fn response(bytes: &[u8], hostname: &str, id: uuid::Uuid) -> HostnameDns {
             }
             let target = cname.data.trim_end_matches('.').to_ascii_lowercase();
             if target == format!("{id}.cfargotunnel.com") {
-                return HostnameDns::unknown("Public DNS points to this tunnel, but cannot confirm Cloudflare proxying. Verify it with your Cloudflare login.");
+                let mut result = HostnameDns::unknown("Public DNS points to this tunnel, but cannot confirm Cloudflare proxying. Verify it with your Cloudflare login.");
+                result.actual_target = Some(target);
+                result.observed_tunnel_id = Some(id.to_string());
+                return result;
             }
             if target
                 .strip_suffix(".cfargotunnel.com")
@@ -158,9 +201,15 @@ fn response(bytes: &[u8], hostname: &str, id: uuid::Uuid) -> HostnameDns {
                     })
                 })
             {
-                return HostnameDns::new(DnsStatus::Conflict, "This hostname points to another tunnel. Review its existing DNS record in Cloudflare before changing it.", false);
+                let mut result = HostnameDns::new(DnsStatus::Conflict, "This hostname points to another tunnel. Review its existing DNS record in Cloudflare before changing it.", false);
+                result.reason = Some("wrong_tunnel".into());
+                result.observed_tunnel_id = tunnel_target(&target);
+                result.actual_target = Some(target);
+                return result;
             }
-            HostnameDns::unknown("This hostname has a CNAME, but public DNS does not confirm which tunnel it reaches. Review its DNS record in Cloudflare.")
+            let mut result = HostnameDns::unknown("This hostname has a CNAME, but public DNS does not confirm which tunnel it reaches. Review its DNS record in Cloudflare.");
+            result.actual_target = Some(target);
+            result
         }
         _ => HostnameDns::unknown(
             "Could not verify DNS: the resolver could not answer this query. Retry.",
@@ -172,7 +221,12 @@ async fn get(url: &str, token: Option<&Secret<String>>) -> anyhow::Result<Vec<u8
     request(url, token, hyper::Method::GET, Vec::new()).await
 }
 
-async fn request(url: &str, token: Option<&Secret<String>>, method: hyper::Method, body: Vec<u8>) -> anyhow::Result<Vec<u8>> {
+async fn request(
+    url: &str,
+    token: Option<&Secret<String>>,
+    method: hyper::Method,
+    body: Vec<u8>,
+) -> anyhow::Result<Vec<u8>> {
     let https = hyper_rustls::HttpsConnectorBuilder::new()
         .with_native_roots()
         .map_err(|_| anyhow::anyhow!("Could not load trusted HTTPS certificates."))?
@@ -180,14 +234,18 @@ async fn request(url: &str, token: Option<&Secret<String>>, method: hyper::Metho
         .enable_http1()
         .build();
     let client = Client::builder(TokioExecutor::new()).build::<_, Full<Bytes>>(https);
-    let mut request = Request::builder().method(method).uri(url).header("content-type", "application/json").header(
-        "accept",
-        if token.is_some() {
-            "application/json"
-        } else {
-            "application/dns-json"
-        },
-    );
+    let mut request = Request::builder()
+        .method(method)
+        .uri(url)
+        .header("content-type", "application/json")
+        .header(
+            "accept",
+            if token.is_some() {
+                "application/json"
+            } else {
+                "application/dns-json"
+            },
+        );
     if let Some(token) = token {
         let bearer = Secret::new(format!("Bearer {}", token.expose()));
         let mut authorization =
@@ -227,20 +285,43 @@ async fn request(url: &str, token: Option<&Secret<String>>, method: hyper::Metho
     Ok(bytes)
 }
 
-pub(crate) async fn bounded_get(url: &str, token: Option<&Secret<String>>) -> anyhow::Result<Vec<u8>> {
+pub(crate) async fn bounded_get(
+    url: &str,
+    token: Option<&Secret<String>>,
+) -> anyhow::Result<Vec<u8>> {
     tokio::time::timeout(Duration::from_secs(15), get(url, token))
         .await
         .map_err(|_| anyhow::anyhow!("Cloudflare DNS verification timed out. Retry."))?
 }
 
-pub(crate) async fn bounded_patch(url: &str, token: &Secret<String>, body: Vec<u8>) -> anyhow::Result<Vec<u8>> {
-    tokio::time::timeout(Duration::from_secs(15), request(url, Some(token), hyper::Method::PATCH, body))
-        .await.map_err(|_| anyhow::anyhow!("DNS migration timed out. Retry to verify whether Cloudflare accepted it."))?
+pub(crate) async fn bounded_patch(
+    url: &str,
+    token: &Secret<String>,
+    body: Vec<u8>,
+) -> anyhow::Result<Vec<u8>> {
+    tokio::time::timeout(
+        Duration::from_secs(15),
+        request(url, Some(token), hyper::Method::PATCH, body),
+    )
+    .await
+    .map_err(|_| {
+        anyhow::anyhow!("DNS migration timed out. Retry to verify whether Cloudflare accepted it.")
+    })?
 }
 
-pub(crate) async fn bounded_post(url: &str, token: &Secret<String>, body: Vec<u8>) -> anyhow::Result<Vec<u8>> {
-    tokio::time::timeout(Duration::from_secs(15), request(url, Some(token), hyper::Method::POST, body))
-        .await.map_err(|_| anyhow::anyhow!("DNS creation timed out. Retry to verify whether Cloudflare accepted it."))?
+pub(crate) async fn bounded_post(
+    url: &str,
+    token: &Secret<String>,
+    body: Vec<u8>,
+) -> anyhow::Result<Vec<u8>> {
+    tokio::time::timeout(
+        Duration::from_secs(15),
+        request(url, Some(token), hyper::Method::POST, body),
+    )
+    .await
+    .map_err(|_| {
+        anyhow::anyhow!("DNS creation timed out. Retry to verify whether Cloudflare accepted it.")
+    })?
 }
 
 async fn lookup(hostname: &str) -> anyhow::Result<Vec<u8>> {
@@ -337,6 +418,8 @@ pub async fn verify_zone(
 
 #[derive(Deserialize)]
 struct Record {
+    #[serde(default)]
+    id: Option<String>,
     name: String,
     #[serde(rename = "type")]
     kind: String,
@@ -344,7 +427,7 @@ struct Record {
     proxied: Option<bool>,
 }
 
-fn records_response(bytes: &[u8], hostname: &str, tunnel_id: &str) -> anyhow::Result<HostnameDns> {
+fn records(bytes: &[u8], hostname: &str) -> anyhow::Result<Vec<Record>> {
     let envelope = envelope::<Vec<Record>>(bytes)?;
     let records = envelope.result;
     if let Some(info) = envelope.result_info {
@@ -365,12 +448,35 @@ fn records_response(bytes: &[u8], hostname: &str, tunnel_id: &str) -> anyhow::Re
                     && record.proxied.is_some()))),
         "Cloudflare returned unexpected DNS records. Retry verification before creating a record."
     );
+    Ok(records)
+}
+
+fn tunnel_target(target: &str) -> Option<String> {
+    let target = target.trim_end_matches('.').to_ascii_lowercase();
+    canonical_tunnel_id(target.strip_suffix(".cfargotunnel.com")?).ok()
+}
+
+fn records_response(bytes: &[u8], hostname: &str, tunnel_id: &str) -> anyhow::Result<HostnameDns> {
+    let records = records(bytes, hostname)?;
+    let mut result = records_status(&records, tunnel_id);
+    result.source = "cloudflare".into();
+    result.expected_tunnel_id = Some(tunnel_id.into());
+    if let [record] = records.as_slice() {
+        if record.kind == "CNAME" {
+            result.actual_target = record.content.clone();
+            result.observed_tunnel_id = record.content.as_deref().and_then(tunnel_target);
+        }
+    }
+    Ok(result)
+}
+
+fn records_status(records: &[Record], tunnel_id: &str) -> HostnameDns {
     if records.is_empty() {
-        return Ok(HostnameDns::new(
+        return HostnameDns::new(
             DnsStatus::Missing,
             "No DNS record exists for this hostname in Cloudflare.",
             true,
-        ));
+        );
     }
     let target = format!("{tunnel_id}.cfargotunnel.com");
     if records.len() == 1
@@ -381,11 +487,11 @@ fn records_response(bytes: &[u8], hostname: &str, tunnel_id: &str) -> anyhow::Re
             .is_some_and(|content| content.trim_end_matches('.').eq_ignore_ascii_case(&target))
         && records[0].proxied == Some(true)
     {
-        return Ok(HostnameDns::new(
+        return HostnameDns::new(
             DnsStatus::Connected,
             "Cloudflare confirms this hostname is proxied to this tunnel.",
             false,
-        ));
+        );
     }
     if records.len() == 1
         && records[0].kind == "CNAME"
@@ -394,9 +500,26 @@ fn records_response(bytes: &[u8], hostname: &str, tunnel_id: &str) -> anyhow::Re
             .as_ref()
             .is_some_and(|content| content.trim_end_matches('.').eq_ignore_ascii_case(&target))
     {
-        return Ok(HostnameDns::new(DnsStatus::Conflict, "DNS points to this tunnel, but Cloudflare proxying is disabled. Enable proxying for this record in Cloudflare.", false));
+        let mut result = HostnameDns::new(DnsStatus::Conflict, "DNS points to this tunnel, but Cloudflare proxying is disabled. Enable proxying for this record in Cloudflare.", false);
+        result.reason = Some("proxy_disabled".into());
+        return result;
     }
-    Ok(HostnameDns::new(DnsStatus::Conflict, "This hostname has an existing DNS record that does not proxy to this tunnel. It was preserved; review the record in Cloudflare before changing it.", false))
+    let mut result = HostnameDns::new(DnsStatus::Conflict, "This hostname has an existing DNS record that does not proxy to this tunnel. It was preserved; review the record in Cloudflare before changing it.", false);
+    result.reason = Some("other_conflict".into());
+    if let [record] = records {
+        if record.kind == "CNAME"
+            && record.proxied == Some(true)
+            && record.content.as_deref().and_then(tunnel_target).is_some()
+        {
+            result.reason = Some("wrong_tunnel".into());
+            result.message = "This hostname is proxied to another tunnel. Review the current and expected targets before repairing it.".into();
+            result.can_repair = record
+                .id
+                .as_deref()
+                .is_some_and(|id| cloudflare_id(id).is_ok());
+        }
+    }
+    result
 }
 
 /// Authoritative Cloudflare DNS status, including CNAMEs hidden by proxying.
@@ -415,6 +538,219 @@ pub async fn check_records(
     let name = hostname.replace('*', "%2A");
     let bytes = bounded_get(&format!("https://api.cloudflare.com/client/v4/zones/{zone_id}/dns_records?name.exact={name}&per_page=100"), Some(token)).await?;
     records_response(&bytes, &hostname, &id.to_string())
+}
+
+/// Backend-only snapshot of the exact singleton proxied tunnel record reviewed by the user.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DnsRepairRecord {
+    pub hostname: String,
+    pub record_id: String,
+    pub target: String,
+    pub tunnel_id: String,
+}
+
+fn repair_record(record: Record, hostname: &str) -> anyhow::Result<DnsRepairRecord> {
+    let target = record
+        .content
+        .context("The DNS record has no target. Review it in Cloudflare.")?;
+    let tunnel_id = tunnel_target(&target).context(
+        "Only a proxied tunnel CNAME can be repaired. Review this record in Cloudflare.",
+    )?;
+    let record_id = record
+        .id
+        .context("Cloudflare did not identify this DNS record. Review DNS again.")?;
+    cloudflare_id(&record_id)?;
+    ensure!(
+        canonical_hostname(&record.name)? == hostname
+            && record.kind == "CNAME"
+            && record.proxied == Some(true),
+        "The DNS record changed or is not a proxied tunnel CNAME. Review DNS again."
+    );
+    Ok(DnsRepairRecord {
+        hostname: hostname.into(),
+        record_id,
+        target,
+        tunnel_id,
+    })
+}
+
+fn repair_list(bytes: &[u8], hostname: &str) -> anyhow::Result<DnsRepairRecord> {
+    let mut records = records(bytes, hostname)?;
+    ensure!(records.len() == 1,
+        "The reviewed DNS record is missing or there are multiple records. Nothing was changed; review DNS again.");
+    repair_record(records.remove(0), hostname)
+}
+
+fn record_url(zone: &str, record: &DnsRepairRecord) -> anyhow::Result<String> {
+    Ok(format!(
+        "https://api.cloudflare.com/client/v4/zones/{}/dns_records/{}",
+        cloudflare_id(zone)?,
+        cloudflare_id(&record.record_id)?
+    ))
+}
+
+fn records_url(zone: &str, hostname: &str) -> anyhow::Result<String> {
+    Ok(format!(
+        "https://api.cloudflare.com/client/v4/zones/{}/dns_records?name.exact={}&per_page=100",
+        cloudflare_id(zone)?,
+        canonical_hostname(hostname)?.replace('*', "%2A")
+    ))
+}
+
+pub async fn review_repair(
+    token: &Secret<String>,
+    zone: &str,
+    hostname: &str,
+    expected: &str,
+) -> anyhow::Result<DnsRepairRecord> {
+    let hostname = canonical_hostname(hostname)?;
+    let expected = canonical_tunnel_id(expected)?;
+    let record = repair_list(
+        &bounded_get(&records_url(zone, &hostname)?, Some(token)).await?,
+        &hostname,
+    )?;
+    ensure!(
+        record.tunnel_id != expected,
+        "This hostname already points to this tunnel. Refresh DNS status."
+    );
+    Ok(record)
+}
+
+fn reviewed_or_repaired(
+    current: &DnsRepairRecord,
+    reviewed: &DnsRepairRecord,
+    expected: &str,
+) -> anyhow::Result<bool> {
+    ensure!(
+        current.hostname == reviewed.hostname && current.record_id == reviewed.record_id,
+        "The reviewed DNS record was replaced. Nothing was changed; review DNS again."
+    );
+    if current.tunnel_id == expected {
+        return Ok(true);
+    }
+    ensure!(
+        current == reviewed,
+        "The reviewed DNS record changed. Nothing was changed; review DNS again."
+    );
+    Ok(false)
+}
+
+async fn repair_with<F, Fut, G, GuardFuture, LocalGuard>(
+    zone: &str,
+    reviewed: &DnsRepairRecord,
+    expected: &str,
+    mut request: F,
+    validate: G,
+    validate_local: LocalGuard,
+) -> anyhow::Result<HostnameDns>
+where
+    F: FnMut(hyper::Method, String, Vec<u8>) -> Fut,
+    Fut: Future<Output = anyhow::Result<Vec<u8>>>,
+    G: Fn() -> GuardFuture,
+    GuardFuture: Future<Output = anyhow::Result<()>>,
+    LocalGuard: Fn() -> anyhow::Result<()>,
+{
+    let expected = canonical_tunnel_id(expected)?;
+    ensure!(
+        canonical_tunnel_id(&reviewed.tunnel_id)? != expected,
+        "The reviewed DNS target must differ from the expected tunnel."
+    );
+    validate().await?;
+    let list_url = records_url(zone, &reviewed.hostname)?;
+    let bytes = request(hyper::Method::GET, list_url.clone(), Vec::new()).await?;
+    // Reuse migration validation, but missing records never select its create path.
+    crate::separate_tunnel::plan_dns(
+        &bytes,
+        &reviewed.hostname,
+        &reviewed.tunnel_id,
+        Some(&expected),
+    )?;
+    let current = repair_list(&bytes, &reviewed.hostname)?;
+    if reviewed_or_repaired(&current, reviewed, &expected)? {
+        validate_local()?;
+        return records_response(&bytes, &reviewed.hostname, &expected);
+    }
+    let url = record_url(zone, reviewed)?;
+    let bytes = request(hyper::Method::GET, url.clone(), Vec::new()).await?;
+    let current = repair_record(envelope::<Record>(&bytes)?.result, &reviewed.hostname)?;
+    let already_repaired = reviewed_or_repaired(&current, reviewed, &expected)?;
+    validate_local()?;
+    let (update, invalid_reply) = if already_repaired {
+        (Ok(()), false)
+    } else {
+        // shortcut: Cloudflare has no documented atomic conditional record update; an external
+        // edit between this final read and PATCH remains an optimistic race.
+        match request(
+            hyper::Method::PATCH,
+            url,
+            serde_json::to_vec(
+                &serde_json::json!({"content":format!("{expected}.cfargotunnel.com")}),
+            )?,
+        )
+        .await
+        {
+            Ok(bytes) => (
+                (|| {
+                    let updated =
+                        repair_record(envelope::<Record>(&bytes)?.result, &reviewed.hostname)?;
+                    ensure!(reviewed_or_repaired(&updated, reviewed, &expected)?,
+                    "Cloudflare did not confirm the repaired target. Review DNS before retrying.");
+                    Ok(())
+                })(),
+                true,
+            ),
+            Err(error) => (Err(error), false),
+        }
+    };
+    // Even a timeout can have committed. A fresh complete record set is required for success.
+    let bytes = request(hyper::Method::GET, list_url, Vec::new()).await
+        .map_err(|_| anyhow::anyhow!("Could not verify the DNS repair outcome. Cloudflare may have accepted it; retry this review to verify safely."))?;
+    let current = repair_list(&bytes, &reviewed.hostname)?;
+    if reviewed_or_repaired(&current, reviewed, &expected)? {
+        if let Err(error) = update {
+            if error.to_string().contains("rejected") || error.to_string().contains("DNS access") {
+                return Err(error);
+            }
+            if invalid_reply {
+                anyhow::bail!("Cloudflare returned an ambiguous repair response. The target now matches; refresh and review DNS before retrying.");
+            }
+        }
+        validate_local()?;
+        return records_response(&bytes, &reviewed.hostname, &expected);
+    }
+    update?;
+    anyhow::bail!("Cloudflare did not retain the repaired target. Review DNS before retrying.")
+}
+
+/// Repair only the reviewed record ID. Callers bind account, config, run, and user confirmation.
+pub async fn repair_reviewed<G, GuardFuture, LocalGuard>(
+    token: &Secret<String>,
+    zone: &str,
+    reviewed: &DnsRepairRecord,
+    expected: &str,
+    validate: G,
+    validate_local: LocalGuard,
+) -> anyhow::Result<HostnameDns>
+where
+    G: Fn() -> GuardFuture,
+    GuardFuture: Future<Output = anyhow::Result<()>>,
+    LocalGuard: Fn() -> anyhow::Result<()>,
+{
+    repair_with(
+        zone,
+        reviewed,
+        expected,
+        |method, url, body| async move {
+            if method == hyper::Method::GET {
+                bounded_get(&url, Some(token)).await
+            } else {
+                bounded_patch(&url, token, body).await
+            }
+        },
+        validate,
+        validate_local,
+    )
+    .await
 }
 
 /// Public DNS cannot always reveal a Cloudflare-proxied CNAME; unknown is never treated as missing.
@@ -465,7 +801,12 @@ pub async fn create(
         _ => "",
     };
     ensure!(route_confirmed(stdout, &hostname) || route_confirmed(&output.stderr, &hostname), "Cloudflare did not confirm routing for this exact hostname. Verify DNS before retrying; any existing record was preserved.");
-    Ok(HostnameDns::new(DnsStatus::Connected, "Cloudflare confirmed this hostname is routed to this tunnel. DNS changes may take time to appear publicly.", false))
+    let mut result = HostnameDns::new(DnsStatus::Connected, "Cloudflare confirmed this hostname is routed to this tunnel. DNS changes may take time to appear publicly.", false);
+    result.source = "cloudflare".into();
+    result.expected_tunnel_id = Some(id.to_string());
+    result.observed_tunnel_id = Some(id.to_string());
+    result.actual_target = Some(format!("{id}.cfargotunnel.com"));
+    Ok(result)
 }
 
 fn route_confirmed(text: &str, hostname: &str) -> bool {
@@ -494,6 +835,292 @@ mod tests {
 
     const ID: &str = "00000000-0000-4000-8000-000000000001";
     const ACCOUNT: &str = "00000000000000000000000000000001";
+    const OTHER: &str = "00000000-0000-4000-8000-000000000002";
+
+    fn record(target: &str) -> serde_json::Value {
+        serde_json::json!({"id":ACCOUNT,"name":"app.example.com","type":"CNAME",
+            "content":format!("{target}.cfargotunnel.com"),"proxied":true})
+    }
+
+    fn record_set(records: Vec<serde_json::Value>) -> Vec<u8> {
+        serde_json::to_vec(&serde_json::json!({"success":true,"result":records})).unwrap()
+    }
+
+    fn single_record(record: serde_json::Value) -> Vec<u8> {
+        serde_json::to_vec(&serde_json::json!({"success":true,"result":record})).unwrap()
+    }
+
+    fn reviewed() -> DnsRepairRecord {
+        repair_list(&record_set(vec![record(OTHER)]), "app.example.com").unwrap()
+    }
+
+    #[test]
+    fn mismatch_details_authorize_only_a_single_proxied_tunnel_record() {
+        let mismatch =
+            records_response(&record_set(vec![record(OTHER)]), "app.example.com", ID).unwrap();
+        assert_eq!(mismatch.reason.as_deref(), Some("wrong_tunnel"));
+        assert_eq!(mismatch.expected_tunnel_id.as_deref(), Some(ID));
+        assert_eq!(mismatch.observed_tunnel_id.as_deref(), Some(OTHER));
+        assert_eq!(
+            mismatch.actual_target.as_deref(),
+            Some(format!("{OTHER}.cfargotunnel.com").as_str())
+        );
+        assert!(mismatch.can_repair);
+        assert_eq!(mismatch.source, "cloudflare");
+        assert!(mismatch.checked_at > 0);
+        for (mut entry, reason) in [
+            (record(ID), "proxy_disabled"),
+            (record(OTHER), "other_conflict"),
+        ] {
+            entry["proxied"] = false.into();
+            let status = records_response(&record_set(vec![entry]), "app.example.com", ID).unwrap();
+            assert_eq!(status.reason.as_deref(), Some(reason));
+            assert!(!status.can_repair);
+        }
+        let mut unrelated = record(OTHER);
+        unrelated["content"] = "elsewhere.example.com".into();
+        let status =
+            records_response(&record_set(vec![unrelated.clone()]), "app.example.com", ID).unwrap();
+        assert_eq!(status.reason.as_deref(), Some("other_conflict"));
+        assert!(!status.can_repair);
+        assert!(repair_list(&record_set(vec![unrelated]), "app.example.com").is_err());
+        assert!(repair_list(
+            &record_set(vec![record(OTHER), record(OTHER)]),
+            "app.example.com"
+        )
+        .is_err());
+    }
+
+    #[tokio::test]
+    async fn reviewed_repair_never_writes_deleted_replaced_or_changed_records() {
+        let mut replaced = record(OTHER);
+        replaced["id"] = "00000000000000000000000000000002".into();
+        let mut unproxied = record(OTHER);
+        unproxied["proxied"] = false.into();
+        let mut changed = record(OTHER);
+        changed["content"] = "00000000-0000-4000-8000-000000000003.cfargotunnel.com".into();
+        for entries in [
+            vec![],
+            vec![replaced.clone()],
+            vec![unproxied.clone()],
+            vec![changed.clone()],
+            vec![record(OTHER), record(OTHER)],
+        ] {
+            let result = repair_with(
+                ACCOUNT,
+                &reviewed(),
+                ID,
+                |method, _, _| {
+                    assert_eq!(method, hyper::Method::GET);
+                    std::future::ready(Ok(record_set(entries.clone())))
+                },
+                || std::future::ready(Ok(())),
+                || Ok(()),
+            )
+            .await;
+            assert!(result.is_err());
+        }
+        for entry in [replaced, unproxied, changed] {
+            let mut calls = 0;
+            let result = repair_with(
+                ACCOUNT,
+                &reviewed(),
+                ID,
+                |method, _, _| {
+                    assert_eq!(method, hyper::Method::GET);
+                    calls += 1;
+                    std::future::ready(Ok(if calls == 1 {
+                        record_set(vec![record(OTHER)])
+                    } else {
+                        single_record(entry.clone())
+                    }))
+                },
+                || std::future::ready(Ok(())),
+                || Ok(()),
+            )
+            .await;
+            assert!(result.is_err());
+            assert_eq!(calls, 2);
+        }
+    }
+
+    #[tokio::test]
+    async fn repair_patches_only_content_and_requires_confirmed_full_readback() {
+        let mut calls = 0;
+        let status = repair_with(
+            ACCOUNT,
+            &reviewed(),
+            ID,
+            |method, url, body| {
+                calls += 1;
+                let response = match calls {
+                    1 => {
+                        assert_eq!(method, hyper::Method::GET);
+                        record_set(vec![record(OTHER)])
+                    }
+                    2 => {
+                        assert_eq!(method, hyper::Method::GET);
+                        assert!(url.ends_with(ACCOUNT));
+                        single_record(record(OTHER))
+                    }
+                    3 => {
+                        assert_eq!(method, hyper::Method::PATCH);
+                        assert!(url.ends_with(ACCOUNT));
+                        assert_eq!(
+                            serde_json::from_slice::<serde_json::Value>(&body).unwrap(),
+                            serde_json::json!({"content":format!("{ID}.cfargotunnel.com")})
+                        );
+                        single_record(record(ID))
+                    }
+                    4 => {
+                        assert_eq!(method, hyper::Method::GET);
+                        assert!(url.contains("name.exact="));
+                        record_set(vec![record(ID)])
+                    }
+                    _ => panic!("unexpected DNS request"),
+                };
+                std::future::ready(Ok(response))
+            },
+            || std::future::ready(Ok(())),
+            || Ok(()),
+        )
+        .await
+        .unwrap();
+        assert_eq!(calls, 4);
+        assert_eq!(status.status, DnsStatus::Connected);
+        assert!(!status.can_repair);
+    }
+
+    #[tokio::test]
+    async fn idempotent_retry_requires_the_same_record_id_and_never_patches() {
+        let mut calls = 0;
+        let status = repair_with(
+            ACCOUNT,
+            &reviewed(),
+            ID,
+            |method, _, _| {
+                calls += 1;
+                assert_eq!(method, hyper::Method::GET);
+                std::future::ready(Ok(record_set(vec![record(ID)])))
+            },
+            || std::future::ready(Ok(())),
+            || Ok(()),
+        )
+        .await
+        .unwrap();
+        assert_eq!(calls, 1);
+        assert_eq!(status.status, DnsStatus::Connected);
+        let mut replaced = record(ID);
+        replaced["id"] = "00000000000000000000000000000002".into();
+        assert!(repair_with(
+            ACCOUNT,
+            &reviewed(),
+            ID,
+            |method, _, _| {
+                assert_eq!(method, hyper::Method::GET);
+                std::future::ready(Ok(record_set(vec![replaced.clone()])))
+            },
+            || std::future::ready(Ok(())),
+            || Ok(())
+        )
+        .await
+        .is_err());
+    }
+
+    #[tokio::test]
+    async fn stale_backend_binding_blocks_patch_after_final_record_read() {
+        let mut calls = 0;
+        let result = repair_with(
+            ACCOUNT,
+            &reviewed(),
+            ID,
+            |method, _, _| {
+                calls += 1;
+                assert_eq!(method, hyper::Method::GET);
+                std::future::ready(Ok(if calls == 1 {
+                    record_set(vec![record(OTHER)])
+                } else {
+                    single_record(record(OTHER))
+                }))
+            },
+            || std::future::ready(Ok(())),
+            || anyhow::bail!("config or connector run changed"),
+        )
+        .await;
+        assert!(result.unwrap_err().to_string().contains("run changed"));
+        assert_eq!(calls, 2);
+    }
+
+    #[tokio::test]
+    async fn unavailable_expected_tunnel_blocks_all_dns_requests() {
+        let result = repair_with(
+            ACCOUNT,
+            &reviewed(),
+            ID,
+            |_, _, _| std::future::ready(Err(anyhow::anyhow!("Unexpected DNS request"))),
+            || {
+                std::future::ready(Err(anyhow::anyhow!(
+                    "The tunnel is missing from this account"
+                )))
+            },
+            || Ok(()),
+        )
+        .await;
+        assert!(result.unwrap_err().to_string().contains("missing"));
+    }
+
+    #[tokio::test]
+    async fn patch_timeout_is_reread_and_ambiguous_outcomes_never_invent_success() {
+        for (mode, success) in [
+            ("timeout-committed", true),
+            ("timeout-old", false),
+            ("malformed", false),
+            ("readback-failed", false),
+            ("added-record", false),
+            ("denied", false),
+        ] {
+            let mut calls = 0;
+            let result = repair_with(
+                ACCOUNT,
+                &reviewed(),
+                ID,
+                |method, _, _| {
+                    calls += 1;
+                    let response = match calls {
+                        1 => Ok(record_set(vec![record(OTHER)])),
+                        2 => Ok(single_record(record(OTHER))),
+                        3 => {
+                            assert_eq!(method, hyper::Method::PATCH);
+                            match mode {
+                                "timeout-committed" | "timeout-old" => {
+                                    Err(anyhow::anyhow!("DNS repair timed out"))
+                                }
+                                "malformed" => Ok(b"{}".to_vec()),
+                                "denied" => Err(anyhow::anyhow!("Cloudflare rejected DNS access")),
+                                _ => Ok(single_record(record(ID))),
+                            }
+                        }
+                        4 => {
+                            assert_eq!(method, hyper::Method::GET);
+                            match mode {
+                                "readback-failed" => Err(anyhow::anyhow!("connection unavailable")),
+                                "timeout-old" => Ok(record_set(vec![record(OTHER)])),
+                                "added-record" => Ok(record_set(vec![record(ID), record(OTHER)])),
+                                _ => Ok(record_set(vec![record(ID)])),
+                            }
+                        }
+                        _ => panic!("unexpected DNS request"),
+                    };
+                    std::future::ready(response)
+                },
+                || std::future::ready(Ok(())),
+                || Ok(()),
+            )
+            .await;
+            assert_eq!(result.is_ok(), success, "{mode}: {result:?}");
+            assert_eq!(calls, 4);
+        }
+    }
 
     #[test]
     fn zone_authorization_requires_hostname_boundary_and_same_account() {
@@ -573,6 +1200,8 @@ mod tests {
             .unwrap();
             assert_eq!(result.status, DnsStatus::Conflict);
             assert!(!result.can_create);
+            assert!(result.actual_target.is_none());
+            assert!(!result.can_repair);
         }
     }
 
@@ -634,6 +1263,12 @@ mod tests {
         let missing = parse(json!({"Status":3}));
         assert_eq!(missing.status, DnsStatus::Missing);
         assert!(missing.can_create);
+        let hidden = parse(
+            json!({"Status":0,"Answer":[{"name":"app.example.com.","type":1,"data":"192.0.2.1"}]}),
+        );
+        assert!(hidden.actual_target.is_none());
+        assert!(hidden.observed_tunnel_id.is_none());
+        assert!(!hidden.can_repair);
         assert_eq!(parse(json!({"Status":0,"Answer":[{"name":"app.example.com.","type":5,"data":"00000000-0000-4000-8000-000000000002.cfargotunnel.com."}]})).status, DnsStatus::Conflict);
         for answer in [
             json!([]),
@@ -645,6 +1280,9 @@ mod tests {
             let result = parse(json!({"Status":0,"Answer":answer}));
             assert_eq!(result.status, DnsStatus::Unknown);
             assert!(!result.can_create);
+            assert!(!result.can_repair);
+            assert!(result.observed_tunnel_id.is_none());
+            assert_eq!(result.source, "public");
             assert!(!result.message.contains("creating a record"));
         }
     }
@@ -661,6 +1299,8 @@ mod tests {
             assert!(result
                 .message
                 .contains("cannot confirm Cloudflare proxying"));
+            assert!(!result.can_repair);
+            assert_eq!(result.source, "public");
         }
     }
 

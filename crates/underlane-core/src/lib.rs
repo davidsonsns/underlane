@@ -4,6 +4,7 @@
 pub mod cloudflared;
 pub mod cli;
 pub mod config;
+pub mod connection;
 pub mod db;
 pub mod decode;
 pub mod derived;
@@ -14,6 +15,7 @@ pub mod model;
 pub mod proxy;
 pub mod platform;
 pub mod projects;
+pub mod route_control;
 pub mod secret;
 pub mod shim;
 pub mod supervisor;

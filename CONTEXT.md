@@ -12,3 +12,9 @@ A named workspace for one locally managed tunnel and its config. It can begin wi
 
 **Quick tunnel**:
 A temporary public link to a local service, with a hostname assigned when it connects.
+
+**Connector connected**:
+The local connector has a connection to Cloudflare. This status alone does not establish that a public hostname reaches its intended local service.
+
+**Public connection verified**:
+A hostname has passed the checks for its intended tunnel and public HTTP endpoint from this Mac. Application flows such as signing in remain separate checks.

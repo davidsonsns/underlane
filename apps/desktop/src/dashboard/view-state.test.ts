@@ -58,7 +58,8 @@ describe("local route reachability", () => {
     [false, true, "down"],
     [false, false, "idle"],
     [null, true, "none"],
-    [undefined, false, "none"],
+    [undefined, false, "unknown"],
+    [undefined, true, "unknown"],
   ] as const)(
     "maps reachable=%s live=%s to %s",
     (reachable, live, expected) => {
@@ -77,5 +78,8 @@ describe("local route reachability", () => {
       "before starting the tunnel"
     );
     expect(routeReachTip("http://localhost:3000", "none")).toBeUndefined();
+    expect(routeReachTip("http://localhost:3000", "unknown")).toContain(
+      "has not been checked"
+    );
   });
 });

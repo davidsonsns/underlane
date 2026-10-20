@@ -853,3 +853,25 @@ once every 24 hours per project hostname while visible. Attempts and status resu
 locally across navigation and app restarts; failed checks also consume that interval. Manual
 “Check DNS”, creation, and connecting access bypass the interval and reset it. Focus and
 visibility events only check when due. Stale UI requests cannot change a newly selected project.
+
+
+## 23. Hostname readiness and reviewed DNS repair
+
+A connected connector can coexist with a hostname targeting another tunnel. Keep connector
+lifecycle separate from hostname evidence, and own diagnostic scheduling in the backend so
+closing the dashboard cannot hide a routing failure. This supersedes §22's visible-only,
+24-hour DNS cache: active projects check DNS every five minutes and local/public reachability
+every 60 seconds, with bounded concurrency, failure backoff and immediate manual refresh.
+Run, child revision, source/auth identity and an IPC diagnostic generation reject stale work.
+
+Public checks use bounded unauthenticated GETs because a HEAD response cannot provide the
+Cloudflare error body needed to distinguish 530/1033. No redirects or credentials are followed.
+Cached responses, authentication gates, redirects and 404s establish a response, not verified
+origin readiness. A custom safe test path must match the selected ordered ingress rule.
+
+Repair is a separately confirmed, expiring review of one proxied tunnel CNAME. Use an exact
+record-ID content PATCH with fresh record/account/config/run checks and verified readback,
+rather than cloudflared's broad overwrite flag. Preserve missing or replaced records for a
+fresh review; ordinary Create DNS retains its non-overwriting contract. Read-only DNS access
+never authorizes a write. The connector and source YAML stay under their existing controls.
+The remaining final-read/PATCH race is explicit because Cloudflare offers no conditional update.

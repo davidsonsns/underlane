@@ -139,6 +139,7 @@ mod tests {
             service: "http://localhost:3000".into(),
             inspected: false,
             note: None,
+            route_key: None, control_supported: false, enabled: true,
         }];
         let names = vec!["app.example.com".into()];
         assert!(check_runtime_ownership(

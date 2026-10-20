@@ -6,11 +6,26 @@ export type Status =
   | "crashed";
 type TunnelKind = "config" | "token" | "quick";
 
+export interface RouteKey {
+  hostname: string;
+  path: string | null;
+  service: string;
+}
+
+export interface RouteTarget {
+  config_revision: number;
+  key: RouteKey;
+  run: number;
+}
+
 export interface RouteMapping {
+  control_supported?: boolean;
+  enabled?: boolean;
   hostname: string | null;
   inspected: boolean;
   note: string | null;
   path: string | null;
+  route_key?: RouteKey | null;
   service: string;
 }
 
@@ -53,6 +68,7 @@ export interface TunnelState {
   restarts: number;
   run: number;
   started_at: number | null;
+  state_seq?: number;
   status: Status;
   supervised: boolean;
   tunnel_conflict?: {
@@ -75,6 +91,7 @@ export interface Tunnel {
   /** Resolved source identity; active runs carry their pinned identity in state. */
   cloudflare_tunnel_id?: string | null;
   config_path: string | null;
+  connection?: TunnelConnection | null;
   created_at: number;
   group_id: string | null;
   group_name: string;
@@ -246,8 +263,74 @@ export interface LoginItem {
 }
 
 export interface HostnameDns {
+  actual_target?: string | null;
   can_create: boolean;
+  can_repair?: boolean;
+  checked_at?: number;
+  expected_tunnel_id?: string | null;
   message: string;
   needs_dns_access: boolean;
+  observed_tunnel_id?: string | null;
+  reason?: string | null;
+  source?: string;
   status: "connected" | "missing" | "conflict" | "unknown";
+}
+
+export interface ServiceCheck {
+  checked_at: number;
+  message: string;
+  status: "reachable" | "unreachable" | "unsupported";
+}
+
+export interface PublicCheck {
+  checked_at: number;
+  cloudflare_error: number | null;
+  http_status: number | null;
+  message: string;
+  status:
+    | "not_checked"
+    | "verified"
+    | "responded"
+    | "auth_required"
+    | "cloudflare_error"
+    | "origin_error"
+    | "http_error"
+    | "transport_error"
+    | "unsupported";
+  test_url: string | null;
+}
+
+export interface RouteConnection {
+  checking: boolean;
+  dns: HostnameDns;
+  hostname: string;
+  local: ServiceCheck;
+  path: string | null;
+  public: PublicCheck;
+  rule_index: number;
+  service: string;
+  test_path: string | null;
+}
+
+export interface TunnelConnection {
+  checked_at: number | null;
+  checking: boolean;
+  config_changed: boolean;
+  config_revision: number;
+  error: string | null;
+  expected_tunnel_id: string | null;
+  generation?: number;
+  routes: RouteConnection[];
+  run: number;
+}
+
+export interface DnsRepairPreview {
+  current_project_name: string | null;
+  current_target: string;
+  current_tunnel_id: string;
+  expected_target: string;
+  expected_tunnel_id: string;
+  expires_at: number;
+  hostname: string;
+  review_id: string;
 }
